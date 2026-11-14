@@ -51,7 +51,8 @@ h1 { font: 600 27px/1 var(--f-display); margin: 0; letter-spacing: .01em; }
 .banner.info { border-color: var(--accent); }
 .banner.warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--surface)); }
 .banner.error { border-color: var(--crit); background: color-mix(in srgb, var(--crit) 9%, var(--surface)); }
-.banner button { flex: none; background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px; }
+.banner-body { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
+.banner > button { flex: none; background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px; }
 
 .tabbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
 .tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }

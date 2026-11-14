@@ -39,7 +39,12 @@
   function tokens() { const s = getComputedStyle(document.documentElement); const g = n => s.getPropertyValue(n).trim(); return { accent: g('--accent'), warn: g('--warn'), crit: g('--crit') }; }
 
   /* ---------- komunikaty ---------- */
-  function banner(text, kind = 'info') { $('#bannerText').textContent = text; const b = $('#banner'); b.className = 'banner ' + kind; b.hidden = !text; }
+  function banner(text, kind = 'info', action) {
+    $('#bannerText').textContent = text; const b = $('#banner'); b.className = 'banner ' + kind; b.hidden = !text;
+    const a = $('#bannerAction'); a.hidden = !action;
+    a.onclick = action ? () => { b.hidden = true; action.fn(); } : null;
+    if (action) a.textContent = action.label;
+  }
   $('#bannerClose').onclick = () => { $('#banner').hidden = true; };
   function chip(text, s) { const c = $('#connChip'); c.dataset.s = s || ''; c.querySelector('span').textContent = text; c.title = text; }
 
@@ -245,9 +250,22 @@
       throw Object.assign(new Error(`Etap „${label}” nie powiódł się (${errText(e)}).`), { step: label, orig: e });
     }
   }
-  async function openBle() {
+  /* Typowe nazwy adapterów OBD BLE – pozwalają ukryć w oknie wyboru zegarki, słuchawki itp. */
+  const NAME_PREFIXES = ['OBD', 'Obd', 'obd', 'IOS', 'iOS', 'ios', 'Android', 'V-LINK', 'VLINK', 'Vlink', 'vLink', 'vLinker', 'Vgate', 'iCar', 'VEEPEAK', 'Veepeak', 'KONNWEI', 'KW9', 'ELM', 'Elm', 'LELink', 'Viecar', 'Carista', 'OBDLink', 'MX+', 'Vaux', 'BLE', 'Bluetooth', 'Car', 'CAR', 'Scan'];
+  async function pickDevice(all) {
+    const opts = { acceptAllDevices: true, optionalServices: BLE_SERVICES };
+    if (all) return navigator.bluetooth.requestDevice(opts);
+    const filters = BLE_SERVICES.map(s => ({ services: [s] })).concat(NAME_PREFIXES.map(p => ({ namePrefix: p })));
+    try { return await navigator.bluetooth.requestDevice({ filters, optionalServices: BLE_SERVICES }); }
+    catch (e) {
+      if (e && e.name === 'NotFoundError') throw Object.assign(e, { filtered: true });
+      logLine('! BLE: filtr urządzeń nieobsługiwany (' + errText(e) + '), pokazuję wszystkie');
+      return navigator.bluetooth.requestDevice(opts);
+    }
+  }
+  async function openBle(all) {
     if (!navigator.bluetooth) throw Object.assign(new Error('nobt'), { code: 'nobt' });
-    const dev = await step('wybór urządzenia', () => navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SERVICES }));
+    const dev = await step(all ? 'wybór urządzenia (wszystkie)' : 'wybór adaptera OBD', () => pickDevice(all));
     logLine(`— wybrano: ${dev.name || '(bez nazwy)'}`);
     chip('Łączenie z ' + (dev.name || 'adapterem') + '…', 'busy');
     let srv = null;
@@ -315,7 +333,7 @@
   function friendly(e) {
     if (e.code === 'nobt') return 'Ta przeglądarka nie obsługuje Bluetooth ze stron. Na iPhonie otwórz aplikację w przeglądarce Bluefy, na Windows w Chrome lub Edge.';
     if (e.code === 'noserial') return 'Port COM działa tylko w Chrome lub Edge na komputerze.';
-    if (e.name === 'NotFoundError') return null;
+    if (e.name === 'NotFoundError') return e.filtered ? 'filtered' : null;
     if (e.name === 'SecurityError' || e.name === 'NotAllowedError') return framed
       ? 'W tym podglądzie przeglądarka blokuje Bluetooth i porty. Otwórz aplikację z własnego adresu HTTPS (instrukcja w zakładce Stan).'
       : 'Przeglądarka nie zezwoliła na połączenie. Strona musi być otwarta przez HTTPS.';
@@ -339,7 +357,7 @@
     $('#btnScan').disabled = !on || scanning; $('#btnState').disabled = !on;
     $('#btnBle').disabled = $('#btnSerial').disabled = $('#btnDemo').disabled = connecting;
   }
-  async function connect(kind) {
+  async function connect(kind, all) {
     if (connecting) return;
     connecting = true; setButtons();
     if (rec) $('#btnRec').click();
@@ -348,7 +366,7 @@
     $('#scanProgress').textContent = '';
     renderObd(); renderModules(); renderState(); updateAlerts(); buildTiles();
     try {
-      const t = kind === 'ble' ? await openBle() : kind === 'serial' ? await openSerial() : new DemoTransport();
+      const t = kind === 'ble' ? await openBle(all) : kind === 'serial' ? await openSerial() : new DemoTransport();
       tr = t; chip('Inicjalizacja adaptera…', 'busy');
       const e = new ELM(t, elmLog);
       e.onWarn = msg => { banner(msg, 'warn'); logLine('! ' + msg); };
@@ -370,7 +388,8 @@
       logLine('! ' + (err.message || err));
       const t = tr; tr = null; elm = null; mode = null; if (t) { try { await t.close(); } catch (e) {} }
       chip('Rozłączony', ''); setButtons(); buildTiles();
-      if (msg) { banner(msg, 'error'); $('#errBadge').hidden = true; }
+      if (msg === 'filtered') banner('Nie widzisz swojego adaptera na liście? Niektóre adaptery nie podają nazwy. Pokaż wszystkie urządzenia i wybierz to, które znika z listy po wyjęciu adaptera z gniazda.', 'info', { label: 'Pokaż wszystkie urządzenia', fn: () => connect('ble', true) });
+      else if (msg) { banner(msg, 'error'); $('#errBadge').hidden = true; }
     }
   }
   $('#btnBle').onclick = () => connect('ble');
