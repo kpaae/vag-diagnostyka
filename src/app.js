@@ -225,25 +225,61 @@
   if (framed) { $('#btnCsvDl').hidden = true; $('#btnReportDl').hidden = true; }
 
   /* ---------- połączenie ---------- */
-  const BLE_SERVICES = [0xfff0, 0xffe0, 0x18f0, 0xffb0, 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '0000ae30-0000-1000-8000-00805f9b34fb'];
+  /* Usługi BLE spotykane w adapterach ELM327 (pełne UUID – część przeglądarek na iOS nie przyjmuje skrótów 16-bitowych). */
+  const u16uuid = n => '0000' + n.toString(16).padStart(4, '0') + '-0000-1000-8000-00805f9b34fb';
+  const BLE_SERVICES = [
+    'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // vLinker, Vgate iCar Pro BLE
+    u16uuid(0xfff0), // Veepeak, Konnwei, wiele klonów
+    u16uuid(0xffe0), // klony z modułem HM-10
+    u16uuid(0x18f0), // OBDLink CX / MX+ i inne
+    u16uuid(0xffb0), u16uuid(0xae30), u16uuid(0xbeef), u16uuid(0xfee7)
+  ];
+  const props = c => Object.entries({ r: 'read', w: 'write', wn: 'writeWithoutResponse', n: 'notify', i: 'indicate' }).filter(([, p]) => c.properties[p]).map(([k]) => k).join('/');
+  const errText = e => (e && (e.message || e.name)) ? `${e.name && e.name !== 'Error' ? e.name + ': ' : ''}${e.message || ''}` : String(e);
+  async function step(label, fn) {
+    logLine('… BLE: ' + label);
+    try { return await fn(); }
+    catch (e) {
+      if (e && (e.name === 'NotFoundError' || typeof e.code === 'string')) throw e;
+      logLine('! BLE: ' + label + ' – ' + errText(e));
+      throw Object.assign(new Error(`Etap „${label}” nie powiódł się (${errText(e)}).`), { step: label, orig: e });
+    }
+  }
   async function openBle() {
     if (!navigator.bluetooth) throw Object.assign(new Error('nobt'), { code: 'nobt' });
-    const dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SERVICES });
+    const dev = await step('wybór urządzenia', () => navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SERVICES }));
+    logLine(`— wybrano: ${dev.name || '(bez nazwy)'}`);
     chip('Łączenie z ' + (dev.name || 'adapterem') + '…', 'busy');
-    const srv = await dev.gatt.connect();
-    let services = [];
-    try { services = await srv.getPrimaryServices(); } catch (e) { for (const u of BLE_SERVICES) { try { services.push(await srv.getPrimaryService(u)); } catch (_) {} } }
-    let wr = null, nt = null;
-    for (const s of services) {
-      let chars = []; try { chars = await s.getCharacteristics(); } catch (e) { continue; }
-      const n = chars.find(c => c.properties.notify || c.properties.indicate);
-      const w = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
-      if (n && w) { nt = n; wr = w; break; }
-      if (!nt && n) nt = n; if (!wr && w) wr = w;
+    let srv = null;
+    for (let a = 1; a <= 3 && !srv; a++) {
+      try { srv = await step(`łączenie z adapterem (próba ${a})`, () => dev.gatt.connect()); }
+      catch (e) { if (a === 3) throw e; await sleep(800); }
     }
-    if (!nt || !wr) { try { dev.gatt.disconnect(); } catch (e) {} throw new Error('To urządzenie nie udostępnia kanału ELM327. Wybierz adapter OBD z obsługą Bluetooth LE.'); }
+    let services = [];
+    for (const u of BLE_SERVICES) { try { services.push(await srv.getPrimaryService(u)); } catch (_) {} }
+    if (!services.length) { try { services = await srv.getPrimaryServices(); } catch (e) { logLine('! BLE: lista usług – ' + errText(e)); } }
+    logLine('— usługi: ' + (services.map(s => s.uuid).join(', ') || 'brak'));
+    if (!services.length) { try { dev.gatt.disconnect(); } catch (e) {} throw new Error(`Adapter ${dev.name || ''} nie udostępnia żadnej znanej usługi BLE. Wyślij zrzut zakładki Komunikacja – dopiszę jego UUID.`); }
+    // Kandydaci: najpierw usługa z jedną cechą notify+write (vLinker), potem para notify + write w tej samej usłudze.
+    const pairs = [];
+    for (const s of services) {
+      let chars = []; try { chars = await s.getCharacteristics(); } catch (e) { logLine('! BLE: cechy ' + s.uuid + ' – ' + errText(e)); continue; }
+      chars.forEach(c => logLine(`   ${s.uuid.slice(4, 8)} → ${c.uuid} [${props(c)}]`));
+      const isN = c => c.properties.notify || c.properties.indicate, isW = c => c.properties.write || c.properties.writeWithoutResponse;
+      const both = chars.find(c => isN(c) && isW(c));
+      if (both) pairs.push([both, both]);
+      const n = chars.find(isN), w = chars.find(c => isW(c) && c !== n) || chars.find(isW);
+      if (n && w && !(both && n === both)) pairs.push([n, w]);
+    }
+    if (!pairs.length) { try { dev.gatt.disconnect(); } catch (e) {} throw new Error('Nie znalazłem kanału ELM327 w tym urządzeniu. Upewnij się, że wybrałeś adapter OBD, a nie inne urządzenie.'); }
+    let nt = null, wr = null, lastErr = null;
+    for (const [n, w] of pairs) {
+      try { await step('włączenie powiadomień ' + n.uuid.slice(0, 8), () => n.startNotifications()); nt = n; wr = w; break; }
+      catch (e) { lastErr = e; }
+    }
+    if (!nt) { try { dev.gatt.disconnect(); } catch (e) {} throw lastErr; }
+    logLine(`— kanał: odczyt ${nt.uuid}, zapis ${wr.uuid}`);
     const dec = new TextDecoder(), enc = new TextEncoder(); let cb = null; let closed = false;
-    await nt.startNotifications();
     nt.addEventListener('characteristicvaluechanged', e => { cb && cb(dec.decode(e.target.value)); });
     dev.addEventListener('gattserverdisconnected', () => { if (!closed) lost(); });
     const noResp = wr.properties.writeWithoutResponse;
@@ -283,7 +319,8 @@
     if (e.name === 'SecurityError' || e.name === 'NotAllowedError') return framed
       ? 'W tym podglądzie przeglądarka blokuje Bluetooth i porty. Otwórz aplikację z własnego adresu HTTPS (instrukcja w zakładce Stan).'
       : 'Przeglądarka nie zezwoliła na połączenie. Strona musi być otwarta przez HTTPS.';
-    return e.message || String(e);
+    const base = e.message || String(e);
+    return base + ' Zamknij całkowicie inne aplikacje OBD (adapter przyjmuje jedno połączenie), odczekaj kilka sekund i spróbuj ponownie. Szczegóły są w zakładce Komunikacja.';
   }
   function lost() {
     if (!mode) return;
@@ -308,6 +345,7 @@
     if (rec) $('#btnRec').click();
     await disconnect();
     vals = {}; seen = {}; hist = {}; mm = {}; report = blankReport(); cycle = 0;
+    $('#scanProgress').textContent = '';
     renderObd(); renderModules(); renderState(); updateAlerts(); buildTiles();
     try {
       const t = kind === 'ble' ? await openBle() : kind === 'serial' ? await openSerial() : new DemoTransport();
@@ -332,7 +370,7 @@
       logLine('! ' + (err.message || err));
       const t = tr; tr = null; elm = null; mode = null; if (t) { try { await t.close(); } catch (e) {} }
       chip('Rozłączony', ''); setButtons(); buildTiles();
-      if (msg) banner(msg, 'error');
+      if (msg) { banner(msg, 'error'); $('#errBadge').hidden = true; }
     }
   }
   $('#btnBle').onclick = () => connect('ble');
@@ -426,7 +464,7 @@
       report.freeze = await e.op(() => e.readFreeze(sup));
       renderObd();
       for (const m of MODULES) {
-        if (e !== elm) return;
+        if (e !== elm) { prog(''); return; }
         prog(`Moduł ${m.addr} · ${m.name}…`);
         const r = await e.op(() => e.scanModule(m, true));
         if (r) { report.modules.push(r); renderModules(); } else report.absent.push(m);
