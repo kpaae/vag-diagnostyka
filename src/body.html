@@ -1,0 +1,133 @@
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="mark">VAG</span>
+      <div>
+        <h1>Diagnostyka</h1>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS</p>
+      </div>
+    </div>
+    <div class="conn">
+      <span id="connChip" class="chip"><span>Rozłączony</span></span>
+      <button id="btnBle" class="btn primary" type="button">Bluetooth</button>
+      <button id="btnSerial" class="btn" type="button">Port COM</button>
+      <button id="btnDemo" class="btn ghost" type="button">Demo</button>
+      <button id="btnDisc" class="btn ghost" type="button" hidden>Rozłącz</button>
+    </div>
+  </header>
+  <div id="banner" class="banner" hidden><span id="bannerText"></span><button id="bannerClose" type="button" aria-label="Zamknij">×</button></div>
+</div>
+
+<div class="tabbar">
+  <div class="wrap">
+    <nav class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="live" aria-selected="true">Na żywo</button>
+      <button type="button" role="tab" data-tab="errors" aria-selected="false">Błędy<span id="errBadge" class="badge" hidden></span></button>
+      <button type="button" role="tab" data-tab="state" aria-selected="false">Stan</button>
+      <button type="button" role="tab" data-tab="log" aria-selected="false">Komunikacja</button>
+    </nav>
+  </div>
+</div>
+
+<main class="wrap">
+  <section id="tab-live">
+    <div class="toolbar">
+      <div class="seg" id="groupSeg">
+        <button type="button" data-g="silnik">Silnik</button>
+        <button type="button" data-g="chlodzenie">Chłodzenie</button>
+        <button type="button" data-g="doladowanie">Doładowanie</button>
+        <button type="button" data-g="mieszanka">Mieszanka</button>
+        <button type="button" data-g="all">Wszystko</button>
+      </div>
+      <div class="actions">
+        <span id="rate" class="rate"></span>
+        <button id="btnPoll" class="btn" type="button" disabled>Pauza</button>
+        <button id="btnRec" class="btn" type="button" disabled>Nagrywaj</button>
+      </div>
+    </div>
+    <div id="recBox" class="recbox" hidden>
+      <span id="recInfo"></span>
+      <button id="btnCsvCopy" class="btn small" type="button">Kopiuj CSV</button>
+      <button id="btnCsvDl" class="btn small" type="button">Pobierz CSV</button>
+      <button id="btnRecClose" class="btn small ghost" type="button">Zamknij</button>
+    </div>
+    <div id="alerts" class="alerts" aria-live="polite"></div>
+    <div id="tiles"><p class="empty">Połącz adapter albo uruchom demo, żeby zobaczyć parametry.</p></div>
+  </section>
+
+  <section id="tab-errors" hidden>
+    <div class="toolbar">
+      <div class="actions">
+        <button id="btnScan" class="btn primary" type="button" disabled>Skanuj wszystkie moduły</button>
+        <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="fullScan"> Szukaj też modułów spoza listy (ok. 1 min)</label>
+      </div>
+      <div class="actions">
+        <button id="btnReport" class="btn" type="button">Kopiuj raport</button>
+        <button id="btnReportDl" class="btn ghost" type="button">Pobierz raport</button>
+      </div>
+    </div>
+    <p id="scanProgress" class="progress"></p>
+    <div id="copyBox" class="copybox" hidden>
+      <span class="muted">Schowek jest niedostępny. Zaznacz tekst i skopiuj go ręcznie.</span>
+      <textarea id="copyText" readonly></textarea>
+    </div>
+    <h2 class="sect">Silnik – kody OBD <small>tryby 03 / 07 / 0A</small></h2>
+    <div id="obdDtc"><p class="muted">Jeszcze nie odczytano.</p></div>
+    <h2 class="sect">Moduły VAG <small>UDS 0x19</small></h2>
+    <div id="modules"><p class="muted">Jeszcze nie skanowano.</p></div>
+  </section>
+
+  <section id="tab-state" hidden>
+    <div class="toolbar">
+      <div class="actions"><button id="btnState" class="btn" type="button" disabled>Odśwież</button></div>
+    </div>
+    <div class="cols">
+      <div class="card">
+        <h3 class="sect">Pojazd</h3>
+        <dl class="kv">
+          <dt>VIN</dt><dd id="sVin">—</dd>
+          <dt>Kontrolka MIL</dt><dd id="sMil">—</dd>
+          <dt>Kody emisyjne</dt><dd id="sCnt">—</dd>
+          <dt>Zapłon</dt><dd id="sIgn">—</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h3 class="sect">Gotowość systemów <small>readiness</small></h3>
+        <ul id="sReady" class="ready"><li class="muted">—</li></ul>
+      </div>
+      <div class="card">
+        <h3 class="sect">Adapter</h3>
+        <dl class="kv">
+          <dt>Układ</dt><dd id="sAd">—</dd>
+          <dt>Połączenie</dt><dd id="sConn">—</dd>
+          <dt>Napięcie</dt><dd id="sV">—</dd>
+          <dt>Kilka PID naraz</dt><dd id="sMp">—</dd>
+          <dt>Flow control</dt><dd id="sFc">—</dd>
+        </dl>
+      </div>
+    </div>
+    <h3 class="sect">Parametry udostępniane przez sterownik <small id="sPidCount"></small></h3>
+    <p id="sPids" class="pidlist">—</p>
+    <details class="help" id="help">
+      <summary>Jak uruchomić z prawdziwym adapterem</summary>
+      <ol>
+        <li>Aplikacja to jeden plik HTML. Umieść go pod adresem HTTPS, np. GitHub Pages, Netlify Drop albo Cloudflare Pages. Bluetooth ze strony działa tylko przez HTTPS.</li>
+        <li><b>iPhone:</b> zainstaluj przeglądarkę Bluefy z App Store, otwórz w niej adres aplikacji, włącz zapłon i naciśnij <b>Bluetooth</b>. iPhone łączy się tylko z adapterami BLE (Bluetooth 4.0+).</li>
+        <li><b>Windows:</b> otwórz aplikację w Chrome lub Edge. Adapter BLE: przycisk <b>Bluetooth</b>. Klasyczny adapter Bluetooth najpierw sparuj w ustawieniach Windows (PIN zwykle 1234 lub 0000), potem naciśnij <b>Port COM</b> i wybierz port „Standard Serial over Bluetooth”.</li>
+        <li>Po połączeniu aplikacja sama skanuje moduły i zbiera błędy. Kasowanie błędów zawsze wymaga potwierdzenia.</li>
+        <li>Kolory progów są orientacyjne. Nie zastępują danych serwisowych konkretnego silnika.</li>
+      </ol>
+    </details>
+  </section>
+
+  <section id="tab-log" hidden>
+    <div class="toolbar">
+      <span class="muted" style="font-size:14px">Surowa wymiana z adapterem, ostatnie 1500 linii. Przydaje się, gdy coś nie działa.</span>
+      <div class="actions">
+        <button id="btnLogCopy" class="btn small" type="button">Kopiuj</button>
+        <button id="btnLogClear" class="btn small ghost" type="button">Wyczyść</button>
+      </div>
+    </div>
+    <pre id="log" class="log"></pre>
+  </section>
+</main>
