@@ -152,6 +152,7 @@
 
   /* ---------- odczyt na żywo ---------- */
   function activeKeys() { return (view === 'all' ? GROUPS.map(g => g[0]) : [view]).flatMap(g => ORDER[g]).filter(avail); }
+  function allKeys() { return GROUPS.flatMap(g => ORDER[g[0]]).filter(avail); }
   function defsFor(keys) {
     const pids = new Set([0x0C, 0x04]);
     for (const k of keys) { const c = CAT[k]; if (c.derived) c.deps.forEach(p => pids.add(p)); else if (!c.special) pids.add(c.pid); }
@@ -168,7 +169,7 @@
   }
   async function pollLoop(run) {
     while (polling && run === pollRun && elm) {
-      const t0 = performance.now(); const keys = activeKeys(); const e = elm;
+      const t0 = performance.now(); const wanted = activeKeys(); const keys = cycle % 6 === 0 ? allKeys() : wanted; const e = elm;
       try {
         const res = await e.op(() => e.readLive(defsFor(keys)));
         if (keys.includes('adapterV') && (cycle % 10 === 0 || vals.adapterV == null)) { const v = await e.op(() => e.voltage()); if (v != null) res.adapterV = v; }
@@ -176,7 +177,7 @@
         Object.assign(vals, res);
         for (const d of DERIVED) { const v = d.calc(vals); if (v != null && isFinite(v)) { vals[d.key] = v; res[d.key] = v; } }
         take(res);
-        if (rec) { const row = { t: (Date.now() - rec.t0) / 1000 }; for (const k of keys) if (vals[k] != null && seen[k] === cycle) { row[k] = vals[k]; rec.keys.add(k); } rec.rows.push(row); $('#btnRec').textContent = `Zatrzymaj · ${rec.rows.length}`; }
+        if (rec) { const row = { t: (Date.now() - rec.t0) / 1000 }; for (const k of wanted) if (vals[k] != null && seen[k] === cycle) { row[k] = vals[k]; rec.keys.add(k); } rec.rows.push(row); $('#btnRec').textContent = `Zatrzymaj · ${rec.rows.length}`; }
         if (!$('#tab-live').hidden) updateTiles();
         updateAlerts();
       } catch (err) { logLine('! ' + err.message); }
@@ -467,6 +468,7 @@
       return `<div class="card${n ? ' has-err' : ''}"><div class="card-h"><span class="addr">${esc(m.addr)}</span><h3>${esc(m.name)}</h3><span class="n">${n} ${plural(n, 'błąd', 'błędy', 'błędów')}</span></div>
         ${ident ? `<div class="ident">${ident}</div>` : ''}
         ${m.err ? `<p class="muted" style="margin:0;font-size:13px">Nie udało się odczytać błędów: ${esc(m.err)}</p>` : n ? m.dtcs.map(d => dtcRow(d.full, d.desc, d.flags)).join('') : '<p class="noerr">Brak błędów</p>'}
+        ${m.untested ? `<p class="absent">Pominięto ${m.untested} ${plural(m.untested, 'pozycję', 'pozycje', 'pozycji')} z listy kodów obsługiwanych przez moduł, bez wykrytej usterki.</p>` : ''}
         ${n ? clearFoot('m' + m.tx, 'Kasuj błędy') : ''}</div>`;
     }).join('') + '</div>' + (report.absent.length ? `<p class="absent">Bez odpowiedzi (brak w aucie lub inny adres): ${report.absent.map(m => esc(m.addr + ' ' + m.name)).join(', ')}</p>` : '');
     updateBadge();
@@ -547,8 +549,10 @@
       if (m.err) L.push('   błąd odczytu: ' + m.err);
       else if (!m.dtcs.length) L.push('   brak błędów');
       else m.dtcs.forEach(d => L.push(`   ${d.full} [${d.flags.join(', ')}] ${d.desc}`.trimEnd()));
+      if (m.untested) L.push(`   (pominięto ${m.untested} ${plural(m.untested, 'pozycję', 'pozycje', 'pozycji')} z listy obsługiwanych kodów, bez usterki)`);
     }
     if (report.absent.length) L.push('Bez odpowiedzi: ' + report.absent.map(m => m.addr + ' ' + m.name).join(', '));
+    L.push('', 'Obsługiwane PID (tryb 01): ' + ([...sup].filter(p => p % 0x20 !== 0).sort((a, b) => a - b).map(hex2).join(' ') || '—'));
     L.push('', '== Parametry (ostatni odczyt) ==');
     for (const [g, label] of GROUPS) {
       const ks = ORDER[g].filter(k => vals[k] != null && avail(k)); if (!ks.length) continue;

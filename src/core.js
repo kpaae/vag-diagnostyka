@@ -231,7 +231,8 @@ function decodeUdsDtc(b0, b1, b2, st) {
   if (st & 0x08) flags.push('potwierdzony');
   if (st & 0x04) flags.push('oczekujący');
   if (st & 0x80) flags.push('kontrolka');
-  return { code, ftb: hex2(b2), full: `${code}-${hex2(b2)}`, status: st, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: DTC_DESC[code] || '' };
+  flags.push('status 0x' + hex2(st));
+  return { code, ftb: hex2(b2), full: `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: DTC_DESC[code] || '' };
 }
 
 function parseMode01(data, defs) {
@@ -437,20 +438,27 @@ class ELM {
   }
   async readModuleDtcs(mod) {
     await this.select(mod.tx, mod.rx);
-    let r = await this.request('1902FF'); let switched = false;
-    if (r.err && r.nrc) { const s = await this.request('1003'); if (!s.err) { switched = true; r = await this.request('1902FF'); } }
+    /* Maska 0xFF zwraca u VAG wszystkie kody obsługiwane przez moduł (status 0x50 = test jeszcze nie wykonany),
+       a nie tylko usterki. Pytamy o statusy usterek (0x2F), a drugi raz o same potwierdzone (0x08), gdy odpowiedź jest za długa. */
+    let r = null, switched = false;
+    for (const mask of [0x2F, 0x08]) {
+      r = await this.request('1902' + hex2(mask));
+      if (r.err && r.nrc && !switched) { const s = await this.request('1003'); if (!s.err) { switched = true; r = await this.request('1902' + hex2(mask)); } }
+      if (!r.err) break;
+    }
     if (switched) await this.request('1001');
-    if (r.err) return { err: r.err, dtcs: [] };
-    const b = bytesOf(r.data).slice(3); const dtcs = [];
-    for (let i = 0; i + 3 < b.length; i += 4) dtcs.push(decodeUdsDtc(b[i], b[i + 1], b[i + 2], b[i + 3]));
-    return { dtcs };
+    if (r.err) return { err: r.err, dtcs: [], untested: 0 };
+    const b = bytesOf(r.data).slice(3); const all = [];
+    for (let i = 0; i + 3 < b.length; i += 4) all.push(decodeUdsDtc(b[i], b[i + 1], b[i + 2], b[i + 3]));
+    const dtcs = all.filter(d => d.real);
+    return { dtcs, untested: all.length - dtcs.length };
   }
   async scanModule(mod, deep = true) {
     if (!(await this.probe(mod, deep))) return null;
     const info = { ...mod, ident: {} };
     for (const [did, label] of IDENT_DIDS) { const v = await this.readDid(did); if (v) info.ident[label] = v; }
     const d = await this.readModuleDtcs(mod);
-    info.dtcs = d.dtcs; if (d.err) info.err = d.err;
+    info.dtcs = d.dtcs; info.untested = d.untested || 0; if (d.err) info.err = d.err;
     return info;
   }
   async clearModule(mod) { await this.select(mod.tx, mod.rx); return this.request('14FFFFFF', { attempts: 6 }); }
@@ -506,7 +514,7 @@ class DemoTransport {
   }
   reset() {
     this.obdStored = [[0x02, 0x99]];
-    this.udsDtc = { '01': [[0x02, 0x99, 0x00, 0x08]], '03': [[0x50, 0xA0, 0x00, 0x08]], '19': [[0xC1, 0x21, 0x00, 0x08]] };
+    this.udsDtc = { '01': [[0x02, 0x99, 0x00, 0x08]], '03': [[0x50, 0xA0, 0x00, 0x08]], '19': [[0xC1, 0x21, 0x00, 0x08]], '09': [[0x00, 0x02, 0x07, 0x50], [0x00, 0x02, 0x0A, 0x50], [0x00, 0x03, 0x07, 0x40]] };
   }
   onData(cb) { this.cb = cb; }
   async write(s) {
