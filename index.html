@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#0f1215" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e8ebee" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <title>VAG Diagnostyka</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -232,7 +233,7 @@ details.help ol { padding-left: 20px; margin: 12px 0 4px; display: flex; flex-di
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-17 16:37 UTC</p>
       </div>
     </div>
     <div class="conn">
@@ -341,6 +342,16 @@ details.help ol { padding-left: 20px; margin: 12px 0 4px; display: flex; flex-di
     </div>
     <h3 class="sect">Parametry udostępniane przez sterownik <small id="sPidCount"></small></h3>
     <p id="sPids" class="pidlist">—</p>
+    <details class="help" id="iosHelp">
+      <summary>iPhone i iPad: dlaczego adapter się nie pokazuje</summary>
+      <ol>
+        <li>iOS nie pozwala żadnej aplikacji ani stronie łączyć się z klasycznym Bluetooth 3.0 (SPP). Dotyczy to też aplikacji z App Store. Taki adapter działa tylko z Androidem i Windowsem, niezależnie od przeglądarki.</li>
+        <li>iPhone widzi wyłącznie adaptery <b>Bluetooth LE (4.0+)</b>. Safari i Chrome na iOS nie mają Web Bluetooth, dlatego strona musi być otwarta w <b>Bluefy</b>.</li>
+        <li><b>Jak sprawdzić, który to adapter:</b> zainstaluj z App Store darmową aplikację <b>nRF Connect</b>, włącz zapłon i skanuj. Jeśli po wyjęciu adaptera z gniazda znika z listy jakieś urządzenie (nawet bez nazwy), to adapter jest BLE i da się go połączyć w Bluefy przez „Pokaż wszystkie urządzenia”. Jeśli nic nie znika, adapter jest klasyczny i na iPhonie nie zadziała.</li>
+        <li>Dla iPhone'a kup adapter BLE, np. vLinker MC+ (BLE), OBDLink CX, Veepeak OBDCheck BLE+ lub Vgate iCar Pro w wersji Bluetooth 4.0. Ten sam adapter będzie działał też na Androidzie i Windowsie.</li>
+        <li>Adaptery Wi-Fi nie pomogą: strona nie może otworzyć połączenia TCP z adapterem.</li>
+      </ol>
+    </details>
     <details class="help" id="help">
       <summary>Jak uruchomić z prawdziwym adapterem</summary>
       <ol>
@@ -1758,8 +1769,11 @@ function createPanels(api) {
       async close() { alive = false; try { await reader.cancel(); } catch (e) {} try { reader.releaseLock(); } catch (e) {} try { writer.releaseLock(); } catch (e) {} try { await port.close(); } catch (e) {} }
     };
   }
+  const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   function friendly(e) {
-    if (e.code === 'nobt') return 'Ta przeglądarka nie obsługuje Bluetooth ze stron. Na iPhonie otwórz aplikację w przeglądarce Bluefy, na Windows w Chrome lub Edge.';
+    if (e.code === 'nobt') return IOS
+      ? 'Safari i Chrome na iPhonie nie obsługują Bluetooth ze stron. Otwórz ten adres w przeglądarce Bluefy (App Store). Adapter musi być Bluetooth LE 4.0+, klasyczny 3.0 nie działa na iOS. Szczegóły w zakładce Stan.'
+      : 'Ta przeglądarka nie obsługuje Bluetooth ze stron. Użyj Chrome lub Edge.';
     if (e.code === 'noserial') return 'Port COM działa w Chrome lub Edge na komputerze oraz w aktualnym Chrome na Androidzie. Na iPhonie użyj przycisku Bluetooth.';
     if (e.name === 'NotFoundError') return e.filtered ? 'filtered' : null;
     if (e.name === 'SecurityError' || e.name === 'NotAllowedError') return framed
@@ -2001,6 +2015,11 @@ function createPanels(api) {
   syncSeg(); setButtons();
   setInterval(() => { if (elm && !$('#tab-state').hidden) renderState(); }, 3000);
   buildTiles();
+  if (!navigator.serial) $('#btnSerial').hidden = true;
+  if (IOS) {
+    if (!navigator.bluetooth) banner('Safari i Chrome na iPhonie nie obsługują Bluetooth ze stron. Otwórz ten adres w przeglądarce Bluefy (App Store).', 'warn');
+    else banner('iPhone łączy się tylko z adapterami Bluetooth LE (4.0+). Klasyczny adapter 3.0 nie jest widoczny na iOS. Jak to sprawdzić: zakładka Stan.', 'info');
+  }
 })();
 
 </script>

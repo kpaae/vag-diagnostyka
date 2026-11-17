@@ -343,8 +343,11 @@
       async close() { alive = false; try { await reader.cancel(); } catch (e) {} try { reader.releaseLock(); } catch (e) {} try { writer.releaseLock(); } catch (e) {} try { await port.close(); } catch (e) {} }
     };
   }
+  const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   function friendly(e) {
-    if (e.code === 'nobt') return 'Ta przeglądarka nie obsługuje Bluetooth ze stron. Na iPhonie otwórz aplikację w przeglądarce Bluefy, na Windows w Chrome lub Edge.';
+    if (e.code === 'nobt') return IOS
+      ? 'Safari i Chrome na iPhonie nie obsługują Bluetooth ze stron. Otwórz ten adres w przeglądarce Bluefy (App Store). Adapter musi być Bluetooth LE 4.0+, klasyczny 3.0 nie działa na iOS. Szczegóły w zakładce Stan.'
+      : 'Ta przeglądarka nie obsługuje Bluetooth ze stron. Użyj Chrome lub Edge.';
     if (e.code === 'noserial') return 'Port COM działa w Chrome lub Edge na komputerze oraz w aktualnym Chrome na Androidzie. Na iPhonie użyj przycisku Bluetooth.';
     if (e.name === 'NotFoundError') return e.filtered ? 'filtered' : null;
     if (e.name === 'SecurityError' || e.name === 'NotAllowedError') return framed
@@ -586,4 +589,9 @@
   syncSeg(); setButtons();
   setInterval(() => { if (elm && !$('#tab-state').hidden) renderState(); }, 3000);
   buildTiles();
+  if (!navigator.serial) $('#btnSerial').hidden = true;
+  if (IOS) {
+    if (!navigator.bluetooth) banner('Safari i Chrome na iPhonie nie obsługują Bluetooth ze stron. Otwórz ten adres w przeglądarce Bluefy (App Store).', 'warn');
+    else banner('iPhone łączy się tylko z adapterami Bluetooth LE (4.0+). Klasyczny adapter 3.0 nie jest widoczny na iOS. Jak to sprawdzić: zakładka Stan.', 'info');
+  }
 })();

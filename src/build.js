@@ -8,6 +8,7 @@ const body = rd('body.html');
 const core = rd('core.js').replace(/\nif \(typeof module[^\n]*\n?/, '\n');
 const panels = rd('panels.js');
 const app = rd('app.js');
+const ver = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
 const fonts = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">';
 
 const out = `<!doctype html>
@@ -18,6 +19,7 @@ const out = `<!doctype html>
 <meta name="theme-color" content="#0f1215" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#e8ebee" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <title>VAG Diagnostyka</title>
 ${fonts}
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
@@ -25,7 +27,7 @@ ${fonts}
 <body>
 <style>
 ${css}</style>
-${body}
+${body.replace('{{VER}}', ver)}
 <script>
 ${core}
 ${panels}

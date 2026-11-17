@@ -4,7 +4,7 @@
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build {{VER}}</p>
       </div>
     </div>
     <div class="conn">
@@ -113,6 +113,16 @@
     </div>
     <h3 class="sect">Parametry udostępniane przez sterownik <small id="sPidCount"></small></h3>
     <p id="sPids" class="pidlist">—</p>
+    <details class="help" id="iosHelp">
+      <summary>iPhone i iPad: dlaczego adapter się nie pokazuje</summary>
+      <ol>
+        <li>iOS nie pozwala żadnej aplikacji ani stronie łączyć się z klasycznym Bluetooth 3.0 (SPP). Dotyczy to też aplikacji z App Store. Taki adapter działa tylko z Androidem i Windowsem, niezależnie od przeglądarki.</li>
+        <li>iPhone widzi wyłącznie adaptery <b>Bluetooth LE (4.0+)</b>. Safari i Chrome na iOS nie mają Web Bluetooth, dlatego strona musi być otwarta w <b>Bluefy</b>.</li>
+        <li><b>Jak sprawdzić, który to adapter:</b> zainstaluj z App Store darmową aplikację <b>nRF Connect</b>, włącz zapłon i skanuj. Jeśli po wyjęciu adaptera z gniazda znika z listy jakieś urządzenie (nawet bez nazwy), to adapter jest BLE i da się go połączyć w Bluefy przez „Pokaż wszystkie urządzenia”. Jeśli nic nie znika, adapter jest klasyczny i na iPhonie nie zadziała.</li>
+        <li>Dla iPhone'a kup adapter BLE, np. vLinker MC+ (BLE), OBDLink CX, Veepeak OBDCheck BLE+ lub Vgate iCar Pro w wersji Bluetooth 4.0. Ten sam adapter będzie działał też na Androidzie i Windowsie.</li>
+        <li>Adaptery Wi-Fi nie pomogą: strona nie może otworzyć połączenia TCP z adapterem.</li>
+      </ol>
+    </details>
     <details class="help" id="help">
       <summary>Jak uruchomić z prawdziwym adapterem</summary>
       <ol>
