@@ -152,6 +152,60 @@ details.help { margin-top: 18px; background: var(--surface); border: 1px solid v
 details.help summary { cursor: pointer; font: 600 17px/1.2 var(--f-display); }
 details.help ol { padding-left: 20px; margin: 12px 0 4px; display: flex; flex-direction: column; gap: 8px; max-width: 68ch; }
 
+/* Panele diagnostyczne */
+.pstack { display: flex; flex-direction: column; gap: 12px; }
+.pstack > .banner { margin-bottom: 0; }
+.panel-intro { max-width: 70ch; }
+.ptitle { font: 600 26px/1.1 var(--f-display); margin: 0 0 6px; text-wrap: balance; }
+.panel-intro p { margin: 0; }
+.pgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px; }
+.small { font-size: 13px; margin: 0; }
+.card .sect { margin: 0; }
+.card .seg { align-self: flex-start; }
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; max-width: 70ch; }
+.minis { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(124px, 100%), 1fr)); gap: 8px; }
+.mini { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.mini span { display: block; font: 500 12px/1.25 var(--f-body); color: var(--muted); }
+.mini b { font: 600 25px/1.15 var(--f-display); font-variant-numeric: tabular-nums; }
+.mini small { font: 500 12px var(--f-body); color: var(--muted); margin-left: 4px; }
+.mini[data-s="warn"] b { color: var(--warn); }
+.mini[data-s="crit"] b { color: var(--crit); }
+.tstatus { font: 500 12px/1.45 var(--f-mono); color: var(--muted); margin: 0; min-height: 1.45em; }
+.card .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.checks li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); align-items: start; }
+.checks li:first-child { border-top: 0; padding-top: 2px; }
+.checks b { font-weight: 600; font-size: 14px; }
+.checks p { margin: 3px 0 0; font-size: 14px; line-height: 1.45; color: var(--muted); max-width: 72ch; }
+.vd { font: 600 11px/1 var(--f-mono); letter-spacing: .06em; text-transform: uppercase; padding: 5px 6px; border-radius: 4px; text-align: center; }
+.vd.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+.vd.warn { color: var(--bg); background: var(--warn); }
+.vd.crit { color: #fff; background: var(--crit); }
+.vd.info { color: var(--muted); background: var(--surface-2); }
+.vd.na { color: var(--muted); border: 1px dashed var(--line); }
+.chartbox { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+.chart { width: 100%; height: 220px; display: block; }
+.legend { margin: 0; font: 500 12px/1.4 var(--f-mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.sw { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--accent); vertical-align: middle; margin-right: 6px; }
+.sw.dash { border-top: 2px dashed var(--ink); }
+.sus { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; max-width: 72ch; }
+.sus b { display: block; font-weight: 600; }
+.sus span { color: var(--muted); font-size: 14px; }
+.concl { margin: 0; font-weight: 600; }
+.codes { display: flex; flex-direction: column; gap: 6px; }
+.codeline { display: flex; gap: 4px 10px; align-items: baseline; flex-wrap: wrap; font-size: 14px; }
+.codeline code { font: 600 14px var(--f-mono); }
+.codehead { margin: 0; font-weight: 600; }
+.codehead.crit { color: var(--crit); }
+.codehead.ok { color: var(--ok); }
+.ptest .steps { color: var(--ink); }
+.pstack details.help { margin-top: 0; }
+@media (max-width: 440px) {
+  .checks li { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .vd { justify-self: start; }
+  .chart { height: 190px; }
+}
+
 /* Log */
 .log { font: 12px/1.55 var(--f-mono); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; max-height: 65vh; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
 .copybox textarea { width: 100%; min-height: 160px; font: 12px/1.5 var(--f-mono); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }

@@ -5,7 +5,7 @@
   const ORDER = {
     silnik: ['rpm', 'speed', 'load', 'absload', 'tps', 'pedal', 'timing', 'tqDem', 'tqAct', 'fuelRate', 'fuelLvl', 'ecuV', 'adapterV', 'runTime'],
     chlodzenie: ['coolant', 'oil', 'iat', 'iatRise', 'ambient', 'cat1', 'cat2'],
-    doladowanie: ['boost', 'boostTarget', 'boostDev', 'map', 'mapX', 'boostCmdAbs', 'boostActAbs', 'baro', 'compIn', 'maf'],
+    doladowanie: ['boost', 'boostTarget', 'boostDev', 'wgCmd', 'wgAct', 'map', 'mapX', 'boostCmdAbs', 'boostActAbs', 'baro', 'compIn', 'maf'],
     mieszanka: ['lambdaA', 'lambdaV', 'lambdaCmd', 'lambdaDev', 'trimTotal', 'stft1', 'ltft1', 'stft2', 'ltft2', 'fuelSys', 'railP', 'railPabs', 'injTiming', 'o2s2', 'o2s2trim', 'lambdaI', 'lambdaVv']
   };
   const WIDE = { rpm: {}, coolant: {}, boost: { target: 'boostTarget' }, lambdaA: { target: 'lambdaCmd' }, lambdaV: { target: 'lambdaCmd' }, trimTotal: { zero: true } };
@@ -22,6 +22,7 @@
   const framed = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
 
   let elm = null, tr = null, mode = null, sup = new Set();
+  let panels = null, currentTab = 'live';
   let vals = {}, seen = {}, hist = {}, mm = {}, tiles = [];
   let polling = false, pollRun = 0, cycle = 0, rec = null, wake = null, scanning = false, connecting = false;
   let view = store.get('group', 'silnik'); if (!['silnik', 'chlodzenie', 'doladowanie', 'mieszanka', 'all'].includes(view)) view = 'silnik';
@@ -36,7 +37,7 @@
   const nf = {};
   function fmtNum(v, d) { if (!nf[d]) nf[d] = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: d, maximumFractionDigits: d }); if (Math.abs(v) < Math.pow(10, -d) / 2) v = 0; return nf[d].format(v); }
   function fmtVal(c, v) { if (v == null || (!c.text && !isFinite(v))) return '—'; if (c.fmt) return c.fmt(v); return fmtNum(v, c.d ?? 0); }
-  function tokens() { const s = getComputedStyle(document.documentElement); const g = n => s.getPropertyValue(n).trim(); return { accent: g('--accent'), warn: g('--warn'), crit: g('--crit') }; }
+  function tokens() { const s = getComputedStyle(document.documentElement); const g = n => s.getPropertyValue(n).trim(); return { accent: g('--accent'), warn: g('--warn'), crit: g('--crit'), ink: g('--ink'), muted: g('--muted'), line: g('--line'), mono: g('--f-mono') }; }
 
   /* ---------- komunikaty ---------- */
   function banner(text, kind = 'info', action) {
@@ -60,9 +61,11 @@
   /* ---------- zakładki ---------- */
   $$('.tabs button').forEach(b => b.addEventListener('click', () => {
     $$('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b ? 'true' : 'false'));
-    ['live', 'errors', 'state', 'log'].forEach(t => { $('#tab-' + t).hidden = t !== b.dataset.tab; });
+    ['live', 'boost', 'heat', 'errors', 'state', 'log'].forEach(t => { $('#tab-' + t).hidden = t !== b.dataset.tab; });
+    currentTab = b.dataset.tab;
     if (b.dataset.tab === 'log') renderLog();
     if (b.dataset.tab === 'live') { sizeSparks(); updateTiles(); }
+    panels && panels.onTab(currentTab);
   }));
 
   /* ---------- grupy i kafelki ---------- */
@@ -73,6 +76,7 @@
 
   function buildTiles() {
     const host = $('#tiles'); host.innerHTML = ''; tiles = [];
+    panels && panels.render();
     if (!elm) { host.innerHTML = '<p class="empty">Połącz adapter albo uruchom demo, żeby zobaczyć parametry.</p>'; return; }
     const groups = view === 'all' ? GROUPS : GROUPS.filter(g => g[0] === view);
     for (const [g, label] of groups) {
@@ -151,7 +155,10 @@
   }
 
   /* ---------- odczyt na żywo ---------- */
-  function activeKeys() { return (view === 'all' ? GROUPS.map(g => g[0]) : [view]).flatMap(g => ORDER[g]).filter(avail); }
+  function activeKeys() {
+    const pk = panels && panels.keysFor(currentTab);
+    if (pk) return pk.filter(avail);
+    return (view === 'all' ? GROUPS.map(g => g[0]) : [view]).flatMap(g => ORDER[g]).filter(avail); }
   function allKeys() { return GROUPS.flatMap(g => ORDER[g[0]]).filter(avail); }
   function defsFor(keys) {
     const pids = new Set([0x0C, 0x04]);
@@ -169,7 +176,7 @@
   }
   async function pollLoop(run) {
     while (polling && run === pollRun && elm) {
-      const t0 = performance.now(); const wanted = activeKeys(); const keys = cycle % 6 === 0 ? allKeys() : wanted; const e = elm;
+      const t0 = performance.now(); const wanted = activeKeys(); const keys = (cycle % 6 === 0 && !(panels && panels.busy())) ? allKeys() : wanted; const e = elm;
       try {
         const res = await e.op(() => e.readLive(defsFor(keys)));
         if (keys.includes('adapterV') && (cycle % 10 === 0 || vals.adapterV == null)) { const v = await e.op(() => e.voltage()); if (v != null) res.adapterV = v; }
@@ -179,6 +186,7 @@
         take(res);
         if (rec) { const row = { t: (Date.now() - rec.t0) / 1000 }; for (const k of wanted) if (vals[k] != null && seen[k] === cycle) { row[k] = vals[k]; rec.keys.add(k); } rec.rows.push(row); $('#btnRec').textContent = `Zatrzymaj · ${rec.rows.length}`; }
         if (!$('#tab-live').hidden) updateTiles();
+        panels && panels.tick();
         updateAlerts();
       } catch (err) { logLine('! ' + err.message); }
       cycle++;
@@ -225,7 +233,7 @@
   }
   function copyText(text, btn) {
     const done = () => { if (btn) { const o = btn.textContent; btn.textContent = 'Skopiowano'; setTimeout(() => { btn.textContent = o; }, 1500); } };
-    const fallback = () => { $('#copyBox').hidden = false; const ta = $('#copyText'); ta.value = text; if (btn && $('#tab-errors').hidden) $$('.tabs button')[1].click(); ta.focus(); ta.select(); };
+    const fallback = () => { $('#copyBox').hidden = false; const ta = $('#copyText'); ta.value = text; if (btn && $('#tab-errors').hidden) $('.tabs [data-tab="errors"]').click(); ta.focus(); ta.select(); };
     try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
   }
   if (framed) { $('#btnCsvDl').hidden = true; $('#btnReportDl').hidden = true; }
@@ -347,10 +355,12 @@
   }
   function lost() {
     if (!mode) return;
+    panels && panels.stopAll();
     stopPolling(); elm = null; tr = null; mode = null; setButtons();
     chip('Połączenie przerwane', ''); banner('Połączenie z adapterem zostało przerwane. Sprawdź adapter i połącz ponownie.', 'warn');
   }
   async function disconnect() {
+    panels && panels.stopAll();
     stopPolling();
     const t = tr; tr = null; elm = null; mode = null;
     if (t) { try { await t.close(); } catch (e) {} }
@@ -381,6 +391,7 @@
       if (!s.size) { logLine('— brak odpowiedzi na CAN 500 kb/s, próba automatycznego wyboru protokołu'); await e.send('ATSP0'); await e.send('0100', 10000); e.cur = null; s = await e.op(() => e.discoverPids()); }
       if (!s.size) throw new Error('Sterownik silnika nie odpowiada. Włącz zapłon i spróbuj ponownie.');
       elm = e; sup = s; mode = kind;
+      if (kind !== 'demo') store.set('real', '1');
       report.adapter = `${id} · ${t.name}`;
       chip(`${t.name} · ${id}`, kind === 'demo' ? 'demo' : 'on');
       if (kind === 'demo') banner('Tryb demo: dane są symulowane. Podłącz adapter przyciskiem Bluetooth lub Port COM, żeby czytać swój samochód.', 'info');
@@ -476,6 +487,7 @@
   function updateBadge() {
     const n = report.modules.reduce((a, m) => a + m.dtcs.length, 0) + (report.obd && report.obd.stored ? report.obd.stored.filter(d => !report.modules.some(m => m.dtcs.some(x => x.code === d.code))).length : 0);
     const b = $('#errBadge'); b.textContent = n; b.hidden = !n;
+    panels && panels.refresh();
   }
 
   async function runScan(full) {
@@ -552,6 +564,7 @@
       if (m.untested) L.push(`   (pominięto ${m.untested} ${plural(m.untested, 'pozycję', 'pozycje', 'pozycji')} z listy obsługiwanych kodów, bez usterki)`);
     }
     if (report.absent.length) L.push('Bez odpowiedzi: ' + report.absent.map(m => m.addr + ' ' + m.name).join(', '));
+    if (panels) L.push(...panels.reportLines());
     L.push('', 'Obsługiwane PID (tryb 01): ' + ([...sup].filter(p => p % 0x20 !== 0).sort((a, b) => a - b).map(hex2).join(' ') || '—'));
     L.push('', '== Parametry (ostatni odczyt) ==');
     for (const [g, label] of GROUPS) {
@@ -567,7 +580,15 @@
   $('#btnLogClear').onclick = () => { logBuf.length = 0; renderLog(); };
 
   /* ---------- start ---------- */
+  panels = createPanels({
+    vals: () => vals, avail, stateOf, tokens, store, CAT, DTC_DESC, MODULES,
+    esc, fmtNum, fmtVal, plural, copyText, logLine,
+    elm: () => elm, mode: () => mode, sup: () => sup, report: () => report,
+    renderErrors: () => { renderObd(); renderModules(); },
+    ensurePolling: () => { if (!polling) startPolling(); }
+  });
   syncSeg(); setButtons();
   setInterval(() => { if (elm && !$('#tab-state').hidden) renderState(); }, 3000);
-  connect('demo');
+  // Demo startuje sam tylko dla nowych osób; po pierwszym połączeniu z prawdziwym adapterem aplikacja czeka na połączenie.
+  if (store.get('real', '') === '1') buildTiles(); else connect('demo');
 })();

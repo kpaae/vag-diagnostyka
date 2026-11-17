@@ -22,6 +22,8 @@
   <div class="wrap">
     <nav class="tabs" role="tablist">
       <button type="button" role="tab" data-tab="live" aria-selected="true">Na żywo</button>
+      <button type="button" role="tab" data-tab="boost" aria-selected="false">P0299</button>
+      <button type="button" role="tab" data-tab="heat" aria-selected="false">Ogrzewanie</button>
       <button type="button" role="tab" data-tab="errors" aria-selected="false">Błędy<span id="errBadge" class="badge" hidden></span></button>
       <button type="button" role="tab" data-tab="state" aria-selected="false">Stan</button>
       <button type="button" role="tab" data-tab="log" aria-selected="false">Komunikacja</button>
@@ -54,6 +56,10 @@
     <div id="alerts" class="alerts" aria-live="polite"></div>
     <div id="tiles"><p class="empty">Połącz adapter albo uruchom demo, żeby zobaczyć parametry.</p></div>
   </section>
+
+  <section id="tab-boost" class="panel" hidden><div id="boostPanel" class="pstack"></div></section>
+
+  <section id="tab-heat" class="panel" hidden><div id="heatPanel" class="pstack"></div></section>
 
   <section id="tab-errors" hidden>
     <div class="toolbar">

@@ -26,6 +26,20 @@ Aplikacja pokazuje tylko te parametry, które sterownik zgłasza jako obsługiwa
 - kasowanie błędów z potwierdzeniem,
 - raport tekstowy do skopiowania.
 
+**Panel P0299** (za niskie doładowanie):
+- stan kodu P0299 i kodów powiązanych, zamrożona ramka,
+- sprawdzenie czujników ciśnienia przy wyłączonym silniku (kolektor i doładowanie kontra atmosferyczne),
+- test przyspieszenia z automatycznym wykryciem pełnego gazu: doładowanie rzeczywiste i zadane, odchyłka (bez pierwszych 1,5 s rozkręcania turbo), wastegate, temperatura dolotu, mieszanka i ciśnienie paliwa pod obciążeniem, korekty na biegu jałowym,
+- lista „od czego zacząć” ułożona według wyników.
+
+**Panel Ogrzewanie:**
+- wybór objawu i podpowiedź, co zwykle za nim stoi,
+- test nagrzewania z wykresem temperatury płynu i oleju: wiarygodność czujnika na zimnym starcie, tempo nagrzewania, czy silnik osiąga temperaturę roboczą, czy temperatura spada w jeździe,
+- wniosek: problem po stronie silnika (termostat) albo nagrzewnicy i nawiewu, z listą kontroli,
+- kody Climatronic i kody silnika związane z chłodzeniem.
+
+Wyniki obu testów trafiają do raportu, a dane można skopiować jako CSV.
+
 **Stan:** VIN, kontrolka MIL, gotowość systemów (readiness), lista obsługiwanych PID, surowy log komunikacji.
 
 ## Wymagania
