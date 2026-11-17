@@ -49,7 +49,6 @@ h1 { font: 600 27px/1 var(--f-display); margin: 0; letter-spacing: .01em; }
 .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .chip[data-s="on"]::before { background: var(--ok); }
-.chip[data-s="demo"]::before { background: var(--accent); }
 .chip[data-s="busy"]::before { background: var(--warn); }
 
 .btn { font: 500 14px/1 var(--f-body); padding: 10px 14px; min-height: 40px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
@@ -240,7 +239,6 @@ details.help ol { padding-left: 20px; margin: 12px 0 4px; display: flex; flex-di
       <span id="connChip" class="chip"><span>Rozłączony</span></span>
       <button id="btnBle" class="btn primary" type="button">Bluetooth</button>
       <button id="btnSerial" class="btn" type="button">Port COM</button>
-      <button id="btnDemo" class="btn ghost" type="button">Demo</button>
       <button id="btnDisc" class="btn ghost" type="button" hidden>Rozłącz</button>
     </div>
   </header>
@@ -283,7 +281,7 @@ details.help ol { padding-left: 20px; margin: 12px 0 4px; display: flex; flex-di
       <button id="btnRecClose" class="btn small ghost" type="button">Zamknij</button>
     </div>
     <div id="alerts" class="alerts" aria-live="polite"></div>
-    <div id="tiles"><p class="empty">Połącz adapter albo uruchom demo, żeby zobaczyć parametry.</p></div>
+    <div id="tiles"><p class="empty">Połącz adapter, żeby zobaczyć parametry.</p></div>
   </section>
 
   <section id="tab-boost" class="panel" hidden><div id="boostPanel" class="pstack"></div></section>
@@ -858,152 +856,6 @@ class ELM {
   }
 }
 
-/* ===== Symulator adaptera (tryb demo) ===== */
-const DEMO_VIN = 'VSSZZZDEMO0000001';
-const DEMO_MODS = {
-  0x7E0: { addr: '01', sys: '1.8 TSI  DEMO', part: 'DEMO-01-0000', sw: '0001' },
-  0x7E1: { addr: '02', sys: 'DSG  DEMO', part: 'DEMO-02-0000', sw: '0001' },
-  0x713: { addr: '03', sys: 'ESP  DEMO', part: 'DEMO-03-0000', sw: '0001' },
-  0x70E: { addr: '09', sys: 'BCM  DEMO', part: 'DEMO-09-0000', sw: '0001' },
-  0x715: { addr: '15', sys: 'AIRBAG  DEMO', part: 'DEMO-15-0000', sw: '0001' },
-  0x714: { addr: '17', sys: 'KOMBI  DEMO', part: 'DEMO-17-0000', sw: '0001' },
-  0x710: { addr: '19', sys: 'GATEWAY  DEMO', part: 'DEMO-19-0000', sw: '0001' },
-  0x712: { addr: '44', sys: 'EPS  DEMO', part: 'DEMO-44-0000', sw: '0001' }
-};
-const W2 = v => { const n = Math.max(0, Math.min(65535, Math.round(v))); return [n >> 8, n & 255]; };
-const B1 = v => Math.max(0, Math.min(255, Math.round(v)));
-const ENC = {
-  0x03: s => [s.fuelSys, 0], 0x04: s => [B1(s.load * 2.55)], 0x05: s => [B1(s.coolant + 40)],
-  0x06: s => [B1((s.stft + 100) * 1.28)], 0x07: s => [B1((s.ltft + 100) * 1.28)],
-  0x0B: s => [B1(s.map)], 0x0C: s => W2(s.rpm * 4), 0x0D: s => [B1(s.speed)], 0x0E: s => [B1((s.timing + 64) * 2)],
-  0x0F: s => [B1(s.iat + 40)], 0x10: s => W2(s.maf * 100), 0x11: s => [B1(s.tps * 2.55)],
-  0x15: s => [B1(s.o2s2 * 200), 0xFF], 0x1F: s => W2(s.runTime), 0x23: s => W2(s.railP * 10), 0x2F: s => [B1(s.fuelLvl * 2.55)],
-  0x33: s => [B1(s.baro)], 0x34: s => [...W2(s.lambdaA * 32768), ...W2((s.lambdaI + 128) * 256)],
-  0x3C: s => W2((s.cat1 + 40) * 10), 0x3E: s => W2((s.cat2 + 40) * 10), 0x42: s => W2(s.ecuV * 1000),
-  0x43: s => W2(s.absload * 2.55), 0x44: s => W2(s.lambdaCmd * 32768), 0x46: s => [B1(s.ambient + 40)],
-  0x49: s => [B1(s.pedal * 2.55)], 0x5C: s => [B1(s.oil + 40)], 0x5E: s => W2(s.fuelRate * 20),
-  0x61: s => [B1(s.tqDem + 125)], 0x62: s => [B1(s.tqAct + 125)],
-  0x70: s => [0x03, ...W2(s.boostCmdAbs * 32), ...W2(s.boostActAbs * 32), 0, 0, 0, 0, 0x00],
-  0x87: s => [0x01, ...W2(s.mapX * 32), 0, 0]
-};
-
-class DemoTransport {
-  constructor() {
-    this.name = 'Demo'; this.cb = null; this.tx = 0x7E0; this.t0 = Date.now(); this.last = 0;
-    this.boost = -0.6; this.iat = 24; this.reset();
-    this.freeze = { fuelSys: 4, load: 94, coolant: 91, stft: 1.2, ltft: 4.7, map: 196, rpm: 4120, speed: 88, timing: 12.5, iat: 47, maf: 118, tps: 96 };
-  }
-  reset() {
-    this.obdStored = [[0x02, 0x99]];
-    this.udsDtc = { '01': [[0x02, 0x99, 0x00, 0x08]], '03': [[0x50, 0xA0, 0x00, 0x08]], '19': [[0xC1, 0x21, 0x00, 0x08]], '09': [[0x00, 0x02, 0x07, 0x50], [0x00, 0x02, 0x0A, 0x50], [0x00, 0x03, 0x07, 0x40]] };
-  }
-  onData(cb) { this.cb = cb; }
-  async write(s) {
-    const cmd = s.replace(/[\r\n\s]/g, '').toUpperCase();
-    const lines = this.handle(cmd);
-    setTimeout(() => { this.cb && this.cb(lines.join('\r') + '\r\r>'); }, 15 + Math.random() * 25);
-  }
-  close() {}
-  handle(c) {
-    if (c.startsWith('AT')) {
-      if (c === 'ATZ' || c === 'ATI') return ['ELM327 v1.5'];
-      if (c === 'ATRV') return [this.sim().adapterV.toFixed(1) + 'V'];
-      if (c.startsWith('ATSH')) { this.tx = parseInt(c.slice(4), 16); return ['OK']; }
-      return ['OK'];
-    }
-    if (!/^[0-9A-F]+$/.test(c) || c.length % 2) return ['?'];
-    const q = bytesOf(c);
-    let r = null;
-    if (this.tx === 0x7E0 || this.tx === 0x7DF) r = this.engine(q);
-    else if (DEMO_MODS[this.tx]) r = this.uds(q, DEMO_MODS[this.tx]);
-    return r ? this.frame(r) : ['NO DATA'];
-  }
-  frame(b) {
-    if (b.length <= 7) return [b.map(hex2).join('')];
-    const lines = [hex3(b.length), '0:' + b.slice(0, 6).map(hex2).join('')];
-    let idx = 1;
-    for (let i = 6; i < b.length; i += 7) { lines.push((idx % 16).toString(16).toUpperCase() + ':' + b.slice(i, i + 7).map(hex2).join('')); idx++; }
-    return lines;
-  }
-  bitmap(base) {
-    const sup = Object.keys(ENC).map(Number).concat([0x01]);
-    const b = [0, 0, 0, 0];
-    for (const p of sup) if (p > base && p <= base + 32) { const i = p - base - 1; b[i >> 3] |= 0x80 >> (i & 7); }
-    if (sup.some(p => p > base + 32)) b[3] |= 0x01;
-    return b;
-  }
-  engine(q) {
-    const mode = q[0];
-    if (mode === 0x01) {
-      const pids = q.slice(1);
-      if (pids.length === 1 && pids[0] % 0x20 === 0) return [0x41, pids[0], ...this.bitmap(pids[0])];
-      if (pids.length === 1 && pids[0] === 0x01) return [0x41, 0x01, this.obdStored.length, 0x07, 0x65, 0x04];
-      const s = this.sim(); const out = [0x41];
-      for (const p of pids) { const e = ENC[p]; if (e) out.push(p, ...e(s).map(B1)); }
-      return out.length > 1 ? out : null;
-    }
-    if (mode === 0x02) {
-      const p = q[1];
-      if (p === 0x02) { const d = this.obdStored[0] || [0, 0]; return [0x42, 0x02, 0x00, ...d]; }
-      const e = ENC[p]; return (e && this.obdStored.length) ? [0x42, p, 0x00, ...e(this.freeze).map(B1)] : null;
-    }
-    if (mode === 0x03) return [0x43, this.obdStored.length, ...this.obdStored.flat()];
-    if (mode === 0x07) return [0x47, 0x00];
-    if (mode === 0x0A) return [0x4A, 0x00];
-    if (mode === 0x04) { this.obdStored = []; this.udsDtc['01'] = []; return [0x44]; }
-    if (mode === 0x09 && q[1] === 0x02) return [0x49, 0x02, 0x01, ...[...DEMO_VIN].map(c => c.charCodeAt(0))];
-    return this.uds(q, DEMO_MODS[0x7E0]);
-  }
-  uds(q, m) {
-    const sid = q[0]; const neg = c => [0x7F, sid, c];
-    if (sid === 0x3E) return [0x7E, 0x00];
-    if (sid === 0x10) return [0x50, q[1], 0x00, 0x32, 0x01, 0xF4];
-    if (sid === 0x22) {
-      const did = u16(q[1], q[2]);
-      const txt = { 0xF187: m.part, 0xF197: m.sys, 0xF189: m.sw, 0xF190: DEMO_VIN }[did];
-      if (txt == null) return neg(0x31);
-      return [0x62, q[1], q[2], ...[...txt].map(c => c.charCodeAt(0))];
-    }
-    if (sid === 0x19 && q[1] === 0x02) return [0x59, 0x02, 0xFF, ...(this.udsDtc[m.addr] || []).flat()];
-    if (sid === 0x14) { this.udsDtc[m.addr] = []; if (m.addr === '01') this.obdStored = []; return [0x54]; }
-    return neg(0x11);
-  }
-  sim() {
-    const now = Date.now(); const t = (now - this.t0) / 1000;
-    const dt = this.last ? Math.min(1, (now - this.last) / 1000) : 0.2; this.last = now;
-    const warm = Math.min(1, t / 120);
-    const ph = t % 26; const R = a => (Math.random() - 0.5) * a;
-    let rpm, load, tps, cmd, speed, cut = false, accel = false, k = 0, idle = false;
-    if (ph < 8) { idle = true; rpm = 785 + R(20); load = 21 + R(2); tps = 0; cmd = -0.62; speed = 0; }
-    else if (ph < 14) { k = (ph - 8) / 6; accel = true; rpm = 1600 + 4200 * k + R(40); load = 88 + 8 * k; tps = 96; cmd = 1.2; speed = 25 + 95 * k; }
-    else if (ph < 20) { rpm = 2350 + R(30); load = 36 + R(3); tps = 17; cmd = 0.04; speed = 105; }
-    else if (ph < 23) { k = (ph - 20) / 3; rpm = 2350 - 1450 * k; load = 11; tps = 0; cmd = -0.72; cut = true; speed = 105 - 70 * k; }
-    else { idle = true; rpm = 790 + R(20); load = 22; tps = 0; cmd = -0.62; speed = 0; }
-    const target = accel ? Math.min(cmd, 0.97) : cmd; // turbo nie dobija do zadanego – pasuje do P0299
-    this.boost += (target - this.boost) * (1 - Math.exp(-dt * 3));
-    this.iat += ((accel ? 52 : 24) - this.iat) * (1 - Math.exp(-dt * 0.5));
-    const baro = 99, ambient = 9;
-    const actAbs = baro + this.boost * 100, cmdAbs = baro + cmd * 100;
-    const lambdaCmd = accel && k > 0.25 ? 0.86 : 1.0;
-    const fuelSys = warm < 0.35 ? 1 : (cut ? 4 : (accel && k > 0.25 ? 4 : 2));
-    const lambdaA = cut ? 1.99 : lambdaCmd + R(0.02);
-    const maf = Math.max(2, rpm * 1.8 / 120 * 1.2 * (load / 100) * (1 + Math.max(0, this.boost)));
-    return {
-      rpm, load, absload: load * 1.1, tps, pedal: accel ? 100 : (tps > 0 ? tps + 3 : 0), speed,
-      timing: accel ? 9 + 6 * k : cut ? 0 : idle ? 7 + R(2) : 31,
-      coolant: Math.round(64 + 26 * warm + (accel ? 2 : 0)), oil: Math.round(50 + 42 * warm + (accel ? 4 * k : 0)),
-      iat: Math.round(this.iat), ambient, cat1: 380 + 420 * warm + (accel ? 120 * k : 0), cat2: 300 + 380 * warm,
-      map: Math.min(255, Math.max(20, actAbs)), mapX: Math.max(20, actAbs), baro,
-      boostCmdAbs: Math.max(20, cmdAbs), boostActAbs: Math.max(20, actAbs), maf,
-      lambdaCmd, lambdaA, lambdaI: (lambdaA - 1) * 1.2, stft: cut ? 0 : R(5), ltft: 4.7, fuelSys,
-      railP: accel ? 160 + 40 * k : cut ? 40 : idle ? 52 : 85, o2s2: cut ? 0.05 : 0.68 + R(0.03),
-      tqDem: accel ? 95 : cut ? 0 : idle ? 4 : 24, tqAct: accel ? 88 : cut ? 0 : idle ? 4 : 23,
-      fuelRate: cut ? 0 : maf / (14.7 * lambdaA) * 3.6 / 0.745, fuelLvl: 62, runTime: Math.round(t),
-      ecuV: 14.15 + R(0.06), adapterV: 14.1 + R(0.1)
-    };
-  }
-}
-
 
 /* ===== Panele diagnostyczne: P0299 (doładowanie) i ogrzewanie ===== */
 function createPanels(api) {
@@ -1036,11 +888,6 @@ function createPanels(api) {
       el.querySelector('b').textContent = v == null ? '—' : api.fmtVal(CAT[k], v);
       el.dataset.s = v == null ? '' : api.stateOf(k, v);
     });
-  }
-  function demoNote() {
-    if (api.mode() === 'demo') return '<div class="banner info"><span>Tryb demo: dane są symulowane, łącznie z kodem P0299. To nie jest Twoje auto.</span></div>';
-    if (!api.elm()) return '<div class="banner"><span>Połącz adapter, żeby korzystać z tego panelu.</span></div>';
-    return '';
   }
   function codeHits(codes, addrs) {
     const rep = api.report(), hits = [], seen = new Set();
@@ -1262,7 +1109,7 @@ function createPanels(api) {
   function renderBoost() {
     const host = $('#boostPanel'); if (!host) return;
     const on = !!api.elm();
-    host.innerHTML = `${demoNote()}
+    host.innerHTML = `
       <div class="panel-intro"><h2 class="ptitle">P0299 · za niskie doładowanie</h2>
         <p class="muted">Sterownik zapisuje ten kod, gdy rzeczywiste doładowanie przez dłuższą chwilę jest niższe od zadanego. Panel sprawdza czujniki, mierzy przyspieszenie i wskazuje, od czego zacząć.</p></div>
       <div class="pgrid">
@@ -1427,7 +1274,7 @@ function createPanels(api) {
   function renderHeat() {
     const host = $('#heatPanel'); if (!host) return;
     const on = !!api.elm();
-    host.innerHTML = `${demoNote()}
+    host.innerHTML = `
       <div class="panel-intro"><h2 class="ptitle">Ogrzewanie</h2>
         <p class="muted">Najpierw sprawdzamy, czy silnik dochodzi do temperatury roboczej. Jeśli tak, przyczyna leży po stronie nagrzewnicy i nawiewu. Jeśli nie, winny jest układ chłodzenia silnika, najczęściej termostat.</p></div>
       <div class="card"><h3 class="sect">Objaw</h3>
@@ -1645,7 +1492,7 @@ function createPanels(api) {
   function buildTiles() {
     const host = $('#tiles'); host.innerHTML = ''; tiles = [];
     panels && panels.render();
-    if (!elm) { host.innerHTML = '<p class="empty">Połącz adapter albo uruchom demo, żeby zobaczyć parametry.</p>'; return; }
+    if (!elm) { host.innerHTML = '<p class="empty">Połącz adapter, żeby zobaczyć parametry.</p>'; return; }
     const groups = view === 'all' ? GROUPS : GROUPS.filter(g => g[0] === view);
     for (const [g, label] of groups) {
       const keys = ORDER[g].filter(avail);
@@ -1938,7 +1785,7 @@ function createPanels(api) {
     const on = !!elm;
     $('#btnDisc').hidden = !on; $('#btnPoll').disabled = !on; $('#btnRec').disabled = !on;
     $('#btnScan').disabled = !on || scanning; $('#btnState').disabled = !on;
-    $('#btnBle').disabled = $('#btnSerial').disabled = $('#btnDemo').disabled = connecting;
+    $('#btnBle').disabled = $('#btnSerial').disabled = connecting;
   }
   async function connect(kind, all) {
     if (connecting) return;
@@ -1949,7 +1796,7 @@ function createPanels(api) {
     $('#scanProgress').textContent = '';
     renderObd(); renderModules(); renderState(); updateAlerts(); buildTiles();
     try {
-      const t = kind === 'ble' ? await openBle(all) : kind === 'serial' ? await openSerial() : new DemoTransport();
+      const t = kind === 'ble' ? await openBle(all) : await openSerial();
       tr = t; chip('Inicjalizacja adaptera…', 'busy');
       const e = new ELM(t, elmLog);
       e.onWarn = msg => { banner(msg, 'warn'); logLine('! ' + msg); };
@@ -1959,11 +1806,9 @@ function createPanels(api) {
       if (!s.size) { logLine('— brak odpowiedzi na CAN 500 kb/s, próba automatycznego wyboru protokołu'); await e.send('ATSP0'); await e.send('0100', 10000); e.cur = null; s = await e.op(() => e.discoverPids()); }
       if (!s.size) throw new Error('Sterownik silnika nie odpowiada. Włącz zapłon i spróbuj ponownie.');
       elm = e; sup = s; mode = kind;
-      if (kind !== 'demo') store.set('real', '1');
       report.adapter = `${id} · ${t.name}`;
-      chip(`${t.name} · ${id}`, kind === 'demo' ? 'demo' : 'on');
-      if (kind === 'demo') banner('Tryb demo: dane są symulowane. Podłącz adapter przyciskiem Bluetooth lub Port COM, żeby czytać swój samochód.', 'info');
-      else $('#banner').hidden = true;
+      chip(`${t.name} · ${id}`, 'on');
+      $('#banner').hidden = true;
       connecting = false; setButtons(); buildTiles(); renderState(); startPolling();
       refreshState().then(() => runScan(false));
     } catch (err) {
@@ -1978,7 +1823,6 @@ function createPanels(api) {
   }
   $('#btnBle').onclick = () => connect('ble');
   $('#btnSerial').onclick = () => connect('serial');
-  $('#btnDemo').onclick = () => connect('demo');
   $('#btnDisc').onclick = async () => { await disconnect(); banner('Rozłączono z adapterem.', 'info'); };
 
   /* ---------- stan pojazdu ---------- */
@@ -2114,7 +1958,6 @@ function createPanels(api) {
   function buildReport() {
     const L = [];
     L.push('VAG Diagnostyka – raport', 'Data: ' + new Date().toLocaleString('pl-PL'));
-    if (mode === 'demo') L.push('UWAGA: tryb demo, dane symulowane');
     L.push('Adapter: ' + (report.adapter || '—'), 'VIN: ' + (report.vin || '—'));
     const r = report.readiness;
     if (r) { L.push(`Kontrolka MIL: ${r.mil ? 'włączona' : 'wyłączona'}, kody emisyjne: ${r.count}`); L.push('Gotowość: ' + r.monitors.map(m => `${m.name} ${m.complete ? 'gotowy' : 'NIEGOTOWY'}`).join('; ')); }
@@ -2157,8 +2000,7 @@ function createPanels(api) {
   });
   syncSeg(); setButtons();
   setInterval(() => { if (elm && !$('#tab-state').hidden) renderState(); }, 3000);
-  // Demo startuje sam tylko dla nowych osób; po pierwszym połączeniu z prawdziwym adapterem aplikacja czeka na połączenie.
-  if (store.get('real', '') === '1') buildTiles(); else connect('demo');
+  buildTiles();
 })();
 
 </script>

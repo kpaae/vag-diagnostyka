@@ -4,8 +4,6 @@ Webowa aplikacja diagnostyczna dla aut grupy VAG (VW, Audi, Seat/Cupra, Škoda),
 
 **Uruchom:** https://kpaae.github.io/vag-diagnostyka/
 
-Bez adaptera aplikacja startuje w trybie demo z symulowanymi danymi.
-
 ## Co potrafi
 
 **Parametry na żywo** (standardowe OBD-II, tryb 01), pogrupowane i z orientacyjnymi progami alarmowymi:
@@ -66,7 +64,7 @@ Do modułów VAG (UDS po CAN, mniej więcej auta od 2010 r.) adapter musi obsłu
 
 ```
 index.html        gotowa aplikacja (to serwuje GitHub Pages)
-src/core.js       komunikacja: ELM327, OBD-II, UDS, symulator demo
+src/core.js       komunikacja: ELM327, OBD-II, UDS
 src/app.js        interfejs
 src/style.css     wygląd
 src/body.html     znaczniki

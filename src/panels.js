@@ -30,11 +30,6 @@ function createPanels(api) {
       el.dataset.s = v == null ? '' : api.stateOf(k, v);
     });
   }
-  function demoNote() {
-    if (api.mode() === 'demo') return '<div class="banner info"><span>Tryb demo: dane są symulowane, łącznie z kodem P0299. To nie jest Twoje auto.</span></div>';
-    if (!api.elm()) return '<div class="banner"><span>Połącz adapter, żeby korzystać z tego panelu.</span></div>';
-    return '';
-  }
   function codeHits(codes, addrs) {
     const rep = api.report(), hits = [], seen = new Set();
     const add = (shown, base, src, flags) => { const key = shown + src; if (seen.has(key)) return; seen.add(key); hits.push({ shown, base, src, flags: flags || '', desc: api.DTC_DESC[base] || '' }); };
@@ -255,7 +250,7 @@ function createPanels(api) {
   function renderBoost() {
     const host = $('#boostPanel'); if (!host) return;
     const on = !!api.elm();
-    host.innerHTML = `${demoNote()}
+    host.innerHTML = `
       <div class="panel-intro"><h2 class="ptitle">P0299 · za niskie doładowanie</h2>
         <p class="muted">Sterownik zapisuje ten kod, gdy rzeczywiste doładowanie przez dłuższą chwilę jest niższe od zadanego. Panel sprawdza czujniki, mierzy przyspieszenie i wskazuje, od czego zacząć.</p></div>
       <div class="pgrid">
@@ -420,7 +415,7 @@ function createPanels(api) {
   function renderHeat() {
     const host = $('#heatPanel'); if (!host) return;
     const on = !!api.elm();
-    host.innerHTML = `${demoNote()}
+    host.innerHTML = `
       <div class="panel-intro"><h2 class="ptitle">Ogrzewanie</h2>
         <p class="muted">Najpierw sprawdzamy, czy silnik dochodzi do temperatury roboczej. Jeśli tak, przyczyna leży po stronie nagrzewnicy i nawiewu. Jeśli nie, winny jest układ chłodzenia silnika, najczęściej termostat.</p></div>
       <div class="card"><h3 class="sect">Objaw</h3>

@@ -77,7 +77,7 @@
   function buildTiles() {
     const host = $('#tiles'); host.innerHTML = ''; tiles = [];
     panels && panels.render();
-    if (!elm) { host.innerHTML = '<p class="empty">Połącz adapter albo uruchom demo, żeby zobaczyć parametry.</p>'; return; }
+    if (!elm) { host.innerHTML = '<p class="empty">Połącz adapter, żeby zobaczyć parametry.</p>'; return; }
     const groups = view === 'all' ? GROUPS : GROUPS.filter(g => g[0] === view);
     for (const [g, label] of groups) {
       const keys = ORDER[g].filter(avail);
@@ -370,7 +370,7 @@
     const on = !!elm;
     $('#btnDisc').hidden = !on; $('#btnPoll').disabled = !on; $('#btnRec').disabled = !on;
     $('#btnScan').disabled = !on || scanning; $('#btnState').disabled = !on;
-    $('#btnBle').disabled = $('#btnSerial').disabled = $('#btnDemo').disabled = connecting;
+    $('#btnBle').disabled = $('#btnSerial').disabled = connecting;
   }
   async function connect(kind, all) {
     if (connecting) return;
@@ -381,7 +381,7 @@
     $('#scanProgress').textContent = '';
     renderObd(); renderModules(); renderState(); updateAlerts(); buildTiles();
     try {
-      const t = kind === 'ble' ? await openBle(all) : kind === 'serial' ? await openSerial() : new DemoTransport();
+      const t = kind === 'ble' ? await openBle(all) : await openSerial();
       tr = t; chip('Inicjalizacja adaptera…', 'busy');
       const e = new ELM(t, elmLog);
       e.onWarn = msg => { banner(msg, 'warn'); logLine('! ' + msg); };
@@ -391,11 +391,9 @@
       if (!s.size) { logLine('— brak odpowiedzi na CAN 500 kb/s, próba automatycznego wyboru protokołu'); await e.send('ATSP0'); await e.send('0100', 10000); e.cur = null; s = await e.op(() => e.discoverPids()); }
       if (!s.size) throw new Error('Sterownik silnika nie odpowiada. Włącz zapłon i spróbuj ponownie.');
       elm = e; sup = s; mode = kind;
-      if (kind !== 'demo') store.set('real', '1');
       report.adapter = `${id} · ${t.name}`;
-      chip(`${t.name} · ${id}`, kind === 'demo' ? 'demo' : 'on');
-      if (kind === 'demo') banner('Tryb demo: dane są symulowane. Podłącz adapter przyciskiem Bluetooth lub Port COM, żeby czytać swój samochód.', 'info');
-      else $('#banner').hidden = true;
+      chip(`${t.name} · ${id}`, 'on');
+      $('#banner').hidden = true;
       connecting = false; setButtons(); buildTiles(); renderState(); startPolling();
       refreshState().then(() => runScan(false));
     } catch (err) {
@@ -410,7 +408,6 @@
   }
   $('#btnBle').onclick = () => connect('ble');
   $('#btnSerial').onclick = () => connect('serial');
-  $('#btnDemo').onclick = () => connect('demo');
   $('#btnDisc').onclick = async () => { await disconnect(); banner('Rozłączono z adapterem.', 'info'); };
 
   /* ---------- stan pojazdu ---------- */
@@ -546,7 +543,6 @@
   function buildReport() {
     const L = [];
     L.push('VAG Diagnostyka – raport', 'Data: ' + new Date().toLocaleString('pl-PL'));
-    if (mode === 'demo') L.push('UWAGA: tryb demo, dane symulowane');
     L.push('Adapter: ' + (report.adapter || '—'), 'VIN: ' + (report.vin || '—'));
     const r = report.readiness;
     if (r) { L.push(`Kontrolka MIL: ${r.mil ? 'włączona' : 'wyłączona'}, kody emisyjne: ${r.count}`); L.push('Gotowość: ' + r.monitors.map(m => `${m.name} ${m.complete ? 'gotowy' : 'NIEGOTOWY'}`).join('; ')); }
@@ -589,6 +585,5 @@
   });
   syncSeg(); setButtons();
   setInterval(() => { if (elm && !$('#tab-state').hidden) renderState(); }, 3000);
-  // Demo startuje sam tylko dla nowych osób; po pierwszym połączeniu z prawdziwym adapterem aplikacja czeka na połączenie.
-  if (store.get('real', '') === '1') buildTiles(); else connect('demo');
+  buildTiles();
 })();
