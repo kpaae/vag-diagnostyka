@@ -318,7 +318,11 @@
   }
   async function openSerial() {
     if (!navigator.serial) throw Object.assign(new Error('noserial'), { code: 'noserial' });
-    const port = await navigator.serial.requestPort();
+    const SPP = '00001101-0000-1000-8000-00805f9b34fb'; // klasyczny Bluetooth (port szeregowy)
+    let port;
+    try { port = await navigator.serial.requestPort({ allowedBluetoothServiceClassIds: [SPP] }); }
+    catch (e) { if (e && e.name === 'NotFoundError') throw e; port = await navigator.serial.requestPort(); }
+    logLine('— port: ' + JSON.stringify(port.getInfo ? port.getInfo() : {}));
     await port.open({ baudRate: 38400 });
     const writer = port.writable.getWriter(), reader = port.readable.getReader(), dec = new TextDecoder(), enc = new TextEncoder();
     let cb = null, alive = true;
@@ -332,7 +336,7 @@
   }
   function friendly(e) {
     if (e.code === 'nobt') return 'Ta przeglądarka nie obsługuje Bluetooth ze stron. Na iPhonie otwórz aplikację w przeglądarce Bluefy, na Windows w Chrome lub Edge.';
-    if (e.code === 'noserial') return 'Port COM działa tylko w Chrome lub Edge na komputerze.';
+    if (e.code === 'noserial') return 'Port COM działa w Chrome lub Edge na komputerze oraz w aktualnym Chrome na Androidzie. Na iPhonie użyj przycisku Bluetooth.';
     if (e.name === 'NotFoundError') return e.filtered ? 'filtered' : null;
     if (e.name === 'SecurityError' || e.name === 'NotAllowedError') return framed
       ? 'W tym podglądzie przeglądarka blokuje Bluetooth i porty. Otwórz aplikację z własnego adresu HTTPS (instrukcja w zakładce Stan).'
