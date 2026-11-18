@@ -44,13 +44,15 @@ Wyniki obu testów trafiają do raportu, a dane można skopiować jako CSV.
 - konsola UDS: pojedyncze polecenia do dowolnego modułu. Odczyty idą od razu, zapis, procedury (`0x31`), testy elementów (`0x2F`), reset i kasowanie wymagają potwierdzenia, programowanie (`0x34`–`0x37`, `0x3D`, sesja `0x10 02`) jest zablokowane. Sesja rozszerzona jest podtrzymywana automatycznie,
 - podsłuch magistrali (ATMA, identyfikatory 0x700–0x7FF) ze składaniem ramek ISO-TP i opisem usług. Służy do nagrania procedury uruchomionej w VCDS, OBDeleven lub ODIS przez rozdzielacz OBD, żeby potem odtworzyć ją w konsoli albo dodać jako przycisk.
 
+**Baza kodów (`src/dtcdb.js`):** przy kodach z bazy (SAE używane w VAG i BMW oraz wybrane kody BMW, np. `21A02D`, `2A82`, `30FF`, kody paliwa N54/N55/B58) pod opisem jest rozwijana lista „Możliwe przyczyny” z linkami do źródeł. Do bazy trafiają tylko wpisy, które mają źródło, a gdy źródła się różnią, wpis jest oznaczony jako orientacyjny. To podpowiedź z poradników, nie diagnoza. Nie znaleziono wiarygodnego opisu m.in. dla `21B000`, więc go tam nie ma.
+
 **Szczegóły błędów w modułach:** dane rozszerzone (`0x19 06`) i środowiskowe (`0x19 04`) dla każdego kodu, w postaci surowej.
 
 **Moduły:** oprócz numerów części także kodowanie (`0x0600`) i nazwa pliku ODX (`0xF19E`), po której można szukać dokumentacji sterownika. Wolne moduły (np. ABS), które odpowiadają „czekaj” (`7F xx 78`), są obsługiwane bez ponawiania żądania.
 
 **Logi (zakładka Logi):** aplikacja sama zapisuje w przeglądarce (IndexedDB) raport po każdym skanie, nagrania, wyniki testów z paneli, testy trybu 06, wyniki skanera, podsłuch, konsolę i pełny log komunikacji z sesji, a w czasie połączenia rejestruje parametry co sekundę (rejestr jazdy, zapisywany co 5 minut i przy rozłączeniu). Opcjonalnie wysyła wszystko do prywatnego repozytorium GitHub przez API, osobno dla każdego urządzenia (`<urządzenie>/RRRR-MM-DD_GGMM/…`, np. `Samsung-SM-S911B/`; nazwę można zmienić). Potrzebny jest fine-grained token z dostępem tylko do tego repozytorium i uprawnieniem Contents: Read and write. Token zostaje w przeglądarce.
 
-**BMW / MINI:** marka rozpoznawana po VIN (albo wybierana ręcznie w zakładce Błędy). Standardowe OBD-II działa jak w każdym aucie. Skan modułów idzie przez D-CAN z adresowaniem rozszerzonym BMW (tester `0x6F1`, odpowiedź `0x600 + adres`, adres w pierwszym bajcie ramki), z ramkami ISO-TP składanymi w aplikacji, więc nie jest potrzebna obsługa `ATCEA` w adapterze. Seria F/G: UDS (`0x19`, `0x22`, `0x14`). Seria E na D-CAN (mniej więcej od 2007): KWP2000 (`0x18`, `0x1A 80`, `0x14`) jako zapas. Kody BMW pokazywane są w formacie producenta (hex, np. `120308`), bez opisów. Lista modułów: DME, DME2, EGS, DSC, EPS, ACSM, CAS/FEM/BDC, JBE, ZGW, ICM, KOMBI, HU, FRM/REM, IHKA, FZD, KAFAS. Pełne przeszukanie sprawdza adresy 0x00–0x7F. Narzędzia (konsola, skaner pomiarów, podsłuch) obsługują adresowanie BMW. Starsze BMW na K-line (przed D-CAN) są obsługiwane tylko przez standardowe OBD.
+**BMW / MINI:** marka rozpoznawana po VIN (albo wybierana ręcznie w zakładce Błędy). Standardowe OBD-II działa jak w każdym aucie. Skan modułów idzie przez D-CAN z adresowaniem rozszerzonym BMW (tester `0x6F1`, odpowiedź `0x600 + adres`, adres w pierwszym bajcie ramki), z ramkami ISO-TP składanymi w aplikacji, więc nie jest potrzebna obsługa `ATCEA` w adapterze. Seria F/G: UDS (`0x19`, `0x22`, `0x14`). Seria E na D-CAN (mniej więcej od 2007): KWP2000 (`0x18`, `0x1A 80`, `0x14`) jako zapas. Kody BMW pokazywane są w formacie producenta (hex, np. `120308`). Opisy mają tylko kody z bazy (patrz niżej). Lista modułów: DME, DME2, EGS, DSC, EPS, ACSM, CAS/FEM/BDC, JBE, ZGW, ICM, KOMBI, HU, FRM/REM, IHKA, FZD, KAFAS. Pełne przeszukanie sprawdza adresy 0x00–0x7F. Narzędzia (konsola, skaner pomiarów, podsłuch) obsługują adresowanie BMW. Starsze BMW na K-line (przed D-CAN) są obsługiwane tylko przez standardowe OBD.
 
 **Inne urządzenie (most):** urządzenie przy aucie (np. telefon z Androidem albo laptop) łączy się z adapterem i włącza most, a inne urządzenie, także iPhone lub iPad w zwykłym Safari, steruje pełną aplikacją po wpisaniu kodu, zeskanowaniu QR albo otwarciu linku `?most=KOD`. Każde nowe sterujące urządzenie trzeba zatwierdzić na moście. Połączenie to WebRTC (PeerJS). Publiczny serwer PeerJS służy tylko do zestawienia połączenia, a dane z auta idą bezpośrednio między urządzeniami. Most przekazuje surowy strumień ELM327, więc działają wszystkie funkcje, a logi zapisują się na urządzeniu sterującym. Gdy oba urządzenia są w różnych sieciach komórkowych, połączenie może się nie zestawić (brak serwera TURN). Wtedy pomaga wspólne Wi-Fi albo hotspot.
 
@@ -72,7 +74,7 @@ Do modułów VAG (UDS po CAN, mniej więcej auta od 2010 r.) adapter musi obsłu
 
 - Odczyt na żywo korzysta ze standardowego OBD-II. Kanały specyficzne dla VAG (np. wypadanie zapłonów na cylinder, korekty od spalania stukowego, pozycja wastegate) wymagają zmapowania identyfikatorów UDS `0x22` dla konkretnego sterownika. To jest w planach.
 - Starsze auta na protokole TP2.0 / KWP2000 (mniej więcej sprzed 2010) nie są obsługiwane w skanie modułów.
-- Opisy kodów obejmują ogólne kody SAE. Kody producenta pokazywane są bez opisu.
+- Opisy kodów obejmują ogólne kody SAE oraz wybrane kody BMW z bazy. Pozostałe kody producenta pokazywane są bez opisu.
 - Brak gotowych procedur kodowania, adaptacji i ustawień podstawowych, bo ich identyfikatory są w plikach ODX producenta. Konsola pozwala wysłać polecenie ręcznie (z potwierdzeniem), a podsłuch pozwala je przechwycić z innego testera.
 - Progi alarmowe są orientacyjne i nie zastępują danych serwisowych.
 
@@ -81,6 +83,7 @@ Do modułów VAG (UDS po CAN, mniej więcej auta od 2010 r.) adapter musi obsłu
 ```
 index.html        gotowa aplikacja (to serwuje GitHub Pages)
 src/core.js       komunikacja: ELM327, OBD-II, UDS
+src/dtcdb.js      opisy kodów i możliwe przyczyny
 src/panels.js     panele P0299 i Ogrzewanie
 src/tools.js      zakładka Narzędzia
 src/app.js        interfejs

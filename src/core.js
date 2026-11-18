@@ -366,14 +366,14 @@ function decodeUdsDtc(b0, b1, b2, st, bmw) {
   if (st & 0x04) flags.push('oczekujący');
   if (st & 0x80) flags.push('kontrolka');
   flags.push('status 0x' + hex2(st));
-  return { code, ftb: hex2(b2), raw: hex2(b0) + hex2(b1) + hex2(b2), full: bmw ? code : `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: DTC_DESC[code] || '' };
+  return { code, ftb: hex2(b2), raw: hex2(b0) + hex2(b1) + hex2(b2), full: bmw ? code : `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: (bmw ? bmwDesc(code) : DTC_DESC[code]) || '' };
 }
 
 /* BMW KWP2000 (seria E na D-CAN): kod 2 bajty hex + bajt statusu. */
 function decodeKwpDtc(b0, b1, st) {
   const code = hex2(b0) + hex2(b1);
   const flags = [st & 0x20 ? 'aktywny' : 'zapisany']; if (st & 0x40) flags.push('ostrzeżenie'); flags.push('status 0x' + hex2(st));
-  return { code, ftb: '', raw: code, full: code, status: st, real: true, flags, active: !!(st & 0x20), mil: false, desc: '', kwp: true };
+  return { code, ftb: '', raw: code, full: code, status: st, real: true, flags, active: !!(st & 0x20), mil: false, desc: bmwDesc(code) || '', kwp: true };
 }
 
 function parseMode01(data, defs) {

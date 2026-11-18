@@ -526,6 +526,10 @@
   }
 
   /* ---------- błędy ---------- */
+  function causesHtml(code, bmw) {
+    const i = dtcInfo(code, bmw); if (!i || (!i.causes.length && !i.warn && !i.note)) return '';
+    return `<details class="cz"><summary>Możliwe przyczyny</summary>${i.uncertain ? '<p class="muted small">Źródła nie są zgodne co do tego kodu. Traktuj opis orientacyjnie.</p>' : ''}${i.warn ? `<p class="warnp">${esc(i.warn)}</p>` : ''}${i.causes.length ? `<ul>${i.causes.map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}${i.note ? `<p class="muted small">${esc(i.note)}</p>` : ''}<p class="muted small">To podpowiedź z poradników, nie diagnoza. Źródła: ${i.src.map(x => `<a href="${esc(x[1])}" target="_blank" rel="noopener">${esc(x[0])}</a>`).join(', ')}</p></details>`;
+  }
   function dtcRow(code, desc, flags, m, d) {
     const det = d && d.details;
     const detHtml = det ? `<div class="dtcdet">${det.err ? `<span class="muted">${esc(det.err)}</span>`
@@ -533,7 +537,7 @@
          ${det.snap ? `<div><b>Dane środowiskowe</b> <code class="wrap">${det.snap.map(hex2).join(' ')}</code></div>` : ''}
          ${!det.ext.length && !det.snap ? '<span class="muted">Moduł nie zwrócił szczegółów dla tego kodu.</span>' : '<span class="muted">Surowe dane. Bez opisu producenta nie da się nazwać każdego pola. Licznik wystąpień i przebieg zwykle są w danych rozszerzonych.</span>'}`}</div>` : '';
     const btn = m && d ? `<button class="linkbtn" type="button" data-det="${modKey(m)}|${d.raw}">${det ? 'Odśwież szczegóły' : 'Szczegóły'}</button>` : '';
-    return `<div class="dtc"><code>${esc(code)}</code><span class="d">${desc ? esc(desc) : '<span class="muted">Kod producenta, brak opisu w bazie</span>'}</span>${flags && flags.length ? `<div class="flags">${flags.map(f => `<span class="flag${f === 'aktywny' ? ' act' : f === 'kontrolka' ? ' mil' : ''}">${esc(f)}</span>`).join('')}${btn}</div>` : ''}${detHtml}</div>`;
+    return `<div class="dtc"><code>${esc(code)}</code><span class="d">${desc ? esc(desc) : '<span class="muted">Kod producenta, brak opisu w bazie</span>'}</span>${causesHtml(d ? d.code : code, brand() === 'bmw' && !!m)}${flags && flags.length ? `<div class="flags">${flags.map(f => `<span class="flag${f === 'aktywny' ? ' act' : f === 'kontrolka' ? ' mil' : ''}">${esc(f)}</span>`).join('')}${btn}</div>` : ''}${detHtml}</div>`;
   }
   function clearFoot(id, label) { return `<div class="cardfoot" data-foot="${id}"><button class="btn small" type="button" data-clear="${id}">${label}</button></div>`; }
   function renderObd() {
@@ -666,6 +670,7 @@
       else if (!m.dtcs.length) L.push('   brak błędów');
       else m.dtcs.forEach(d => {
         L.push(`   ${d.full} [${d.flags.join(', ')}] ${d.desc}`.trimEnd());
+        const inf = dtcInfo(d.code, brand() === 'bmw'); if (inf && inf.causes.length) L.push('      możliwe przyczyny: ' + inf.causes.join('; '));
         const x = d.details; if (x && !x.err) { x.ext.forEach(r => L.push(`      rekord ${hex2(r.rec)}: ${r.bytes.map(hex2).join(' ')}`)); if (x.snap) L.push('      środowisko: ' + x.snap.map(hex2).join(' ')); }
       });
       if (m.untested) L.push(`   (pominięto ${m.untested} ${plural(m.untested, 'pozycję', 'pozycje', 'pozycji')} z listy obsługiwanych kodów, bez usterki)`);

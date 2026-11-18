@@ -285,3 +285,12 @@ details.help a { color: var(--accent); }
 .copybox textarea { width: 100%; min-height: 160px; font: 12px/1.5 var(--f-mono); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
 .copybox { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Możliwe przyczyny kodu */
+.cz { margin: 6px 0 2px; font-size: 13px; }
+.cz summary { cursor: pointer; color: var(--accent, #6cb6ff); }
+.cz ul { margin: 6px 0 6px 18px; padding: 0; }
+.cz li { margin: 2px 0; }
+.cz .small { font-size: 12px; margin: 4px 0; }
+.cz .warnp { margin: 6px 0; padding: 6px 8px; border-left: 3px solid #e0a030; background: rgba(224,160,48,.1); }
+.cz a { color: inherit; text-decoration: underline; }
