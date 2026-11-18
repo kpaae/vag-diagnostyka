@@ -456,7 +456,7 @@
         logLine('— sterownik nie odpowiada pod 7E0, szukam przez zapytanie ogólne 7DF');
         const f = await e.op(() => e.findObdEcu());
         f.tried.forEach(t => logLine('— ' + t));
-        if (f.ok) { logLine(`— odpowiada ${f.rx ? '0x' + f.rx.toString(16).toUpperCase() : 'sterownik'} (${f.proto})`); s = await e.op(() => e.discoverPids()); }
+        if (f.ok) { logLine(`— odpowiada ${f.rx ? '0x' + f.rx.toString(16).toUpperCase() : 'sterownik'} (${f.proto})${f.others && f.others.length ? ', także ' + f.others.join(', ') : ''}; dalsze zapytania OBD idą przez 7DF`); s = await e.op(() => e.discoverPids()); }
         if (!s.size) {
           const v = await e.voltage().catch(() => null);
           const all = f.tried.join(' ');

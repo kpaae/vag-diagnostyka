@@ -443,7 +443,7 @@ class ELM {
     this.ident = id.join(' ');
     return this.ident;
   }
-  selectObd() { return this.select(this.obdTx || 0x7E0, this.obdRx || 0x7E8); }
+  selectObd() { const rx = this.obdRx || 0x7E8; return this.select(this.obdTx || 0x7E0, rx, rx - 8); }
   /* Gdy sterownik nie odpowiada pod 7E0/7E8: zapytanie ogólne 7DF z nagłówkami, żeby zobaczyć,
      kto w ogóle odpowiada i co zwraca adapter. Próbuje CAN 500 kb/s, potem automatycznego wyboru protokołu. */
   async findObdEcu() {
@@ -459,7 +459,13 @@ class ELM {
         for (const l of lines) {
           const h = l.replace(/\s/g, '').toUpperCase();
           const m = h.match(/^(7E[89A-F])(?:0[0-9A-F])?4100/);
-          if (m) { const rx = parseInt(m[1], 16); this.obdRx = rx; this.obdTx = rx - 8; return { ok: true, rx, proto: sp, tried }; }
+          if (m) {
+            /* Część aut (np. BMW serii F) przepuszcza przez gateway tylko zapytania ogólne 7DF, a na fizyczny adres
+               sterownika nie odpowiada. Wtedy zostajemy przy 7DF i filtrujemy odpowiedzi tylko z tego sterownika. */
+            const rx = parseInt(m[1], 16); this.obdRx = rx; this.obdTx = 0x7DF;
+            const others = lines.map(x => x.replace(/\s/g, '').toUpperCase().slice(0, 3)).filter(x => /^7E[89A-F]$/.test(x) && x !== m[1]);
+            return { ok: true, rx, proto: sp, tried, others };
+          }
         }
         if (lines.some(l => /^(18DAF1|18DA)/i.test(l.replace(/\s/g, '')) && /4100/.test(l.replace(/\s/g, '')))) return { ok: false, ext29: true, tried };
         if (lines.some(l => /4100/.test(l.replace(/\s/g, '')))) return { ok: true, proto: sp, tried };   // inny protokół (K-line), nagłówki nie z CAN
@@ -472,12 +478,13 @@ class ELM {
     const m = r.join(' ').match(/(\d+(?:\.\d+)?)\s*V/i);
     return m ? parseFloat(m[1]) : null;
   }
-  async select(tx, rx) {
+  /* fc = adres, na który adapter wysyła ramkę flow control (przy zapytaniu ogólnym 7DF – fizyczny adres sterownika). */
+  async select(tx, rx, fc = tx) {
     const key = tx + ':' + rx; if (this.cur === key) return;
     if (this.rawMode) { await this.send('ATCAF1'); this.rawMode = false; }
     await this.send('ATSH' + hex3(tx)); await this.send('ATCRA' + hex3(rx));
     if (this.fcOk) {
-      for (const c of ['ATFCSH' + hex3(tx), 'ATFCSD300000', 'ATFCSM1']) {
+      for (const c of ['ATFCSH' + hex3(fc), 'ATFCSD300000', 'ATFCSM1']) {
         const r = await this.send(c);
         if (!r.length || r[r.length - 1].toUpperCase() !== 'OK') {
           this.fcOk = false;
@@ -637,6 +644,9 @@ class ELM {
       const r = await this.request(q, { attempts: 2 });
       if (!r.err) { const v = asciiOf(bytesOf(r.data).slice(3)); if (v.length >= 17) return v.slice(-17); }
     }
+    /* BMW: VIN z silnika (DME, adres 0x12) przez D-CAN, gdy OBD go nie podaje. */
+    const b = await this.bmwRequest(0x12, '22F190', { attempts: 2 });
+    if (!b.err) { const v = asciiOf(bytesOf(b.data).slice(3)); if (v.length >= 17) { this.bmwSeen = true; return v.slice(-17); } }
     return null;
   }
   async readFreeze(sup) {
