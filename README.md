@@ -48,7 +48,7 @@ Wyniki obu testów trafiają do raportu, a dane można skopiować jako CSV.
 
 **Moduły:** oprócz numerów części także kodowanie (`0x0600`) i nazwa pliku ODX (`0xF19E`), po której można szukać dokumentacji sterownika. Wolne moduły (np. ABS), które odpowiadają „czekaj” (`7F xx 78`), są obsługiwane bez ponawiania żądania.
 
-**Logi (zakładka Logi):** aplikacja sama zapisuje w przeglądarce (IndexedDB) raport po każdym skanie, nagrania, wyniki testów z paneli, testy trybu 06, wyniki skanera, podsłuch, konsolę i pełny log komunikacji z sesji, a w czasie połączenia rejestruje parametry co sekundę (rejestr jazdy, zapisywany co 5 minut i przy rozłączeniu). Opcjonalnie wysyła wszystko do prywatnego repozytorium GitHub przez API (`sesje/RRRR-MM-DD_GGMM/…`). Potrzebny jest fine-grained token z dostępem tylko do tego repozytorium i uprawnieniem Contents: Read and write. Token zostaje w przeglądarce.
+**Logi (zakładka Logi):** aplikacja sama zapisuje w przeglądarce (IndexedDB) raport po każdym skanie, nagrania, wyniki testów z paneli, testy trybu 06, wyniki skanera, podsłuch, konsolę i pełny log komunikacji z sesji, a w czasie połączenia rejestruje parametry co sekundę (rejestr jazdy, zapisywany co 5 minut i przy rozłączeniu). Opcjonalnie wysyła wszystko do prywatnego repozytorium GitHub przez API, osobno dla każdego urządzenia (`<urządzenie>/RRRR-MM-DD_GGMM/…`, np. `Samsung-SM-S911B/`; nazwę można zmienić). Potrzebny jest fine-grained token z dostępem tylko do tego repozytorium i uprawnieniem Contents: Read and write. Token zostaje w przeglądarce.
 
 **Stan:** nazwa sterownika, numer kalibracji i CVN (tryb 09), VIN, kontrolka MIL, gotowość systemów (readiness), lista obsługiwanych PID, surowy log komunikacji.
 

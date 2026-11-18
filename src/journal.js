@@ -33,12 +33,39 @@ function createJournal(api) {
   async function del(id) { try { await tx('readwrite', s => s.delete(id)); } catch (err) {} mem = mem.filter(x => x.id !== id); }
   async function all() { let L = []; try { L = await tx('readonly', s => s.getAll()) || []; } catch (err) {} const ids = new Set(L.map(x => x.id)); return L.concat(mem.filter(x => !ids.has(x.id))).sort((a, b) => b.ts - a.ts); }
 
+  /* ---------- urządzenie (folder w repozytorium) ---------- */
+  let autoDev = api.store.get('devAuto', '');
+  function guessDev() {
+    const ua = navigator.userAgent;
+    const br = /Bluefy/i.test(ua) ? 'Bluefy' : /Edg\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox/.test(ua) ? 'Firefox' : 'Safari';
+    if (/iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'iPad ' + br;
+    if (/iPhone/.test(ua)) return 'iPhone ' + br;
+    const m = ua.match(/Android [\d.]+; ([^;)]+)/); if (m && m[1] !== 'K') return (/^SM-/.test(m[1]) ? 'Samsung ' : '') + m[1].trim();
+    if (/Android/.test(ua)) return 'Android ' + br;
+    if (/Windows/.test(ua)) return 'Windows ' + br;
+    if (/Mac OS X/.test(ua)) return 'Mac ' + br;
+    return 'Linux ' + br;
+  }
+  async function detectDev() {
+    let name = guessDev();
+    try {
+      if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+        const h = await navigator.userAgentData.getHighEntropyValues(['model', 'platform']);
+        if (h.model) name = (/^SM-/.test(h.model) ? 'Samsung ' : '') + h.model;
+      }
+    } catch (e) {}
+    autoDev = name; api.store.set('devAuto', name); render();
+  }
+  detectDev();
+  function devName() { return api.store.get('devName', '') || autoDev || guessDev(); }
+  const devSlug = n => (n || 'urzadzenie').normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'urzadzenie';
+
   /* ---------- sesja ---------- */
   let session = null;
   function startSession() { const d = new Date(); session = `${dstamp(d)}_${p2(d.getHours())}${p2(d.getMinutes())}`; return session; }
   function header(kind, title) {
     return [`VAG Diagnostyka · ${KINDS[kind] || kind}${title && title !== KINDS[kind] ? ' · ' + title : ''}`,
-      `Data: ${new Date().toLocaleString('pl-PL')}`, `VIN: ${api.vin() || '—'}`, `Sesja: ${session || '—'}`, `Wersja aplikacji: ${api.version}`, ''].join('\n');
+      `Data: ${new Date().toLocaleString('pl-PL')}`, `VIN: ${api.vin() || '—'}`, `Urządzenie: ${devName()}`, `Przeglądarka: ${navigator.userAgent}`, `Sesja: ${session || '—'}`, `Wersja aplikacji: ${api.version}`, ''].join('\n');
   }
 
   /* Dodaje wpis. Z opcją id nadpisuje istniejący (np. rejestr jazdy zapisywany co kilka minut). */
@@ -49,7 +76,7 @@ function createJournal(api) {
     let e = opt.id ? (await all()).find(x => x.id === opt.id) : null;
     const body = (ext === 'csv' ? '' : header(kind, title)) + text;
     if (e) Object.assign(e, { ts: d.getTime(), text: body, synced: false, err: null });
-    else e = { id: opt.id || `${d.getTime()}-${kind}`, ts: d.getTime(), session: sess, kind, title: title || KINDS[kind] || kind, ext, text: body, synced: false, err: null, sha: {}, path: `sesje/${sess}/${tstamp(d)}-${kind}` };
+    else e = { id: opt.id || `${d.getTime()}-${kind}`, ts: d.getTime(), session: sess, kind, title: title || KINDS[kind] || kind, ext, text: body, synced: false, err: null, sha: {}, file: `${sess}/${tstamp(d)}-${kind}` };
     await put(e);
     await trim();
     render();
@@ -70,7 +97,9 @@ function createJournal(api) {
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     return btoa(bin);
   }
+  /* Ścieżka w repozytorium: <urządzenie>/<sesja>/<godzina>-<rodzaj>. Folder urządzenia ustalany przy pierwszej wysyłce wpisu. */
   function parts(e) {
+    if (!e.path) e.path = `${devSlug(devName())}/${e.file || e.session + '/' + e.id}`;
     if (e.text.length <= CHUNK) return [[`${e.path}.${e.ext}`, e.text]];
     const out = []; for (let i = 0, n = 1; i < e.text.length; i += CHUNK, n++) out.push([`${e.path}.cz${n}.${e.ext}`, e.text.slice(i, i + CHUNK)]);
     return out;
@@ -174,10 +203,13 @@ function createJournal(api) {
           <li>Wklej poniżej i naciśnij Zapisz. Klucz zostaje tylko w tej przeglądarce i daje dostęp wyłącznie do repozytorium z logami.</li>
         </ol>
         <div class="frow"><label class="fl">Repozytorium <input id="jRepo" class="inp mono" value="${esc(c.repo || 'kpaae/vag-logi')}" spellcheck="false" autocomplete="off" autocapitalize="off"></label></div>
+        <div class="frow"><label class="fl">Urządzenie <input id="jDev" class="inp" value="${esc(api.store.get('devName', ''))}" placeholder="${esc(devName())}" spellcheck="false" autocomplete="off"></label></div>
+        <p class="small muted" id="jDevNote">Logi z tego urządzenia trafiają do folderu <code>${esc(devSlug(devName()))}/</code>. Zostaw puste, żeby użyć nazwy wykrytej automatycznie.</p>
         <div class="frow"><label class="fl">Token <input id="jTok" class="inp mono" type="password" value="${esc(c.token)}" placeholder="github_pat_…" spellcheck="false" autocomplete="off" autocapitalize="off"></label></div>
         <div class="frow"><label class="chk"><input type="checkbox" id="jAuto"${c.auto ? ' checked' : ''}> wysyłaj automatycznie</label>
           <button class="btn small primary" id="jSave" type="button">Zapisz i sprawdź</button><button class="btn small ghost" id="jForget" type="button">Usuń klucz</button></div>
         <p class="tstatus" id="jGhSt"></p></details>`;
+    $('#jDev').oninput = e => { api.store.set('devName', e.target.value.trim()); $('#jDevNote').querySelector('code').textContent = devSlug(devName()) + '/'; };
     $('#jSave').onclick = () => { api.store.set('ghRepo', $('#jRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '')); api.store.set('ghToken', $('#jTok').value.trim()); api.store.set('ghAuto', $('#jAuto').checked ? '1' : '0'); testGh(); };
     $('#jForget').onclick = () => { api.store.set('ghToken', ''); $('#jTok').value = ''; $('#jGhSt').textContent = 'Klucz usunięty z tej przeglądarki.'; render(); };
     $('#jAuto').onchange = e => { api.store.set('ghAuto', e.target.checked ? '1' : '0'); };
@@ -188,7 +220,7 @@ function createJournal(api) {
       const id = b.dataset.jc || b.dataset.jd || b.dataset.jx; if (!id) return;
       const e = (await all()).find(x => x.id === id); if (!e) return;
       if (b.dataset.jc) api.copyText(e.text, b);
-      if (b.dataset.jd) api.download(`${e.session}-${e.path.split('/').pop()}.${e.ext}`, e.text, e.ext === 'csv' ? 'text/csv' : 'text/plain');
+      if (b.dataset.jd) api.download(`${e.session}-${(e.file || e.path || e.id).split('/').pop()}.${e.ext}`, e.text, e.ext === 'csv' ? 'text/csv' : 'text/plain');
       if (b.dataset.jx) { await del(e.id); render(); }
     });
   }
