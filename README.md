@@ -38,7 +38,17 @@ Aplikacja pokazuje tylko te parametry, które sterownik zgłasza jako obsługiwa
 
 Wyniki obu testów trafiają do raportu, a dane można skopiować jako CSV.
 
-**Stan:** VIN, kontrolka MIL, gotowość systemów (readiness), lista obsługiwanych PID, surowy log komunikacji.
+**Narzędzia:**
+- testy sterownika silnika (OBD tryb 06): wypadanie zapłonów na każdy cylinder w bieżącym cyklu i średnio z 10 cykli, sondy lambda, katalizator i inne monitory z progami min/max,
+- pomiary VAG: skaner identyfikatorów `0x22` w wybranym module i obserwacja, które wartości się zmieniają, jako podstawa do mapowania kanałów specyficznych dla sterownika,
+- konsola UDS: pojedyncze polecenia do dowolnego modułu. Odczyty idą od razu, zapis, procedury (`0x31`), testy elementów (`0x2F`), reset i kasowanie wymagają potwierdzenia, programowanie (`0x34`–`0x37`, `0x3D`, sesja `0x10 02`) jest zablokowane. Sesja rozszerzona jest podtrzymywana automatycznie,
+- podsłuch magistrali (ATMA, identyfikatory 0x700–0x7FF) ze składaniem ramek ISO-TP i opisem usług. Służy do nagrania procedury uruchomionej w VCDS, OBDeleven lub ODIS przez rozdzielacz OBD, żeby potem odtworzyć ją w konsoli albo dodać jako przycisk.
+
+**Szczegóły błędów w modułach:** dane rozszerzone (`0x19 06`) i środowiskowe (`0x19 04`) dla każdego kodu, w postaci surowej.
+
+**Moduły:** oprócz numerów części także kodowanie (`0x0600`) i nazwa pliku ODX (`0xF19E`), po której można szukać dokumentacji sterownika. Wolne moduły (np. ABS), które odpowiadają „czekaj” (`7F xx 78`), są obsługiwane bez ponawiania żądania.
+
+**Stan:** nazwa sterownika, numer kalibracji i CVN (tryb 09), VIN, kontrolka MIL, gotowość systemów (readiness), lista obsługiwanych PID, surowy log komunikacji.
 
 ## Wymagania
 
@@ -57,7 +67,7 @@ Do modułów VAG (UDS po CAN, mniej więcej auta od 2010 r.) adapter musi obsłu
 - Odczyt na żywo korzysta ze standardowego OBD-II. Kanały specyficzne dla VAG (np. wypadanie zapłonów na cylinder, korekty od spalania stukowego, pozycja wastegate) wymagają zmapowania identyfikatorów UDS `0x22` dla konkretnego sterownika. To jest w planach.
 - Starsze auta na protokole TP2.0 / KWP2000 (mniej więcej sprzed 2010) nie są obsługiwane w skanie modułów.
 - Opisy kodów obejmują ogólne kody SAE. Kody producenta pokazywane są bez opisu.
-- Brak kodowania i adaptacji (zapis do sterowników). Aplikacja tylko czyta dane i kasuje błędy.
+- Brak gotowych procedur kodowania, adaptacji i ustawień podstawowych, bo ich identyfikatory są w plikach ODX producenta. Konsola pozwala wysłać polecenie ręcznie (z potwierdzeniem), a podsłuch pozwala je przechwycić z innego testera.
 - Progi alarmowe są orientacyjne i nie zastępują danych serwisowych.
 
 ## Struktura
@@ -65,6 +75,8 @@ Do modułów VAG (UDS po CAN, mniej więcej auta od 2010 r.) adapter musi obsłu
 ```
 index.html        gotowa aplikacja (to serwuje GitHub Pages)
 src/core.js       komunikacja: ELM327, OBD-II, UDS
+src/panels.js     panele P0299 i Ogrzewanie
+src/tools.js      zakładka Narzędzia
 src/app.js        interfejs
 src/style.css     wygląd
 src/body.html     znaczniki

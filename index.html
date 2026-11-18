@@ -221,6 +221,54 @@ details.help ol { padding-left: 20px; margin: 12px 0 4px; display: flex; flex-di
   .chart { height: 190px; }
 }
 
+/* Narzędzia */
+.inp { font: 14px/1.2 var(--f-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 36px; min-width: 0; max-width: 100%; }
+.inp.mono { font-family: var(--f-mono); font-size: 13px; }
+.inp.short { width: 5.5em; }
+.inp.grow { flex: 1 1 180px; }
+select.inp { padding-right: 6px; }
+.frow { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.fl { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.fl .inp { width: 12em; }
+.fl .inp.short { width: 5.5em; }
+.chk { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.quick .btn { min-height: 28px; padding: 5px 8px; font-size: 12px; }
+.sub { font: 600 15px/1.2 var(--f-display); margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.sub small { font: 500 11px var(--f-mono); color: var(--muted); }
+.tblwrap { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.tbl th { text-align: left; font: 500 11px/1.2 var(--f-mono); color: var(--muted); padding: 4px 8px 6px 0; border-bottom: 1px solid var(--line); }
+.tbl td { padding: 6px 8px 6px 0; border-top: 1px solid var(--line); vertical-align: top; }
+.tbl .num { text-align: right; font-family: var(--f-mono); white-space: nowrap; }
+.tbl tr.bad td { color: var(--crit); }
+.tbl tr.chg td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.tbl .hexcell { word-break: break-all; font-size: 12px; }
+.barcol { width: 34%; }
+.bar { display: block; height: 8px; border-radius: 4px; background: var(--accent); min-width: 2px; }
+details.tgroup { border-top: 1px solid var(--line); padding: 8px 0 2px; }
+details.tgroup summary { cursor: pointer; display: flex; justify-content: space-between; gap: 10px; font-size: 14px; font-weight: 500; }
+details.tgroup .tbl { margin: 6px 0; }
+.conout { font: 12px/1.5 var(--f-mono); background: var(--surface-2); border-radius: 8px; padding: 10px; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+.conout .req { color: var(--accent); }
+.conout .err { color: var(--crit); }
+.conout .ok { color: var(--ink); }
+.msgs { display: flex; flex-direction: column; max-height: 360px; overflow: auto; font-size: 12px; }
+.msg { display: grid; grid-template-columns: 4.2em minmax(0, 11em) minmax(0, 1fr); gap: 2px 10px; padding: 5px 0; border-top: 1px solid var(--line); }
+.msg .mt { font-family: var(--f-mono); color: var(--muted); }
+.msg .mid { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg code { font-family: var(--f-mono); word-break: break-all; }
+.msg .ms { grid-column: 3; color: var(--muted); }
+.msg.rq code { color: var(--accent); }
+.msg.w { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.msg.w .ms { color: var(--warn); font-weight: 600; }
+@media (max-width: 520px) { .msg { grid-template-columns: 4.2em minmax(0, 1fr); } .msg code, .msg .ms { grid-column: 1 / -1; } }
+.linkbtn { appearance: none; background: none; border: 0; padding: 4px 2px; font: 500 12px var(--f-body); color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.linkbtn:disabled { color: var(--muted); }
+.dtcdet { grid-column: 2; font-size: 12px; display: flex; flex-direction: column; gap: 4px; padding: 4px 0 6px; }
+.dtcdet code { font-family: var(--f-mono); }
+.dtcdet code.wrap { word-break: break-all; }
+.kvp { display: inline-block; margin-right: 10px; }
+
 /* Log */
 .log { font: 12px/1.55 var(--f-mono); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; max-height: 65vh; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
 .copybox textarea { width: 100%; min-height: 160px; font: 12px/1.5 var(--f-mono); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
@@ -233,7 +281,7 @@ details.help ol { padding-left: 20px; margin: 12px 0 4px; display: flex; flex-di
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-17 16:37 UTC</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-18 00:24 UTC</p>
       </div>
     </div>
     <div class="conn">
@@ -253,6 +301,7 @@ details.help ol { padding-left: 20px; margin: 12px 0 4px; display: flex; flex-di
       <button type="button" role="tab" data-tab="boost" aria-selected="false">P0299</button>
       <button type="button" role="tab" data-tab="heat" aria-selected="false">Ogrzewanie</button>
       <button type="button" role="tab" data-tab="errors" aria-selected="false">Błędy<span id="errBadge" class="badge" hidden></span></button>
+      <button type="button" role="tab" data-tab="tools" aria-selected="false">Narzędzia</button>
       <button type="button" role="tab" data-tab="state" aria-selected="false">Stan</button>
       <button type="button" role="tab" data-tab="log" aria-selected="false">Komunikacja</button>
     </nav>
@@ -311,6 +360,8 @@ details.help ol { padding-left: 20px; margin: 12px 0 4px; display: flex; flex-di
     <div id="modules"><p class="muted">Jeszcze nie skanowano.</p></div>
   </section>
 
+  <section id="tab-tools" class="panel" hidden><div id="toolsPanel" class="pstack"></div></section>
+
   <section id="tab-state" hidden>
     <div class="toolbar">
       <div class="actions"><button id="btnState" class="btn" type="button" disabled>Odśwież</button></div>
@@ -323,6 +374,9 @@ details.help ol { padding-left: 20px; margin: 12px 0 4px; display: flex; flex-di
           <dt>Kontrolka MIL</dt><dd id="sMil">—</dd>
           <dt>Kody emisyjne</dt><dd id="sCnt">—</dd>
           <dt>Zapłon</dt><dd id="sIgn">—</dd>
+          <dt>Sterownik</dt><dd id="sEcu">—</dd>
+          <dt>Kalibracja</dt><dd id="sCal">—</dd>
+          <dt>CVN</dt><dd id="sCvn">—</dd>
         </dl>
       </div>
       <div class="card">
@@ -427,7 +481,98 @@ const MODULES = [
   { addr: '44', name: 'Wspomaganie kierownicy', tx: 0x712, rx: 0x77C },
   { addr: '56', name: 'Radio', tx: 0x773, rx: 0x7DD }
 ];
-const IDENT_DIDS = [['F187', 'Nr części'], ['F197', 'System'], ['F189', 'Oprogramowanie'], ['F191', 'Nr części HW'], ['F18C', 'Nr seryjny']];
+const IDENT_DIDS = [['F187', 'Nr części'], ['F197', 'System'], ['F189', 'Oprogramowanie'], ['F191', 'Nr części HW'], ['F18C', 'Nr seryjny'], ['F19E', 'Plik ODX'], ['0600', 'Kodowanie', 'hex']];
+const hex4 = n => n.toString(16).toUpperCase().padStart(4, '0');
+
+/* ---- OBD tryb 06: wyniki testów monitorów ---- */
+const UAS = {
+  0x01: [1, ''], 0x02: [0.1, ''], 0x03: [0.01, ''], 0x04: [0.001, ''], 0x05: [0.0000305, ''], 0x06: [0.000305, ''],
+  0x07: [0.25, 'obr/min'], 0x08: [0.01, 'km/h'], 0x09: [1, 'km/h'], 0x0A: [0.122, 'mV'], 0x0B: [0.001, 'V'], 0x0C: [0.01, 'V'],
+  0x0D: [0.00390625, 'mA'], 0x0E: [0.001, 'A'], 0x0F: [0.01, 'A'], 0x10: [1, 'ms'], 0x11: [100, 'ms'], 0x12: [1, 's'],
+  0x13: [1, 'mΩ'], 0x14: [1, 'Ω'], 0x15: [1, 'kΩ'], 0x16: [0.1, '°C', -40], 0x17: [0.01, 'kPa'], 0x18: [0.0117, 'kPa'],
+  0x19: [0.079, 'kPa'], 0x1A: [1, 'kPa'], 0x1B: [10, 'kPa'], 0x1C: [0.01, '°'], 0x1D: [0.5, '°'], 0x1E: [0.0000305, ''],
+  0x1F: [0.05, 'AFR'], 0x20: [0.0039062, ''], 0x21: [1, 'mHz'], 0x22: [1, 'Hz'], 0x23: [1, 'kHz'], 0x24: [1, 'zliczeń'],
+  0x25: [1, 'km'], 0x26: [0.1, 'mV/ms'], 0x27: [0.01, 'g/s'], 0x28: [1, 'g/s'], 0x29: [0.25, 'Pa/s'], 0x2A: [0.001, 'kg/h'],
+  0x2B: [1, 'przełączeń'], 0x2C: [0.01, 'g/cyl'], 0x2D: [0.01, 'mg/skok'], 0x2E: [1, ''], 0x2F: [0.01, '%'], 0x30: [0.001526, '%'],
+  0x31: [0.001, 'l'], 0x34: [1, 'min'], 0x35: [10, 'ms'], 0x36: [0.01, 'g'], 0x37: [0.1, 'g'], 0x38: [1, 'g'],
+  0x3C: [0.1, 'µs'], 0x3D: [0.01, 'mA'], 0x3F: [0.01, 'l'], 0x40: [1, 'ppm'], 0x41: [0.01, 'µA'],
+  0x81: [1, ''], 0x82: [0.1, ''], 0x83: [0.01, ''], 0x84: [0.001, ''], 0x85: [0.0000305, ''], 0x86: [0.000305, ''],
+  0x8A: [0.122, 'mV'], 0x8B: [0.001, 'V'], 0x8C: [0.01, 'V'], 0x8D: [0.00390625, 'mA'], 0x8E: [0.001, 'A'], 0x90: [1, 'ms'],
+  0x96: [0.1, '°C'], 0x99: [0.1, 'kPa'], 0x9C: [0.01, '°'], 0x9D: [0.5, '°'], 0xA8: [1, 'g/s'], 0xA9: [0.25, 'Pa/s'],
+  0xAD: [0.01, 'mg/skok'], 0xAE: [0.1, 'mg/skok'], 0xAF: [0.01, '%'], 0xB0: [0.003052, '%'], 0xB1: [2, 'mV/s'],
+  0xFC: [0.01, 'kPa'], 0xFD: [0.001, 'kPa'], 0xFE: [0.25, 'Pa']
+};
+function midName(m) {
+  if (m >= 0x01 && m <= 0x10) { const i = m - 1; return `Sonda lambda – bank ${(i >> 2) + 1}, czujnik ${(i & 3) + 1}`; }
+  if (m >= 0x41 && m <= 0x50) { const i = m - 0x41; return `Grzałka sondy lambda – bank ${(i >> 2) + 1}, czujnik ${(i & 3) + 1}`; }
+  if (m >= 0xA2 && m <= 0xAD) return `Wypadanie zapłonów – cylinder ${m - 0xA1}`;
+  return ({
+    0x21: 'Katalizator – bank 1', 0x22: 'Katalizator – bank 2', 0x31: 'EGR – bank 1', 0x32: 'EGR – bank 2',
+    0x35: 'Zmienne fazy rozrządu – bank 1', 0x36: 'Zmienne fazy rozrządu – bank 2',
+    0x39: 'EVAP – wyciek 0,150″', 0x3A: 'EVAP – wyciek 0,090″', 0x3B: 'EVAP – wyciek 0,040″', 0x3C: 'EVAP – wyciek 0,020″', 0x3D: 'EVAP – przepływ przedmuchu',
+    0x61: 'Podgrzewanie katalizatora – bank 1', 0x62: 'Podgrzewanie katalizatora – bank 2', 0x71: 'Powietrze wtórne 1', 0x72: 'Powietrze wtórne 2',
+    0x81: 'Układ paliwowy – bank 1', 0x82: 'Układ paliwowy – bank 2', 0x85: 'Ciśnienie doładowania – bank 1', 0x86: 'Ciśnienie doładowania – bank 2',
+    0x90: 'Czujnik NOx', 0xA1: 'Wypadanie zapłonów – ogólnie', 0xB0: 'Filtr cząstek stałych – bank 1', 0xB1: 'Filtr cząstek stałych – bank 2'
+  })[m] || ('Monitor 0x' + hex2(m));
+}
+function tidName(mid, tid) {
+  if (mid >= 0xA1 && mid <= 0xAD) { if (tid === 0x0B) return 'Średnia z ostatnich 10 cykli jazdy'; if (tid === 0x0C) return 'Bieżący lub ostatni cykl jazdy'; }
+  if (mid >= 0x01 && mid <= 0x10) {
+    const t = { 0x01: 'Próg napięcia bogata → uboga', 0x02: 'Próg napięcia uboga → bogata', 0x03: 'Niskie napięcie do pomiaru czasu przełączania', 0x04: 'Wysokie napięcie do pomiaru czasu przełączania',
+      0x05: 'Czas przełączania bogata → uboga', 0x06: 'Czas przełączania uboga → bogata', 0x07: 'Minimalne napięcie w teście', 0x08: 'Maksymalne napięcie w teście', 0x09: 'Czas między przełączeniami', 0x0A: 'Okres sygnału sondy' }[tid];
+    if (t) return t;
+  }
+  return (tid >= 0x80 ? 'Test producenta 0x' : 'Test 0x') + hex2(tid);
+}
+function scaleUas(uas, raw) {
+  const s = UAS[uas]; const signed = uas >= 0x80;
+  const v = signed && raw >= 0x8000 ? raw - 0x10000 : raw;
+  if (!s) return { v, unit: 'surowe' };
+  return { v: v * s[0] + (s[2] || 0), unit: s[1] };
+}
+function parseMode06(data) {
+  const b = bytesOf(data); if (b[0] !== 0x46) return [];
+  const out = [];
+  for (let i = 1; i + 8 < b.length; i += 9) {
+    const [mid, tid, uas] = [b[i], b[i + 1], b[i + 2]];
+    const val = scaleUas(uas, u16(b[i + 3], b[i + 4])), lo = scaleUas(uas, u16(b[i + 5], b[i + 6])), hi = scaleUas(uas, u16(b[i + 7], b[i + 8]));
+    out.push({ mid, tid, uas, value: val.v, min: lo.v, max: hi.v, unit: val.unit, pass: val.v >= lo.v && val.v <= hi.v, name: tidName(mid, tid) });
+  }
+  return out;
+}
+
+/* ---- Klasyfikacja poleceń w konsoli UDS ---- */
+const SID_NAMES = {
+  0x01: 'OBD: dane bieżące', 0x02: 'OBD: zamrożona ramka', 0x03: 'OBD: kody zapisane', 0x04: 'OBD: kasowanie kodów', 0x06: 'OBD: wyniki testów', 0x07: 'OBD: kody oczekujące', 0x09: 'OBD: informacje o pojeździe', 0x0A: 'OBD: kody stałe',
+  0x10: 'Zmiana sesji', 0x11: 'Reset sterownika', 0x14: 'Kasowanie błędów', 0x19: 'Odczyt błędów', 0x22: 'Odczyt danych', 0x23: 'Odczyt pamięci',
+  0x27: 'Dostęp zabezpieczony', 0x28: 'Sterowanie komunikacją', 0x2C: 'Definicja danych dynamicznych', 0x2E: 'Zapis danych (adaptacja, kodowanie)', 0x2F: 'Sterowanie wyjściem (test elementów)',
+  0x31: 'Procedura (ustawienia podstawowe)', 0x34: 'Programowanie: pobieranie', 0x35: 'Programowanie: wysyłanie', 0x36: 'Programowanie: transfer', 0x37: 'Programowanie: koniec',
+  0x3D: 'Zapis pamięci', 0x3E: 'Podtrzymanie sesji', 0x85: 'Sterowanie zapisem błędów'
+};
+function classifyCmd(hex) {
+  const b = bytesOf(hex); const sid = b[0];
+  if (sid == null) return { level: 'bad', why: 'Puste polecenie.' };
+  if ([0x34, 0x35, 0x36, 0x37, 0x38, 0x3D].includes(sid) || (sid === 0x10 && b[1] === 0x02))
+    return { level: 'block', why: 'Programowanie i zapis pamięci są zablokowane. Przerwane programowanie może trwale uszkodzić sterownik.' };
+  if ([0x04, 0x11, 0x14, 0x27, 0x28, 0x2E, 0x2F, 0x31, 0x85].includes(sid) || (sid === 0x10 && b[1] !== 0x01 && b[1] !== 0x03))
+    return { level: 'write', why: `${SID_NAMES[sid] || 'To polecenie'} zmienia stan sterownika albo uruchamia element wykonawczy.` };
+  return { level: 'read', why: SID_NAMES[sid] || 'Polecenie' };
+}
+
+/* ---- Podsłuch: składanie ramek ISO-TP w wiadomości ---- */
+function createIsoTp(onMsg) {
+  const part = {};
+  return line => {
+    const l = line.replace(/\s/g, '').toUpperCase();
+    if (!/^[0-9A-F]{5,}$/.test(l)) return false;
+    const id = parseInt(l.slice(0, 3), 16), d = bytesOf(l.slice(3)); if (!d.length) return false;
+    const t = d[0] >> 4;
+    if (t === 0) { const n = d[0] & 0xF; if (n) onMsg(id, d.slice(1, 1 + n)); }
+    else if (t === 1) { part[id] = { len: ((d[0] & 0xF) << 8) | d[1], data: d.slice(2) }; }
+    else if (t === 2 && part[id]) { const p = part[id]; p.data.push(...d.slice(1)); if (p.data.length >= p.len) { onMsg(id, p.data.slice(0, p.len)); delete part[id]; } }
+    return true;
+  };
+}
 
 /* Parametry OBD-II tryb 01. g = grupa w interfejsie. */
 const PIDS = [
@@ -622,7 +767,7 @@ function decodeUdsDtc(b0, b1, b2, st) {
   if (st & 0x04) flags.push('oczekujący');
   if (st & 0x80) flags.push('kontrolka');
   flags.push('status 0x' + hex2(st));
-  return { code, ftb: hex2(b2), full: `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: DTC_DESC[code] || '' };
+  return { code, ftb: hex2(b2), raw: hex2(b0) + hex2(b1) + hex2(b2), full: `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: DTC_DESC[code] || '' };
 }
 
 function parseMode01(data, defs) {
@@ -655,7 +800,9 @@ class ELM {
     this.t = transport; this.log = log || (() => {});
     this.buf = ''; this.waiter = null; this.q = Promise.resolve(); this.opq = Promise.resolve();
     this.fcOk = true; this.cur = null; this.multiPid = true; this.onWarn = null; this.ident = '';
+    this.st = '64'; this.countOk = true; this.mon = null;
     transport.onData(s => {
+      if (this.mon) { this.mon(s); return; }
       this.buf += s;
       if (this.waiter && this.buf.includes('>')) { const w = this.waiter; this.waiter = null; w(); }
     });
@@ -710,13 +857,28 @@ class ELM {
     }
     this.cur = key;
   }
+  /* Moduł odpowiedział „czekaj” (7F xx 78). Zamiast wysyłać żądanie od nowa (co u wolnych modułów, np. ABS,
+     zaczyna przetwarzanie od początku) prosimy adapter, żeby czekał na kilka kolejnych odpowiedzi z dłuższym limitem czasu. */
+  async waitPending(req) {
+    if (!this.countOk) return null;
+    try {
+      await this.send('ATAT0'); await this.send('ATSTFF');
+      const lines = await this.send(req + 'F', 25000);
+      if (lines.some(l => l.trim() === '?')) { this.countOk = false; return null; }
+      const { msgs, err } = parseElm(lines);
+      if (err) return null;
+      const real = msgs.filter(m => !(m.startsWith('7F') && m.substr(4, 2) === '78'));
+      return real.length ? real : null;
+    } finally { await this.send('ATST' + this.st); await this.send('ATAT1'); }
+  }
   async request(req, { attempts = 5 } = {}) {
-    let pending = false;
+    let pending = false, waited = false;
     for (let a = 0; a < attempts; a++) {
       const { msgs, err } = parseElm(await this.send(req));
       if (err) { if (pending && err === 'NO DATA') { await sleep(300); continue; } return { err }; }
-      const real = msgs.filter(m => !(m.startsWith('7F') && m.substr(4, 2) === '78'));
+      let real = msgs.filter(m => !(m.startsWith('7F') && m.substr(4, 2) === '78'));
       if (real.length < msgs.length) pending = true;
+      if (!real.length && pending && !waited) { waited = true; const w = await this.waitPending(req); if (w) real = w; }
       if (!real.length) { if (pending) { await sleep(300); continue; } return { err: 'pusta odpowiedź' }; }
       const m = real[real.length - 1];
       if (m.startsWith('7F') && m.length >= 6) { const c = m.substr(4, 2); return { err: `NRC ${c}: ${NRC[c] || 'nieznany'}`, nrc: c }; }
@@ -821,10 +983,121 @@ class ELM {
     if (!present && deep) { r = await this.request('22F187', { attempts: 1 }); present = !r.err || !!r.nrc; }
     return present;
   }
-  async readDid(did) {
+  async readDid(did, asHex) {
     const r = await this.request('22' + did, { attempts: 3 });
     if (r.err || !r.data.startsWith('62' + did)) return null;
-    return asciiOrHex(bytesOf(r.data).slice(3));
+    const b = bytesOf(r.data).slice(3);
+    return asHex ? b.map(hex2).join('') : asciiOrHex(b);
+  }
+  /* Szczegóły błędu UDS: dane rozszerzone (0x19 06, rekord po rekordzie) i dane środowiskowe (0x19 04). */
+  async readDtcDetails(mod, raw) {
+    await this.select(mod.tx, mod.rx);
+    const ext = [];
+    for (let rec = 1; rec <= 8; rec++) {
+      const r = await this.request('1906' + raw + hex2(rec), { attempts: 2 });
+      if (r.err) { if (rec > 4) break; continue; }
+      const b = bytesOf(r.data).slice(6);
+      if (b.length > 1 && b[0] === rec) ext.push({ rec, bytes: b.slice(1) });
+    }
+    let snap = null;
+    const s = await this.request('1904' + raw + 'FF', { attempts: 2 });
+    if (!s.err) { const b = bytesOf(s.data).slice(6); if (b.length) snap = b; }
+    return { ext, snap };
+  }
+
+  /* ---- OBD tryb 06 i 09 ---- */
+  async readTests(onProgress) {
+    await this.select(0x7E0, 0x7E8);
+    const mids = []; let base = 0;
+    while (base <= 0xE0) {
+      const r = await this.request('06' + hex2(base), { attempts: 2 });
+      if (r.err) break;
+      const b = bytesOf(r.data).slice(2, 6); if (b.length < 4) break;
+      for (let i = 0; i < 32; i++) if (b[i >> 3] & (0x80 >> (i & 7))) mids.push(base + i + 1);
+      if (!mids.includes(base + 0x20)) break;
+      base += 0x20;
+    }
+    const tests = [];
+    for (const mid of mids.filter(m => m % 0x20 !== 0)) {
+      onProgress && onProgress(mid);
+      const r = await this.request('06' + hex2(mid), { attempts: 2 });
+      if (!r.err) parseMode06(r.data).forEach(t => tests.push(t));
+    }
+    return { mids, tests };
+  }
+  async readCalib() {
+    await this.select(0x7E0, 0x7E8);
+    const out = {};
+    const r4 = await this.request('0904', { attempts: 2 });
+    if (!r4.err) { const b = bytesOf(r4.data).slice(3); const ids = []; for (let i = 0; i < b.length; i += 16) { const s = asciiOf(b.slice(i, i + 16)); if (s) ids.push(s); } if (ids.length) out.calid = ids; }
+    const r6 = await this.request('0906', { attempts: 2 });
+    if (!r6.err) { const b = bytesOf(r6.data).slice(3); const c = []; for (let i = 0; i + 3 < b.length; i += 4) c.push(b.slice(i, i + 4).map(hex2).join('')); if (c.length) out.cvn = c; }
+    const rA = await this.request('090A', { attempts: 2 });
+    if (!rA.err) { const s = asciiOf(bytesOf(rA.data).slice(3)); if (s) out.ecuName = s; }
+    return out;
+  }
+
+  /* ---- Narzędzia zaawansowane ---- */
+  async raw(tx, rx, hex) {
+    await this.select(tx, rx);
+    return this.request(hex.replace(/\s/g, '').toUpperCase(), { attempts: 3 });
+  }
+  async scanDids(mod, ranges, { onProgress, onFound, stop, extended } = {}) {
+    await this.select(mod.tx, mod.rx);
+    const found = []; let n = 0; const total = ranges.reduce((a, [lo, hi]) => a + hi - lo + 1, 0);
+    await this.send('ATST32'); this.st = '32';
+    let inExt = false;
+    try {
+      if (extended) { const s = await this.request('1003', { attempts: 2 }); inExt = !s.err; }
+      for (const [lo, hi] of ranges) for (let did = lo; did <= hi; did++) {
+        if (stop && stop()) return found;
+        n++; if (n % 8 === 0 && onProgress) onProgress(did, n, total);
+        const r = await this.request('22' + hex4(did), { attempts: 2 });
+        if (r.err || !r.data.startsWith('62' + hex4(did))) continue;
+        const f = { did, bytes: bytesOf(r.data).slice(3) };
+        found.push(f); onFound && onFound(f);
+      }
+      return found;
+    } finally {
+      if (inExt) await this.request('1001', { attempts: 1 });
+      this.st = '64'; await this.send('ATST64');
+    }
+  }
+  async readDidRaw(mod, did) {
+    await this.select(mod.tx, mod.rx);
+    const r = await this.request('22' + hex4(did), { attempts: 1 });
+    return (r.err || !r.data.startsWith('62' + hex4(did))) ? null : bytesOf(r.data).slice(3);
+  }
+  /* Podsłuch magistrali (ATMA). Wołać wewnątrz op(): blokuje adapter do czasu stop(). */
+  async monitor(onLine, onEnd) {
+    for (const c of ['ATH1', 'ATCAF0', 'ATCF700', 'ATCM700']) await this.send(c);
+    this.cur = null;
+    let tail = '', stopping = false, ended = false, endRes;
+    const endP = new Promise(r => { endRes = r; });
+    this.mon = s => {
+      tail += s;
+      const parts = tail.split(/[\r\n]+/); tail = parts.pop();
+      for (const p of parts) { const l = p.replace('>', '').trim(); if (l) onLine(l); }
+      if (s.includes('>') || tail.includes('>')) {
+        const l = tail.replace('>', '').trim(); if (l) onLine(l); tail = '';
+        if (!ended) { ended = true; if (!stopping) this.mon = null; endRes(); if (!stopping && onEnd) onEnd(); }
+      }
+    };
+    await this.t.write('ATMA\r');
+    const restore = async () => {
+      this.mon = null; this.buf = '';
+      await sleep(150);
+      for (const c of ['ATH0', 'ATCAF1', 'ATCRA']) await this.send(c);
+      this.cur = null;
+    };
+    return {
+      ended: endP,
+      stop: async () => {
+        stopping = true;
+        if (!ended) { await this.t.write('\r'); await Promise.race([endP, sleep(2000)]); }
+        await restore();
+      }
+    };
   }
   async readModuleDtcs(mod) {
     await this.select(mod.tx, mod.rx);
@@ -846,7 +1119,7 @@ class ELM {
   async scanModule(mod, deep = true) {
     if (!(await this.probe(mod, deep))) return null;
     const info = { ...mod, ident: {} };
-    for (const [did, label] of IDENT_DIDS) { const v = await this.readDid(did); if (v) info.ident[label] = v; }
+    for (const [did, label, kind] of IDENT_DIDS) { const v = await this.readDid(did, kind === 'hex'); if (v) info.ident[label] = v; }
     const d = await this.readModuleDtcs(mod);
     info.dtcs = d.dtcs; info.untested = d.untested || 0; if (d.err) info.err = d.err;
     return info;
@@ -854,7 +1127,7 @@ class ELM {
   async clearModule(mod) { await this.select(mod.tx, mod.rx); return this.request('14FFFFFF', { attempts: 6 }); }
   async findUnknown(onProgress) {
     const known = new Set(MODULES.map(m => m.tx)); const found = [];
-    await this.send('ATST32');
+    await this.send('ATST32'); this.st = '32';
     try {
       for (let tx = 0x700; tx < 0x775; tx++) {
         if (known.has(tx)) continue;
@@ -862,7 +1135,7 @@ class ELM {
         const mod = { addr: '??', name: 'Moduł 0x' + hex3(tx), tx, rx: tx + 0x6A };
         if (await this.probe(mod, false)) found.push(mod);
       }
-    } finally { await this.send('ATST64'); }
+    } finally { this.st = '64'; await this.send('ATST64'); }
     return found;
   }
 }
@@ -1424,6 +1697,375 @@ function createPanels(api) {
   return { render, refresh, onTab, tick, keysFor, stopAll, reportLines, busy: () => bt.running || ht.running };
 }
 
+/* ===== Narzędzia: testy OBD, skaner pomiarów VAG, konsola UDS, podsłuch magistrali ===== */
+function createTools(api) {
+  const $ = s => document.querySelector(s);
+  const { esc, fmtNum, plural } = api;
+  const host = () => $('#toolsPanel');
+  const hexs = b => b.map(hex2).join(' ');
+  const f = (v, d) => (v == null || !isFinite(v)) ? '—' : fmtNum(v, d);
+  const dec = v => Number.isInteger(v) || Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 10 ? 1 : Math.abs(v) >= 1 ? 2 : 3;
+  const now = () => performance.now();
+
+  const st = {
+    tests: null, testsBusy: false, testsMsg: '',
+    scan: { running: false, stop: false, found: [], msg: '', watch: false, base: {}, last: {}, changed: new Set(), mod: '7E0:7E8', ranges: api.store.get('didRanges', '1000-1FFF'), ext: false, onlyChg: false },
+    con: { mod: '7E0:7E8', lines: [], keep: null, pending: null },
+    mon: { running: false, h: null, done: null, msgs: [], raw: [], t0: 0, frames: 0, restarts: 0, hideTp: true, onlyWrite: false, resume: null }
+  };
+
+  /* ---------- moduły ---------- */
+  function modList() {
+    const list = api.MODULES.map(m => ({ key: hex3(m.tx) + ':' + hex3(m.rx), label: `${m.addr} ${m.name}`, tx: m.tx, rx: m.rx }));
+    for (const m of api.report().modules) if (!api.MODULES.some(x => x.tx === m.tx)) list.push({ key: hex3(m.tx) + ':' + hex3(m.rx), label: m.name, tx: m.tx, rx: m.rx });
+    return list;
+  }
+  function modOf(key) { const [a, b] = key.split(':'); return { tx: parseInt(a, 16), rx: parseInt(b, 16) }; }
+  function modName(id) {
+    if (id === 0x7DF) return 'OBD, wszystkie';
+    for (const m of api.MODULES) { if (m.tx === id) return `${m.addr} ${m.name} ←`; if (m.rx === id) return `${m.addr} ${m.name} →`; }
+    return '0x' + hex3(id);
+  }
+  function modSelect(id, cur) {
+    const opts = modList().map(m => `<option value="${m.key}"${m.key === cur ? ' selected' : ''}>${esc(m.label)}</option>`).join('');
+    return `<select id="${id}" class="inp">${opts}<option value="custom"${cur === 'custom' ? ' selected' : ''}>Własny adres…</option></select>`;
+  }
+
+  /* ---------- render ---------- */
+  function render() {
+    const h = host(); if (!h) return;
+    const on = !!api.elm();
+    h.innerHTML = `
+      <div class="panel-intro"><h2 class="ptitle">Narzędzia</h2>
+        <p class="muted">Testy sterownika, szukanie pomiarów VAG, ręczne polecenia i nagrywanie procedur z innych testerów. Polecenia zmieniające sterownik zawsze wymagają potwierdzenia, a programowanie jest zablokowane.</p></div>
+
+      <div class="card"><div class="card-h"><h3>Testy sterownika silnika</h3><span class="n">OBD tryb 06</span></div>
+        <p class="small muted">Wyniki testów, które sterownik robi sam w czasie jazdy: wypadanie zapłonów na każdy cylinder, sondy lambda, katalizator. Liczniki zapłonów pokazują problem, zanim zapali się kontrolka.</p>
+        <div id="tTests"></div>
+        <div class="cardfoot"><button class="btn small" id="tTestsBtn" type="button" ${on ? '' : 'disabled'}>Odczytaj testy</button><span class="tstatus" id="tTestsSt"></span></div></div>
+
+      <div class="card"><div class="card-h"><h3>Pomiary VAG</h3><span class="n">skaner 0x22</span></div>
+        <p class="small muted">Sterownik ma setki pomiarów poza standardem OBD (np. wastegate, korekty spalania stukowego, zawór chłodzenia), ale pod nieopisanymi numerami. Skaner sprawdza zakres numerów, a obserwacja pokazuje, które wartości się zmieniają. Na postoju, z włączonym silnikiem. Zakres 1000–1FFF trwa ok. 3–5 minut.</p>
+        <div class="frow">${modSelect('tScanMod', st.scan.mod)}
+          <label class="fl">Zakres <input id="tScanRng" class="inp mono" value="${esc(st.scan.ranges)}" spellcheck="false" autocomplete="off"></label>
+          <label class="chk"><input type="checkbox" id="tScanExt"${st.scan.ext ? ' checked' : ''}> sesja rozszerzona</label></div>
+        <div class="actions"><button class="btn small primary" id="tScanGo" type="button" ${on ? '' : 'disabled'}>Skanuj</button>
+          <button class="btn small" id="tScanStop" type="button" hidden>Zatrzymaj</button>
+          <button class="btn small" id="tWatch" type="button" hidden>Obserwuj zmiany</button>
+          <label class="chk" id="tOnlyChgL" hidden><input type="checkbox" id="tOnlyChg"${st.scan.onlyChg ? ' checked' : ''}> tylko zmienne</label>
+          <button class="btn small ghost" id="tScanCopy" type="button" hidden>Kopiuj listę</button></div>
+        <p class="tstatus" id="tScanSt"></p>
+        <div id="tScanRes" class="tblwrap"></div></div>
+
+      <div class="card"><div class="card-h"><h3>Konsola UDS</h3><span class="n">dla zaawansowanych</span></div>
+        <p class="small muted">Wysyła pojedyncze polecenie do wybranego modułu, np. odczytane z podsłuchu. Odczyty idą od razu. Zapis, procedury i testy elementów wymagają potwierdzenia. Programowanie jest zablokowane.</p>
+        <div class="frow">${modSelect('tConMod', st.con.mod)}
+          <span id="tConCustom" ${st.con.mod === 'custom' ? '' : 'hidden'}><label class="fl">TX <input id="tConTx" class="inp mono short" value="7E0"></label><label class="fl">RX <input id="tConRx" class="inp mono short" value="7E8"></label></span></div>
+        <div class="frow"><input id="tConIn" class="inp mono grow" placeholder="np. 22F187" spellcheck="false" autocomplete="off" autocapitalize="characters"><button class="btn small primary" id="tConSend" type="button" ${on ? '' : 'disabled'}>Wyślij</button></div>
+        <div class="actions quick">${[['22F187', 'Nr części'], ['22F19E', 'Plik ODX'], ['220600', 'Kodowanie'], ['1003', 'Sesja rozszerzona'], ['1001', 'Sesja domyślna'], ['3E00', 'Podtrzymanie']].map(([c, l]) => `<button class="btn small ghost" type="button" data-q="${c}">${esc(l)}</button>`).join('')}</div>
+        <div id="tConConfirm"></div>
+        <pre id="tConOut" class="conout" aria-live="polite"></pre></div>
+
+      <div class="card"><div class="card-h"><h3>Podsłuch magistrali</h3><span class="n">nagrywanie procedur</span></div>
+        <ol class="steps"><li>Podłącz adapter przez rozdzielacz OBD (kabel Y) razem z VCDS, OBDeleven albo testerem warsztatowym.</li>
+          <li>Naciśnij Start, a potem uruchom procedurę w tamtym programie, np. odpowietrzanie chłodzenia albo test elementów.</li>
+          <li>Po zakończeniu naciśnij Stop i pobierz log. Z niego da się odczytać dokładne polecenia i dodać je tu jako przyciski.</li></ol>
+        <p class="small muted">W czasie podsłuchu aplikacja nie wysyła nic do auta, odczyt na żywo jest wstrzymany.</p>
+        <div class="actions"><button class="btn small primary" id="tMonGo" type="button" ${on ? '' : 'disabled'}>Start</button>
+          <button class="btn small" id="tMonStop" type="button" hidden>Stop</button>
+          <label class="chk"><input type="checkbox" id="tMonHide"${st.mon.hideTp ? ' checked' : ''}> ukryj podtrzymanie sesji</label>
+          <label class="chk"><input type="checkbox" id="tMonWr"${st.mon.onlyWrite ? ' checked' : ''}> tylko polecenia zmieniające</label>
+          <button class="btn small ghost" id="tMonCopy" type="button" hidden>Kopiuj log</button>
+          <button class="btn small ghost" id="tMonDl" type="button" hidden>Pobierz log</button></div>
+        <p class="tstatus" id="tMonSt"></p>
+        <div id="tMonOut" class="msgs"></div></div>`;
+    bind(); renderTests(); renderScan(); renderCon(); renderMon(); sync();
+  }
+
+  function bind() {
+    $('#tTestsBtn').onclick = readTests;
+    $('#tScanMod').onchange = e => { st.scan.mod = e.target.value === 'custom' ? '7E0:7E8' : e.target.value; if (e.target.value === 'custom') e.target.value = st.scan.mod; };
+    $('#tScanRng').onchange = e => { st.scan.ranges = e.target.value; api.store.set('didRanges', e.target.value); };
+    $('#tScanExt').onchange = e => { st.scan.ext = e.target.checked; };
+    $('#tScanGo').onclick = startScan;
+    $('#tScanStop').onclick = () => { st.scan.stop = true; st.scan.watch = false; };
+    $('#tWatch').onclick = toggleWatch;
+    $('#tOnlyChg').onchange = e => { st.scan.onlyChg = e.target.checked; renderScan(); };
+    $('#tScanCopy').onclick = e => api.copyText(scanText(), e.currentTarget);
+    $('#tConMod').onchange = e => { stopKeep(); st.con.mod = e.target.value; $('#tConCustom').hidden = e.target.value !== 'custom'; };
+    $('#tConSend').onclick = () => conSend($('#tConIn').value);
+    $('#tConIn').onkeydown = e => { if (e.key === 'Enter') conSend(e.target.value); };
+    host().querySelectorAll('[data-q]').forEach(b => { b.onclick = () => { $('#tConIn').value = b.dataset.q; conSend(b.dataset.q); }; });
+    $('#tMonGo').onclick = startMon;
+    $('#tMonStop').onclick = stopMon;
+    $('#tMonHide').onchange = e => { st.mon.hideTp = e.target.checked; renderMon(); };
+    $('#tMonWr').onchange = e => { st.mon.onlyWrite = e.target.checked; renderMon(); };
+    $('#tMonCopy').onclick = e => api.copyText(monText(), e.currentTarget);
+    $('#tMonDl').onclick = () => api.download(`vag-podsluch-${api.stamp()}.txt`, monText(), 'text/plain');
+  }
+  function sync() {
+    if (!host() || !$('#tTestsBtn')) return;
+    const on = !!api.elm(), busyBus = st.mon.running || st.scan.running;
+    $('#tTestsBtn').disabled = !on || st.testsBusy || busyBus;
+    $('#tScanGo').disabled = !on || busyBus; $('#tScanGo').hidden = st.scan.running;
+    $('#tScanStop').hidden = !st.scan.running && !st.scan.watch;
+    $('#tWatch').hidden = st.scan.running || !st.scan.found.length; $('#tWatch').textContent = st.scan.watch ? 'Zatrzymaj obserwację' : 'Obserwuj zmiany';
+    $('#tWatch').disabled = !on || st.mon.running;
+    $('#tOnlyChgL').hidden = !st.scan.found.length; $('#tScanCopy').hidden = !st.scan.found.length;
+    $('#tConSend').disabled = !on || st.mon.running;
+    $('#tMonGo').hidden = st.mon.running; $('#tMonGo').disabled = !on || st.scan.running || st.scan.watch; $('#tMonStop').hidden = !st.mon.running;
+    $('#tMonCopy').hidden = $('#tMonDl').hidden = !st.mon.raw.length || st.mon.running;
+    if (api.framed) $('#tMonDl').hidden = true;
+  }
+
+  /* ---------- testy OBD (tryb 06) ---------- */
+  async function readTests() {
+    const e = api.elm(); if (!e) return;
+    st.testsBusy = true; sync(); $('#tTestsSt').textContent = 'Odczyt…';
+    try {
+      st.tests = await e.op(() => e.readTests(mid => { $('#tTestsSt').textContent = `Odczyt: ${midName(mid)}…`; }));
+      st.testsMsg = st.tests.mids.length ? '' : 'Sterownik nie zgłasza żadnych wyników testów w trybie 06.';
+      api.logLine(`— tryb 06: ${st.tests.tests.length} wyników`);
+    } catch (err) { st.testsMsg = 'Nie udało się odczytać: ' + err.message; }
+    st.testsBusy = false; $('#tTestsSt').textContent = ''; renderTests(); sync();
+  }
+  function misfireRows(tests) {
+    const rows = [];
+    for (let c = 1; c <= 12; c++) {
+      const mid = 0xA1 + c, T = tests.filter(t => t.mid === mid); if (!T.length) continue;
+      const cur = T.find(t => t.tid === 0x0C), avg = T.find(t => t.tid === 0x0B);
+      rows.push({ c, cur: cur ? cur.value : null, avg: avg ? avg.value : null });
+    }
+    return rows;
+  }
+  function renderTests() {
+    const el = $('#tTests'); if (!el) return;
+    const T = st.tests;
+    if (!T) { el.innerHTML = st.testsMsg ? `<p class="small">${esc(st.testsMsg)}</p>` : ''; return; }
+    if (!T.tests.length) { el.innerHTML = `<p class="small">${esc(st.testsMsg || 'Brak wyników.')}</p>`; return; }
+    const mis = misfireRows(T.tests);
+    let html = '';
+    if (mis.length) {
+      const maxv = Math.max(1, ...mis.map(r => Math.max(r.cur || 0, r.avg || 0)));
+      const tot = mis.reduce((a, r) => a + (r.cur || 0), 0);
+      const worst = mis.reduce((a, r) => (r.cur || 0) > (a.cur || 0) ? r : a, mis[0]);
+      const lead = tot === 0 ? '<p class="codehead ok">Brak wypadania zapłonów w bieżącym cyklu jazdy.</p>'
+        : `<p class="codehead ${worst.cur > tot * 0.6 && tot >= 5 ? 'crit' : ''}">Wypadanie zapłonów: ${tot} w bieżącym cyklu${tot >= 5 && worst.cur > tot * 0.6 ? `, głównie cylinder ${worst.c}. Zamień cewkę z sąsiednim cylindrem i sprawdź, czy problem przejdzie za nią.` : '.'}</p>`;
+      html += `<h4 class="sub">Wypadanie zapłonów</h4>${lead}
+        <table class="tbl"><thead><tr><th>Cylinder</th><th>Bieżący cykl</th><th>Średnia 10 cykli</th><th class="barcol"></th></tr></thead><tbody>
+        ${mis.map(r => `<tr><td>${r.c}</td><td class="num">${r.cur == null ? '—' : f(r.cur, 0)}</td><td class="num">${r.avg == null ? '—' : f(r.avg, 0)}</td><td class="barcol"><span class="bar" style="width:${Math.round(100 * Math.max(r.cur || 0, r.avg || 0) / maxv)}%"></span></td></tr>`).join('')}
+        </tbody></table>
+        <p class="small muted">Licznik bieżącego cyklu zeruje się po każdym uruchomieniu. Pojedyncze zliczenia na zimnym silniku są normalne.</p>`;
+    }
+    const rest = T.tests.filter(t => !(t.mid >= 0xA1 && t.mid <= 0xAD));
+    const fails = T.tests.filter(t => !t.pass);
+    const byMid = {}; rest.forEach(t => { (byMid[t.mid] = byMid[t.mid] || []).push(t); });
+    html += `<h4 class="sub">Pozostałe testy <small>${T.tests.length} ${plural(T.tests.length, 'wynik', 'wyniki', 'wyników')}, poza zakresem: ${fails.length}</small></h4>`;
+    html += Object.keys(byMid).map(Number).sort((a, b) => a - b).map(mid => {
+      const L = byMid[mid], bad = L.some(t => !t.pass);
+      return `<details class="tgroup"${bad ? ' open' : ''}><summary><span>${esc(midName(mid))}</span><span class="st ${bad ? 'no' : 'ok'}">${bad ? 'poza zakresem' : 'OK'}</span></summary>
+        <table class="tbl"><thead><tr><th>Test</th><th class="num">Wynik</th><th class="num">Min</th><th class="num">Max</th></tr></thead><tbody>
+        ${L.map(t => `<tr class="${t.pass ? '' : 'bad'}"><td>${esc(t.name)}</td><td class="num">${f(t.value, dec(t.value))} ${esc(t.unit)}</td><td class="num">${f(t.min, dec(t.min))}</td><td class="num">${f(t.max, dec(t.max))}</td></tr>`).join('')}
+        </tbody></table></details>`;
+    }).join('');
+    el.innerHTML = html;
+  }
+
+  /* ---------- skaner pomiarów ---------- */
+  function parseRanges(s) {
+    const out = [];
+    for (const part of s.split(/[,;\s]+/).filter(Boolean)) {
+      const m = part.match(/^([0-9a-f]{1,4})(?:-([0-9a-f]{1,4}))?$/i); if (!m) return null;
+      const lo = parseInt(m[1], 16), hi = parseInt(m[2] || m[1], 16); if (hi < lo) return null;
+      out.push([lo, hi]);
+    }
+    const n = out.reduce((a, [lo, hi]) => a + hi - lo + 1, 0);
+    return out.length && n <= 0x4000 ? out : null;
+  }
+  async function startScan() {
+    const e = api.elm(); if (!e) return;
+    const ranges = parseRanges($('#tScanRng').value);
+    if (!ranges) { $('#tScanSt').textContent = 'Zły zakres. Wpisz np. 1000-1FFF albo 0100-01FF, F400-F4FF (łącznie do 16 384 numerów).'; return; }
+    const S = st.scan; S.running = true; S.stop = false; S.watch = false; S.found = []; S.base = {}; S.last = {}; S.changed = new Set();
+    S.mod = $('#tScanMod').value === 'custom' ? '7E0:7E8' : $('#tScanMod').value;
+    const mod = modOf(S.mod); const resume = api.pause(); const t0 = now();
+    sync(); renderScan();
+    try {
+      await e.op(() => e.scanDids(mod, ranges, {
+        extended: S.ext, stop: () => S.stop || e !== api.elm(),
+        onProgress: (did, n, total) => { const el = $('#tScanSt'); if (el) el.textContent = `Sprawdzam 0x${hex4(did)} · ${n} z ${total} · znaleziono ${S.found.length} · ${Math.round((now() - t0) / 1000)} s`; },
+        onFound: fd => { S.found.push(fd); S.base[fd.did] = fd.bytes; S.last[fd.did] = fd.bytes; if (S.found.length % 5 === 1) renderScan(); }
+      }));
+      S.msg = `${S.stop ? 'Zatrzymano' : 'Gotowe'}: ${S.found.length} ${plural(S.found.length, 'identyfikator odpowiada', 'identyfikatory odpowiadają', 'identyfikatorów odpowiada')}. ${S.found.length ? 'Teraz włącz obserwację i zmieniaj obroty albo poczekaj, aż silnik się nagrzeje.' : ''}`;
+      api.logLine(`— skaner 0x22: ${S.found.length} DID`);
+    } catch (err) { S.msg = 'Skanowanie przerwane: ' + err.message; }
+    S.running = false; resume(); $('#tScanSt').textContent = S.msg; renderScan(); sync();
+  }
+  async function toggleWatch() {
+    const S = st.scan; const e = api.elm(); if (!e) return;
+    if (S.watch) { S.watch = false; sync(); return; }
+    S.watch = true; sync();
+    const resume = api.pause();
+    const mod = modOf(S.mod); const list = S.found.slice(0, 120);
+    let round = 0;
+    while (S.watch && e === api.elm()) {
+      for (const fd of list) {
+        if (!S.watch || e !== api.elm()) break;
+        const b = await e.op(() => e.readDidRaw(mod, fd.did));
+        if (b) { S.last[fd.did] = b; if (hexs(b) !== hexs(S.base[fd.did] || [])) S.changed.add(fd.did); }
+      }
+      round++;
+      const el = $('#tScanSt'); if (el) el.textContent = `Obserwacja: runda ${round}, zmienia się ${S.changed.size} z ${list.length}${S.found.length > list.length ? ` (obserwuję pierwsze ${list.length})` : ''}.`;
+      renderScan();
+    }
+    S.watch = false; resume(); sync();
+  }
+  function u16s(b) { return b.length === 2 ? u16(b[0], b[1]) : b.length === 1 ? b[0] : null; }
+  function renderScan() {
+    const el = $('#tScanRes'); if (!el) return;
+    const S = st.scan; let L = S.found; if (S.onlyChg) L = L.filter(fd => S.changed.has(fd.did));
+    if (!L.length) { el.innerHTML = S.found.length && S.onlyChg ? '<p class="small muted">Żadna wartość jeszcze się nie zmieniła.</p>' : ''; return; }
+    el.innerHTML = `<table class="tbl dids"><thead><tr><th>DID</th><th>Bajty</th><th>Teraz</th><th class="num">Liczbowo</th></tr></thead><tbody>
+      ${L.slice(0, 400).map(fd => { const b = S.last[fd.did] || fd.bytes, ch = S.changed.has(fd.did), n = u16s(b), txt = asciiOrHex(b);
+        return `<tr class="${ch ? 'chg' : ''}"><td class="mono">${hex4(fd.did)}</td><td class="num">${b.length}</td><td class="mono hexcell">${esc(b.length > 24 ? hexs(b.slice(0, 24)) + ' …' : hexs(b))}${txt !== hexs(b) ? `<br><span class="muted">${esc(txt.slice(0, 40))}</span>` : ''}</td><td class="num">${n == null ? '' : n}</td></tr>`; }).join('')}
+      </tbody></table>${L.length > 400 ? `<p class="small muted">Pokazano 400 z ${L.length}. Pełna lista jest w „Kopiuj listę”.</p>` : ''}`;
+  }
+  function scanText() {
+    const S = st.scan, m = modOf(S.mod);
+    return [`Skaner 0x22 · moduł TX ${hex3(m.tx)} RX ${hex3(m.rx)} · ${S.found.length} DID · zmienne: ${S.changed.size}`,
+      ...S.found.map(fd => `${hex4(fd.did)}  ${S.changed.has(fd.did) ? 'ZMIENNY' : '       '}  start: ${hexs(S.base[fd.did] || fd.bytes)}${S.changed.has(fd.did) ? '  teraz: ' + hexs(S.last[fd.did]) : ''}`)].join('\n');
+  }
+
+  /* ---------- konsola ---------- */
+  function conMod() {
+    const v = $('#tConMod').value;
+    if (v !== 'custom') return modOf(v);
+    const tx = parseInt($('#tConTx').value, 16), rx = parseInt($('#tConRx').value, 16);
+    return (tx >= 0 && tx <= 0x7FF && rx >= 0 && rx <= 0x7FF) ? { tx, rx } : null;
+  }
+  function conLine(s, cls) { st.con.lines.push({ s, cls }); if (st.con.lines.length > 300) st.con.lines.shift(); renderCon(); }
+  function renderCon() {
+    const el = $('#tConOut'); if (!el) return;
+    el.innerHTML = st.con.lines.map(l => `<span class="${l.cls || ''}">${esc(l.s)}</span>`).join('\n') || '<span class="muted">Odpowiedzi pojawią się tutaj.</span>';
+    el.scrollTop = el.scrollHeight;
+  }
+  function conSend(input, confirmed) {
+    const hex = (input || '').replace(/\s/g, '').toUpperCase();
+    $('#tConConfirm').innerHTML = '';
+    if (!/^([0-9A-F]{2})+$/.test(hex)) { conLine('! Wpisz polecenie w hex, parzystą liczbę znaków, np. 22F187.', 'err'); return; }
+    const mod = conMod(); if (!mod) { conLine('! Zły adres modułu.', 'err'); return; }
+    const c = classifyCmd(hex);
+    if (c.level === 'block') { conLine('✕ ' + hex + ' – ' + c.why, 'err'); return; }
+    if (c.level === 'write' && !confirmed) {
+      $('#tConConfirm').innerHTML = `<div class="confirm"><span><b>${esc(hex)}</b> do 0x${hex3(mod.tx)}: ${esc(c.why)} Wyślij tylko, jeśli wiesz, co robi to polecenie w tym module (np. odczytałeś je z podsłuchu procedury). Silnik w trakcie testów elementów może się zachowywać nietypowo.</span>
+        <div><button class="btn small danger" type="button" id="tConYes">Wyślij</button><button class="btn small" type="button" id="tConNo">Anuluj</button></div></div>`;
+      $('#tConYes').onclick = () => conSend(hex, true);
+      $('#tConNo').onclick = () => { $('#tConConfirm').innerHTML = ''; };
+      return;
+    }
+    run(mod, hex);
+  }
+  async function run(mod, hex) {
+    const e = api.elm(); if (!e) return;
+    conLine(`> [${hex3(mod.tx)}] ${hex}  · ${classifyCmd(hex).why}`, 'req');
+    try {
+      const r = await e.op(() => e.raw(mod.tx, mod.rx, hex));
+      if (r.err) conLine('< ' + r.err, 'err');
+      else { const b = bytesOf(r.data); const txt = asciiOrHex(b.slice(3)); conLine('< ' + hexs(b) + (b.length > 3 && txt !== hexs(b.slice(3)) ? `   „${txt}”` : ''), 'ok'); }
+      if (!r.err && hex.startsWith('10')) { if (hex === '1001') stopKeep(); else startKeep(mod); }
+    } catch (err) { conLine('! ' + err.message, 'err'); }
+  }
+  function startKeep(mod) {
+    stopKeep();
+    st.con.keep = setInterval(() => { const e = api.elm(); if (!e || st.mon.running) return stopKeep(); e.op(() => e.raw(mod.tx, mod.rx, '3E00')).catch(() => {}); }, 2500);
+    conLine('— sesja podtrzymywana automatycznie (3E00 co 2,5 s). Wyślij 1001, żeby wrócić do sesji domyślnej.', 'muted');
+  }
+  function stopKeep() { if (st.con.keep) { clearInterval(st.con.keep); st.con.keep = null; } }
+
+  /* ---------- podsłuch ---------- */
+  function svcLabel(b) {
+    const sid = b[0];
+    if (sid === 0x7F) return `odmowa ${SID_NAMES[b[1]] ? '(' + SID_NAMES[b[1]] + ')' : ''}: NRC ${hex2(b[2] || 0)} ${NRC[hex2(b[2] || 0)] || ''}`.trim();
+    if (sid >= 0x40 && SID_NAMES[sid - 0x40]) return 'odp.: ' + SID_NAMES[sid - 0x40];
+    return SID_NAMES[sid] || '';
+  }
+  async function startMon() {
+    const e = api.elm(); if (!e) return;
+    stopKeep();
+    const M = st.mon; M.running = true; M.msgs = []; M.raw = []; M.t0 = now(); M.frames = 0; M.restarts = 0;
+    M.resume = api.pause(); sync(); renderMon();
+    const tp = createIsoTp((id, bytes) => {
+      const t = (now() - M.t0) / 1000;
+      const c = id === 0x7DF || api.MODULES.some(m => m.tx === id) || (id >= 0x700 && id < 0x776 && !api.MODULES.some(m => m.rx === id)) ? classifyCmd(bytes.map(hex2).join('')) : null;
+      M.msgs.push({ t, id, bytes, w: c && c.level !== 'read', req: !!c });
+      if (M.msgs.length > 20000) M.msgs.shift();
+      schedule();
+    });
+    const onLine = l => { M.raw.push(((now() - M.t0) / 1000).toFixed(3) + '  ' + l); if (M.raw.length > 60000) M.raw.shift(); if (tp(l)) M.frames++; else if (/BUFFER FULL|STOPPED|CAN ERROR/.test(l)) M.raw.push('— ' + l); schedule(); };
+    M.done = e.op(async () => {
+      while (M.running && e === api.elm()) {
+        const h = await e.monitor(onLine, () => { M.restarts++; });
+        M.h = h;
+        await h.ended;
+        if (!M.running) break;
+        await sleep(120);
+      }
+    }).catch(err => { api.logLine('! podsłuch: ' + err.message); });
+    api.logLine('— podsłuch: start');
+  }
+  async function stopMon() {
+    const M = st.mon; if (!M.running) return;
+    M.running = false; $('#tMonStop').disabled = true;
+    try { if (M.h) await M.h.stop(); } catch (e) {}
+    try { await M.done; } catch (e) {}
+    M.h = null; $('#tMonStop').disabled = false;
+    const r = M.resume; M.resume = null; r && r();
+    api.logLine(`— podsłuch: stop, ${M.frames} ramek, ${M.msgs.length} wiadomości`);
+    renderMon(); sync();
+  }
+  let monTimer = null;
+  function schedule() { if (!monTimer) monTimer = setTimeout(() => { monTimer = null; renderMon(); }, 300); }
+  function monVisible() { const M = st.mon; return M.msgs.filter(m => !(M.hideTp && (m.bytes[0] === 0x3E || m.bytes[0] === 0x7E)) && (!M.onlyWrite || m.w)); }
+  function renderMon() {
+    const el = $('#tMonOut'), s = $('#tMonSt'); if (!el) return;
+    const M = st.mon, V = monVisible();
+    const nw = M.msgs.filter(m => m.w).length;
+    s.textContent = M.running || M.raw.length ? `${M.running ? 'Nasłuch' : 'Zapisano'}: ${M.frames} ramek, ${M.msgs.length} wiadomości, w tym ${nw} ${plural(nw, 'polecenie zmieniające', 'polecenia zmieniające', 'poleceń zmieniających')}${M.restarts ? `, wznowień po przepełnieniu: ${M.restarts}` : ''}.` : '';
+    el.innerHTML = V.slice(-300).map(m => `<div class="msg${m.w ? ' w' : ''}${m.req ? ' rq' : ''}"><span class="mt">${m.t.toFixed(2)}</span><span class="mid">${esc(modName(m.id))}</span><code>${esc(hexs(m.bytes.slice(0, 40)))}${m.bytes.length > 40 ? ' …' : ''}</code><span class="ms">${esc(svcLabel(m.bytes))}</span></div>`).join('')
+      || (M.running ? '<p class="small muted">Czekam na komunikację diagnostyczną…</p>' : '');
+    if (M.running) el.scrollTop = el.scrollHeight;
+    sync();
+  }
+  function monText() {
+    const M = st.mon;
+    return ['VAG Diagnostyka – podsłuch magistrali', 'Data: ' + new Date().toLocaleString('pl-PL'), '',
+      '== Wiadomości (złożone ISO-TP) ==',
+      ...M.msgs.map(m => `${m.t.toFixed(3)}  ${hex3(m.id)}  ${modName(m.id).padEnd(28)}  ${hexs(m.bytes)}  ${svcLabel(m.bytes)}${m.w ? '  [ZMIENIA]' : ''}`),
+      '', '== Surowe ramki ==', ...M.raw].join('\n');
+  }
+
+  /* ---------- API ---------- */
+  return {
+    render,
+    onConnect() { st.tests = null; st.testsMsg = ''; st.scan.found = []; st.scan.changed = new Set(); render(); },
+    sync,
+    async stopAll() { stopKeep(); st.scan.stop = true; st.scan.watch = false; if (st.mon.running) { st.mon.running = false; try { st.mon.h && await st.mon.h.stop(); } catch (e) {} st.mon.resume = null; } sync(); },
+    busy() { return st.mon.running || st.scan.running || st.scan.watch; },
+    reportLines() {
+      const L = [];
+      if (st.tests && st.tests.tests.length) {
+        L.push('', '== Testy sterownika (OBD tryb 06) ==');
+        const mis = misfireRows(st.tests.tests);
+        if (mis.length) L.push('Wypadanie zapłonów (bieżący cykl / średnia 10 cykli): ' + mis.map(r => `cyl. ${r.c}: ${r.cur ?? '—'} / ${r.avg ?? '—'}`).join('; '));
+        const fails = st.tests.tests.filter(t => !t.pass);
+        L.push(fails.length ? 'Poza zakresem: ' + fails.map(t => `${midName(t.mid)} – ${t.name}: ${f(t.value, dec(t.value))} ${t.unit} (min ${f(t.min, dec(t.min))}, max ${f(t.max, dec(t.max))})`).join('; ') : `Wszystkie ${st.tests.tests.length} wyniki w zakresie.`);
+      }
+      if (st.scan.found.length) L.push('', `Skaner 0x22: ${st.scan.found.length} DID, zmiennych ${st.scan.changed.size}`);
+      return L;
+    }
+  };
+}
+
 /* ===== VAG Diagnostyka – interfejs ===== */
 (function () {
   const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
@@ -1448,7 +2090,7 @@ function createPanels(api) {
   const framed = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
 
   let elm = null, tr = null, mode = null, sup = new Set();
-  let panels = null, currentTab = 'live';
+  let panels = null, tools = null, currentTab = 'live';
   let vals = {}, seen = {}, hist = {}, mm = {}, tiles = [];
   let polling = false, pollRun = 0, cycle = 0, rec = null, wake = null, scanning = false, connecting = false;
   let view = store.get('group', 'silnik'); if (!['silnik', 'chlodzenie', 'doladowanie', 'mieszanka', 'all'].includes(view)) view = 'silnik';
@@ -1456,7 +2098,7 @@ function createPanels(api) {
   const logBuf = []; let logTimer = null;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-  function blankReport() { return { vin: null, readiness: null, obd: null, freeze: null, modules: [], absent: [], adapter: null, at: null }; }
+  function blankReport() { return { vin: null, calib: null, readiness: null, obd: null, freeze: null, modules: [], absent: [], adapter: null, at: null }; }
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
   function plural(n, a, b, c) { if (n === 1) return a; const d = n % 10, h = n % 100; return (d >= 2 && d <= 4 && (h < 12 || h > 14)) ? b : c; }
@@ -1487,7 +2129,7 @@ function createPanels(api) {
   /* ---------- zakładki ---------- */
   $$('.tabs button').forEach(b => b.addEventListener('click', () => {
     $$('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b ? 'true' : 'false'));
-    ['live', 'boost', 'heat', 'errors', 'state', 'log'].forEach(t => { $('#tab-' + t).hidden = t !== b.dataset.tab; });
+    ['live', 'boost', 'heat', 'errors', 'tools', 'state', 'log'].forEach(t => { $('#tab-' + t).hidden = t !== b.dataset.tab; });
     currentTab = b.dataset.tab;
     if (b.dataset.tab === 'log') renderLog();
     if (b.dataset.tab === 'live') { sizeSparks(); updateTiles(); }
@@ -1602,6 +2244,7 @@ function createPanels(api) {
   }
   async function pollLoop(run) {
     while (polling && run === pollRun && elm) {
+      if (tools && tools.busy()) { await sleep(400); continue; }
       const t0 = performance.now(); const wanted = activeKeys(); const keys = (cycle % 6 === 0 && !(panels && panels.busy())) ? allKeys() : wanted; const e = elm;
       try {
         const res = await e.op(() => e.readLive(defsFor(keys)));
@@ -1631,6 +2274,8 @@ function createPanels(api) {
     try { wake && wake.release(); } catch (e) {} wake = null;
   }
   $('#btnPoll').onclick = () => { polling ? stopPolling() : startPolling(); };
+  /* Wstrzymanie odczytu na żywo na czas narzędzi, które zajmują adapter. Zwraca funkcję wznawiającą. */
+  function pause() { const was = polling; if (was) stopPolling(); return () => { if (was && elm && !polling) startPolling(); }; }
 
   /* ---------- nagrywanie ---------- */
   $('#btnRec').onclick = () => {
@@ -1784,12 +2429,13 @@ function createPanels(api) {
   }
   function lost() {
     if (!mode) return;
-    panels && panels.stopAll();
+    panels && panels.stopAll(); tools && tools.stopAll();
     stopPolling(); elm = null; tr = null; mode = null; setButtons();
     chip('Połączenie przerwane', ''); banner('Połączenie z adapterem zostało przerwane. Sprawdź adapter i połącz ponownie.', 'warn');
   }
   async function disconnect() {
     panels && panels.stopAll();
+    if (tools) await tools.stopAll();
     stopPolling();
     const t = tr; tr = null; elm = null; mode = null;
     if (t) { try { await t.close(); } catch (e) {} }
@@ -1800,6 +2446,7 @@ function createPanels(api) {
     $('#btnDisc').hidden = !on; $('#btnPoll').disabled = !on; $('#btnRec').disabled = !on;
     $('#btnScan').disabled = !on || scanning; $('#btnState').disabled = !on;
     $('#btnBle').disabled = $('#btnSerial').disabled = connecting;
+    tools && tools.sync();
   }
   async function connect(kind, all) {
     if (connecting) return;
@@ -1823,7 +2470,7 @@ function createPanels(api) {
       report.adapter = `${id} · ${t.name}`;
       chip(`${t.name} · ${id}`, 'on');
       $('#banner').hidden = true;
-      connecting = false; setButtons(); buildTiles(); renderState(); startPolling();
+      connecting = false; tools && tools.onConnect(); setButtons(); buildTiles(); renderState(); startPolling();
       refreshState().then(() => runScan(false));
     } catch (err) {
       connecting = false;
@@ -1846,6 +2493,7 @@ function createPanels(api) {
     try {
       report.vin = await e.op(() => e.readVin());
       report.readiness = await e.op(() => e.readReadiness());
+      report.calib = await e.op(() => e.readCalib());
       const v = await e.op(() => e.voltage()); if (v != null) { vals.adapterV = v; }
     } catch (err) { logLine('! ' + err.message); }
     renderState(); setButtons();
@@ -1857,6 +2505,10 @@ function createPanels(api) {
     $('#sMil').textContent = r ? (r.mil ? 'włączona' : 'wyłączona') : '—';
     $('#sCnt').textContent = r ? String(r.count) : '—';
     $('#sIgn').textContent = r ? (r.compression ? 'samoczynny (diesel)' : 'iskrowy (benzyna)') : '—';
+    const cal = report.calib || {};
+    $('#sEcu').textContent = cal.ecuName || '—';
+    $('#sCal').textContent = cal.calid ? cal.calid.join(', ') : '—';
+    $('#sCvn').textContent = cal.cvn ? cal.cvn.join(', ') : '—';
     $('#sReady').innerHTML = r && r.monitors.length
       ? r.monitors.map(m => `<li><span>${esc(m.name)}</span><span class="st ${m.complete ? 'ok' : 'no'}">${m.complete ? 'gotowy' : 'niegotowy'}</span></li>`).join('')
       : '<li class="muted">—</li>';
@@ -1872,8 +2524,14 @@ function createPanels(api) {
   }
 
   /* ---------- błędy ---------- */
-  function dtcRow(code, desc, flags) {
-    return `<div class="dtc"><code>${esc(code)}</code><span class="d">${desc ? esc(desc) : '<span class="muted">Kod producenta, brak opisu w bazie</span>'}</span>${flags && flags.length ? `<div class="flags">${flags.map(f => `<span class="flag${f === 'aktywny' ? ' act' : f === 'kontrolka' ? ' mil' : ''}">${esc(f)}</span>`).join('')}</div>` : ''}</div>`;
+  function dtcRow(code, desc, flags, m, d) {
+    const det = d && d.details;
+    const detHtml = det ? `<div class="dtcdet">${det.err ? `<span class="muted">${esc(det.err)}</span>`
+      : `${det.ext.length ? `<div><b>Dane rozszerzone</b> ${det.ext.map(x => `<span class="kvp">rekord ${hex2(x.rec)}: <code>${x.bytes.map(hex2).join(' ')}</code>${x.bytes.length <= 3 ? ` = ${x.bytes.reduce((a, b) => a * 256 + b, 0)}` : ''}</span>`).join('')}</div>` : ''}
+         ${det.snap ? `<div><b>Dane środowiskowe</b> <code class="wrap">${det.snap.map(hex2).join(' ')}</code></div>` : ''}
+         ${!det.ext.length && !det.snap ? '<span class="muted">Moduł nie zwrócił szczegółów dla tego kodu.</span>' : '<span class="muted">Surowe dane. Bez opisu producenta nie da się nazwać każdego pola. Licznik wystąpień i przebieg zwykle są w danych rozszerzonych.</span>'}`}</div>` : '';
+    const btn = m && d ? `<button class="linkbtn" type="button" data-det="${m.tx}|${d.raw}">${det ? 'Odśwież szczegóły' : 'Szczegóły'}</button>` : '';
+    return `<div class="dtc"><code>${esc(code)}</code><span class="d">${desc ? esc(desc) : '<span class="muted">Kod producenta, brak opisu w bazie</span>'}</span>${flags && flags.length ? `<div class="flags">${flags.map(f => `<span class="flag${f === 'aktywny' ? ' act' : f === 'kontrolka' ? ' mil' : ''}">${esc(f)}</span>`).join('')}${btn}</div>` : ''}${detHtml}</div>`;
   }
   function clearFoot(id, label) { return `<div class="cardfoot" data-foot="${id}"><button class="btn small" type="button" data-clear="${id}">${label}</button></div>`; }
   function renderObd() {
@@ -1904,7 +2562,7 @@ function createPanels(api) {
       const ident = Object.entries(m.ident).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join('<br>');
       return `<div class="card${n ? ' has-err' : ''}"><div class="card-h"><span class="addr">${esc(m.addr)}</span><h3>${esc(m.name)}</h3><span class="n">${n} ${plural(n, 'błąd', 'błędy', 'błędów')}</span></div>
         ${ident ? `<div class="ident">${ident}</div>` : ''}
-        ${m.err ? `<p class="muted" style="margin:0;font-size:13px">Nie udało się odczytać błędów: ${esc(m.err)}</p>` : n ? m.dtcs.map(d => dtcRow(d.full, d.desc, d.flags)).join('') : '<p class="noerr">Brak błędów</p>'}
+        ${m.err ? `<p class="muted" style="margin:0;font-size:13px">Nie udało się odczytać błędów: ${esc(m.err)}</p>` : n ? m.dtcs.map(d => dtcRow(d.full, d.desc, d.flags, m, d)).join('') : '<p class="noerr">Brak błędów</p>'}
         ${m.untested ? `<p class="absent">Pominięto ${m.untested} ${plural(m.untested, 'pozycję', 'pozycje', 'pozycji')} z listy kodów obsługiwanych przez moduł, bez wykrytej usterki.</p>` : ''}
         ${n ? clearFoot('m' + m.tx, 'Kasuj błędy') : ''}</div>`;
     }).join('') + '</div>' + (report.absent.length ? `<p class="absent">Bez odpowiedzi (brak w aucie lub inny adres): ${report.absent.map(m => esc(m.addr + ' ' + m.name)).join(', ')}</p>` : '');
@@ -1946,6 +2604,14 @@ function createPanels(api) {
 
   $('#tab-errors').addEventListener('click', async ev => {
     const btn = ev.target.closest('button'); if (!btn) return;
+    if (btn.dataset.det) {
+      const e = elm; if (!e) return;
+      const [tx, raw] = btn.dataset.det.split('|');
+      const m = report.modules.find(x => String(x.tx) === tx); const d = m && m.dtcs.find(x => x.raw === raw); if (!d) return;
+      btn.disabled = true; btn.textContent = 'Odczyt…';
+      try { d.details = await e.op(() => e.readDtcDetails(m, raw)); } catch (err) { d.details = { err: err.message, ext: [], snap: null }; }
+      renderModules(); return;
+    }
     if (btn.dataset.clear) {
       const id = btn.dataset.clear, foot = btn.closest('.cardfoot');
       const m = id === 'obd' ? null : report.modules.find(x => 'm' + x.tx === id);
@@ -1973,6 +2639,8 @@ function createPanels(api) {
     const L = [];
     L.push('VAG Diagnostyka – raport', 'Data: ' + new Date().toLocaleString('pl-PL'));
     L.push('Adapter: ' + (report.adapter || '—'), 'VIN: ' + (report.vin || '—'));
+    const cal = report.calib || {};
+    if (cal.ecuName || cal.calid) L.push(`Sterownik: ${cal.ecuName || '—'} · kalibracja: ${(cal.calid || []).join(', ') || '—'} · CVN: ${(cal.cvn || []).join(', ') || '—'}`);
     const r = report.readiness;
     if (r) { L.push(`Kontrolka MIL: ${r.mil ? 'włączona' : 'wyłączona'}, kody emisyjne: ${r.count}`); L.push('Gotowość: ' + r.monitors.map(m => `${m.name} ${m.complete ? 'gotowy' : 'NIEGOTOWY'}`).join('; ')); }
     L.push('', '== Silnik – kody OBD ==');
@@ -1985,11 +2653,15 @@ function createPanels(api) {
       L.push(`[${m.addr}] ${m.name}  ${Object.entries(m.ident).map(([k, v]) => k + ': ' + v).join(' | ')}`);
       if (m.err) L.push('   błąd odczytu: ' + m.err);
       else if (!m.dtcs.length) L.push('   brak błędów');
-      else m.dtcs.forEach(d => L.push(`   ${d.full} [${d.flags.join(', ')}] ${d.desc}`.trimEnd()));
+      else m.dtcs.forEach(d => {
+        L.push(`   ${d.full} [${d.flags.join(', ')}] ${d.desc}`.trimEnd());
+        const x = d.details; if (x && !x.err) { x.ext.forEach(r => L.push(`      rekord ${hex2(r.rec)}: ${r.bytes.map(hex2).join(' ')}`)); if (x.snap) L.push('      środowisko: ' + x.snap.map(hex2).join(' ')); }
+      });
       if (m.untested) L.push(`   (pominięto ${m.untested} ${plural(m.untested, 'pozycję', 'pozycje', 'pozycji')} z listy obsługiwanych kodów, bez usterki)`);
     }
     if (report.absent.length) L.push('Bez odpowiedzi: ' + report.absent.map(m => m.addr + ' ' + m.name).join(', '));
     if (panels) L.push(...panels.reportLines());
+    if (tools) L.push(...tools.reportLines());
     L.push('', 'Obsługiwane PID (tryb 01): ' + ([...sup].filter(p => p % 0x20 !== 0).sort((a, b) => a - b).map(hex2).join(' ') || '—'));
     L.push('', '== Parametry (ostatni odczyt) ==');
     for (const [g, label] of GROUPS) {
@@ -2012,6 +2684,11 @@ function createPanels(api) {
     renderErrors: () => { renderObd(); renderModules(); },
     ensurePolling: () => { if (!polling) startPolling(); }
   });
+  tools = createTools({
+    elm: () => elm, esc, fmtNum, plural, copyText, download, stamp, framed, logLine, store, MODULES,
+    report: () => report, pause
+  });
+  tools.render();
   syncSeg(); setButtons();
   setInterval(() => { if (elm && !$('#tab-state').hidden) renderState(); }, 3000);
   buildTiles();

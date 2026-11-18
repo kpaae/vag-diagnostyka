@@ -205,6 +205,54 @@ details.help ol { padding-left: 20px; margin: 12px 0 4px; display: flex; flex-di
   .chart { height: 190px; }
 }
 
+/* Narzędzia */
+.inp { font: 14px/1.2 var(--f-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 36px; min-width: 0; max-width: 100%; }
+.inp.mono { font-family: var(--f-mono); font-size: 13px; }
+.inp.short { width: 5.5em; }
+.inp.grow { flex: 1 1 180px; }
+select.inp { padding-right: 6px; }
+.frow { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.fl { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.fl .inp { width: 12em; }
+.fl .inp.short { width: 5.5em; }
+.chk { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.quick .btn { min-height: 28px; padding: 5px 8px; font-size: 12px; }
+.sub { font: 600 15px/1.2 var(--f-display); margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.sub small { font: 500 11px var(--f-mono); color: var(--muted); }
+.tblwrap { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.tbl th { text-align: left; font: 500 11px/1.2 var(--f-mono); color: var(--muted); padding: 4px 8px 6px 0; border-bottom: 1px solid var(--line); }
+.tbl td { padding: 6px 8px 6px 0; border-top: 1px solid var(--line); vertical-align: top; }
+.tbl .num { text-align: right; font-family: var(--f-mono); white-space: nowrap; }
+.tbl tr.bad td { color: var(--crit); }
+.tbl tr.chg td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.tbl .hexcell { word-break: break-all; font-size: 12px; }
+.barcol { width: 34%; }
+.bar { display: block; height: 8px; border-radius: 4px; background: var(--accent); min-width: 2px; }
+details.tgroup { border-top: 1px solid var(--line); padding: 8px 0 2px; }
+details.tgroup summary { cursor: pointer; display: flex; justify-content: space-between; gap: 10px; font-size: 14px; font-weight: 500; }
+details.tgroup .tbl { margin: 6px 0; }
+.conout { font: 12px/1.5 var(--f-mono); background: var(--surface-2); border-radius: 8px; padding: 10px; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+.conout .req { color: var(--accent); }
+.conout .err { color: var(--crit); }
+.conout .ok { color: var(--ink); }
+.msgs { display: flex; flex-direction: column; max-height: 360px; overflow: auto; font-size: 12px; }
+.msg { display: grid; grid-template-columns: 4.2em minmax(0, 11em) minmax(0, 1fr); gap: 2px 10px; padding: 5px 0; border-top: 1px solid var(--line); }
+.msg .mt { font-family: var(--f-mono); color: var(--muted); }
+.msg .mid { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg code { font-family: var(--f-mono); word-break: break-all; }
+.msg .ms { grid-column: 3; color: var(--muted); }
+.msg.rq code { color: var(--accent); }
+.msg.w { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.msg.w .ms { color: var(--warn); font-weight: 600; }
+@media (max-width: 520px) { .msg { grid-template-columns: 4.2em minmax(0, 1fr); } .msg code, .msg .ms { grid-column: 1 / -1; } }
+.linkbtn { appearance: none; background: none; border: 0; padding: 4px 2px; font: 500 12px var(--f-body); color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.linkbtn:disabled { color: var(--muted); }
+.dtcdet { grid-column: 2; font-size: 12px; display: flex; flex-direction: column; gap: 4px; padding: 4px 0 6px; }
+.dtcdet code { font-family: var(--f-mono); }
+.dtcdet code.wrap { word-break: break-all; }
+.kvp { display: inline-block; margin-right: 10px; }
+
 /* Log */
 .log { font: 12px/1.55 var(--f-mono); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; max-height: 65vh; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
 .copybox textarea { width: 100%; min-height: 160px; font: 12px/1.5 var(--f-mono); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }

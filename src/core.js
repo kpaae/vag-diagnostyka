@@ -48,7 +48,98 @@ const MODULES = [
   { addr: '44', name: 'Wspomaganie kierownicy', tx: 0x712, rx: 0x77C },
   { addr: '56', name: 'Radio', tx: 0x773, rx: 0x7DD }
 ];
-const IDENT_DIDS = [['F187', 'Nr części'], ['F197', 'System'], ['F189', 'Oprogramowanie'], ['F191', 'Nr części HW'], ['F18C', 'Nr seryjny']];
+const IDENT_DIDS = [['F187', 'Nr części'], ['F197', 'System'], ['F189', 'Oprogramowanie'], ['F191', 'Nr części HW'], ['F18C', 'Nr seryjny'], ['F19E', 'Plik ODX'], ['0600', 'Kodowanie', 'hex']];
+const hex4 = n => n.toString(16).toUpperCase().padStart(4, '0');
+
+/* ---- OBD tryb 06: wyniki testów monitorów ---- */
+const UAS = {
+  0x01: [1, ''], 0x02: [0.1, ''], 0x03: [0.01, ''], 0x04: [0.001, ''], 0x05: [0.0000305, ''], 0x06: [0.000305, ''],
+  0x07: [0.25, 'obr/min'], 0x08: [0.01, 'km/h'], 0x09: [1, 'km/h'], 0x0A: [0.122, 'mV'], 0x0B: [0.001, 'V'], 0x0C: [0.01, 'V'],
+  0x0D: [0.00390625, 'mA'], 0x0E: [0.001, 'A'], 0x0F: [0.01, 'A'], 0x10: [1, 'ms'], 0x11: [100, 'ms'], 0x12: [1, 's'],
+  0x13: [1, 'mΩ'], 0x14: [1, 'Ω'], 0x15: [1, 'kΩ'], 0x16: [0.1, '°C', -40], 0x17: [0.01, 'kPa'], 0x18: [0.0117, 'kPa'],
+  0x19: [0.079, 'kPa'], 0x1A: [1, 'kPa'], 0x1B: [10, 'kPa'], 0x1C: [0.01, '°'], 0x1D: [0.5, '°'], 0x1E: [0.0000305, ''],
+  0x1F: [0.05, 'AFR'], 0x20: [0.0039062, ''], 0x21: [1, 'mHz'], 0x22: [1, 'Hz'], 0x23: [1, 'kHz'], 0x24: [1, 'zliczeń'],
+  0x25: [1, 'km'], 0x26: [0.1, 'mV/ms'], 0x27: [0.01, 'g/s'], 0x28: [1, 'g/s'], 0x29: [0.25, 'Pa/s'], 0x2A: [0.001, 'kg/h'],
+  0x2B: [1, 'przełączeń'], 0x2C: [0.01, 'g/cyl'], 0x2D: [0.01, 'mg/skok'], 0x2E: [1, ''], 0x2F: [0.01, '%'], 0x30: [0.001526, '%'],
+  0x31: [0.001, 'l'], 0x34: [1, 'min'], 0x35: [10, 'ms'], 0x36: [0.01, 'g'], 0x37: [0.1, 'g'], 0x38: [1, 'g'],
+  0x3C: [0.1, 'µs'], 0x3D: [0.01, 'mA'], 0x3F: [0.01, 'l'], 0x40: [1, 'ppm'], 0x41: [0.01, 'µA'],
+  0x81: [1, ''], 0x82: [0.1, ''], 0x83: [0.01, ''], 0x84: [0.001, ''], 0x85: [0.0000305, ''], 0x86: [0.000305, ''],
+  0x8A: [0.122, 'mV'], 0x8B: [0.001, 'V'], 0x8C: [0.01, 'V'], 0x8D: [0.00390625, 'mA'], 0x8E: [0.001, 'A'], 0x90: [1, 'ms'],
+  0x96: [0.1, '°C'], 0x99: [0.1, 'kPa'], 0x9C: [0.01, '°'], 0x9D: [0.5, '°'], 0xA8: [1, 'g/s'], 0xA9: [0.25, 'Pa/s'],
+  0xAD: [0.01, 'mg/skok'], 0xAE: [0.1, 'mg/skok'], 0xAF: [0.01, '%'], 0xB0: [0.003052, '%'], 0xB1: [2, 'mV/s'],
+  0xFC: [0.01, 'kPa'], 0xFD: [0.001, 'kPa'], 0xFE: [0.25, 'Pa']
+};
+function midName(m) {
+  if (m >= 0x01 && m <= 0x10) { const i = m - 1; return `Sonda lambda – bank ${(i >> 2) + 1}, czujnik ${(i & 3) + 1}`; }
+  if (m >= 0x41 && m <= 0x50) { const i = m - 0x41; return `Grzałka sondy lambda – bank ${(i >> 2) + 1}, czujnik ${(i & 3) + 1}`; }
+  if (m >= 0xA2 && m <= 0xAD) return `Wypadanie zapłonów – cylinder ${m - 0xA1}`;
+  return ({
+    0x21: 'Katalizator – bank 1', 0x22: 'Katalizator – bank 2', 0x31: 'EGR – bank 1', 0x32: 'EGR – bank 2',
+    0x35: 'Zmienne fazy rozrządu – bank 1', 0x36: 'Zmienne fazy rozrządu – bank 2',
+    0x39: 'EVAP – wyciek 0,150″', 0x3A: 'EVAP – wyciek 0,090″', 0x3B: 'EVAP – wyciek 0,040″', 0x3C: 'EVAP – wyciek 0,020″', 0x3D: 'EVAP – przepływ przedmuchu',
+    0x61: 'Podgrzewanie katalizatora – bank 1', 0x62: 'Podgrzewanie katalizatora – bank 2', 0x71: 'Powietrze wtórne 1', 0x72: 'Powietrze wtórne 2',
+    0x81: 'Układ paliwowy – bank 1', 0x82: 'Układ paliwowy – bank 2', 0x85: 'Ciśnienie doładowania – bank 1', 0x86: 'Ciśnienie doładowania – bank 2',
+    0x90: 'Czujnik NOx', 0xA1: 'Wypadanie zapłonów – ogólnie', 0xB0: 'Filtr cząstek stałych – bank 1', 0xB1: 'Filtr cząstek stałych – bank 2'
+  })[m] || ('Monitor 0x' + hex2(m));
+}
+function tidName(mid, tid) {
+  if (mid >= 0xA1 && mid <= 0xAD) { if (tid === 0x0B) return 'Średnia z ostatnich 10 cykli jazdy'; if (tid === 0x0C) return 'Bieżący lub ostatni cykl jazdy'; }
+  if (mid >= 0x01 && mid <= 0x10) {
+    const t = { 0x01: 'Próg napięcia bogata → uboga', 0x02: 'Próg napięcia uboga → bogata', 0x03: 'Niskie napięcie do pomiaru czasu przełączania', 0x04: 'Wysokie napięcie do pomiaru czasu przełączania',
+      0x05: 'Czas przełączania bogata → uboga', 0x06: 'Czas przełączania uboga → bogata', 0x07: 'Minimalne napięcie w teście', 0x08: 'Maksymalne napięcie w teście', 0x09: 'Czas między przełączeniami', 0x0A: 'Okres sygnału sondy' }[tid];
+    if (t) return t;
+  }
+  return (tid >= 0x80 ? 'Test producenta 0x' : 'Test 0x') + hex2(tid);
+}
+function scaleUas(uas, raw) {
+  const s = UAS[uas]; const signed = uas >= 0x80;
+  const v = signed && raw >= 0x8000 ? raw - 0x10000 : raw;
+  if (!s) return { v, unit: 'surowe' };
+  return { v: v * s[0] + (s[2] || 0), unit: s[1] };
+}
+function parseMode06(data) {
+  const b = bytesOf(data); if (b[0] !== 0x46) return [];
+  const out = [];
+  for (let i = 1; i + 8 < b.length; i += 9) {
+    const [mid, tid, uas] = [b[i], b[i + 1], b[i + 2]];
+    const val = scaleUas(uas, u16(b[i + 3], b[i + 4])), lo = scaleUas(uas, u16(b[i + 5], b[i + 6])), hi = scaleUas(uas, u16(b[i + 7], b[i + 8]));
+    out.push({ mid, tid, uas, value: val.v, min: lo.v, max: hi.v, unit: val.unit, pass: val.v >= lo.v && val.v <= hi.v, name: tidName(mid, tid) });
+  }
+  return out;
+}
+
+/* ---- Klasyfikacja poleceń w konsoli UDS ---- */
+const SID_NAMES = {
+  0x01: 'OBD: dane bieżące', 0x02: 'OBD: zamrożona ramka', 0x03: 'OBD: kody zapisane', 0x04: 'OBD: kasowanie kodów', 0x06: 'OBD: wyniki testów', 0x07: 'OBD: kody oczekujące', 0x09: 'OBD: informacje o pojeździe', 0x0A: 'OBD: kody stałe',
+  0x10: 'Zmiana sesji', 0x11: 'Reset sterownika', 0x14: 'Kasowanie błędów', 0x19: 'Odczyt błędów', 0x22: 'Odczyt danych', 0x23: 'Odczyt pamięci',
+  0x27: 'Dostęp zabezpieczony', 0x28: 'Sterowanie komunikacją', 0x2C: 'Definicja danych dynamicznych', 0x2E: 'Zapis danych (adaptacja, kodowanie)', 0x2F: 'Sterowanie wyjściem (test elementów)',
+  0x31: 'Procedura (ustawienia podstawowe)', 0x34: 'Programowanie: pobieranie', 0x35: 'Programowanie: wysyłanie', 0x36: 'Programowanie: transfer', 0x37: 'Programowanie: koniec',
+  0x3D: 'Zapis pamięci', 0x3E: 'Podtrzymanie sesji', 0x85: 'Sterowanie zapisem błędów'
+};
+function classifyCmd(hex) {
+  const b = bytesOf(hex); const sid = b[0];
+  if (sid == null) return { level: 'bad', why: 'Puste polecenie.' };
+  if ([0x34, 0x35, 0x36, 0x37, 0x38, 0x3D].includes(sid) || (sid === 0x10 && b[1] === 0x02))
+    return { level: 'block', why: 'Programowanie i zapis pamięci są zablokowane. Przerwane programowanie może trwale uszkodzić sterownik.' };
+  if ([0x04, 0x11, 0x14, 0x27, 0x28, 0x2E, 0x2F, 0x31, 0x85].includes(sid) || (sid === 0x10 && b[1] !== 0x01 && b[1] !== 0x03))
+    return { level: 'write', why: `${SID_NAMES[sid] || 'To polecenie'} zmienia stan sterownika albo uruchamia element wykonawczy.` };
+  return { level: 'read', why: SID_NAMES[sid] || 'Polecenie' };
+}
+
+/* ---- Podsłuch: składanie ramek ISO-TP w wiadomości ---- */
+function createIsoTp(onMsg) {
+  const part = {};
+  return line => {
+    const l = line.replace(/\s/g, '').toUpperCase();
+    if (!/^[0-9A-F]{5,}$/.test(l)) return false;
+    const id = parseInt(l.slice(0, 3), 16), d = bytesOf(l.slice(3)); if (!d.length) return false;
+    const t = d[0] >> 4;
+    if (t === 0) { const n = d[0] & 0xF; if (n) onMsg(id, d.slice(1, 1 + n)); }
+    else if (t === 1) { part[id] = { len: ((d[0] & 0xF) << 8) | d[1], data: d.slice(2) }; }
+    else if (t === 2 && part[id]) { const p = part[id]; p.data.push(...d.slice(1)); if (p.data.length >= p.len) { onMsg(id, p.data.slice(0, p.len)); delete part[id]; } }
+    return true;
+  };
+}
 
 /* Parametry OBD-II tryb 01. g = grupa w interfejsie. */
 const PIDS = [
@@ -243,7 +334,7 @@ function decodeUdsDtc(b0, b1, b2, st) {
   if (st & 0x04) flags.push('oczekujący');
   if (st & 0x80) flags.push('kontrolka');
   flags.push('status 0x' + hex2(st));
-  return { code, ftb: hex2(b2), full: `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: DTC_DESC[code] || '' };
+  return { code, ftb: hex2(b2), raw: hex2(b0) + hex2(b1) + hex2(b2), full: `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: DTC_DESC[code] || '' };
 }
 
 function parseMode01(data, defs) {
@@ -276,7 +367,9 @@ class ELM {
     this.t = transport; this.log = log || (() => {});
     this.buf = ''; this.waiter = null; this.q = Promise.resolve(); this.opq = Promise.resolve();
     this.fcOk = true; this.cur = null; this.multiPid = true; this.onWarn = null; this.ident = '';
+    this.st = '64'; this.countOk = true; this.mon = null;
     transport.onData(s => {
+      if (this.mon) { this.mon(s); return; }
       this.buf += s;
       if (this.waiter && this.buf.includes('>')) { const w = this.waiter; this.waiter = null; w(); }
     });
@@ -331,13 +424,28 @@ class ELM {
     }
     this.cur = key;
   }
+  /* Moduł odpowiedział „czekaj” (7F xx 78). Zamiast wysyłać żądanie od nowa (co u wolnych modułów, np. ABS,
+     zaczyna przetwarzanie od początku) prosimy adapter, żeby czekał na kilka kolejnych odpowiedzi z dłuższym limitem czasu. */
+  async waitPending(req) {
+    if (!this.countOk) return null;
+    try {
+      await this.send('ATAT0'); await this.send('ATSTFF');
+      const lines = await this.send(req + 'F', 25000);
+      if (lines.some(l => l.trim() === '?')) { this.countOk = false; return null; }
+      const { msgs, err } = parseElm(lines);
+      if (err) return null;
+      const real = msgs.filter(m => !(m.startsWith('7F') && m.substr(4, 2) === '78'));
+      return real.length ? real : null;
+    } finally { await this.send('ATST' + this.st); await this.send('ATAT1'); }
+  }
   async request(req, { attempts = 5 } = {}) {
-    let pending = false;
+    let pending = false, waited = false;
     for (let a = 0; a < attempts; a++) {
       const { msgs, err } = parseElm(await this.send(req));
       if (err) { if (pending && err === 'NO DATA') { await sleep(300); continue; } return { err }; }
-      const real = msgs.filter(m => !(m.startsWith('7F') && m.substr(4, 2) === '78'));
+      let real = msgs.filter(m => !(m.startsWith('7F') && m.substr(4, 2) === '78'));
       if (real.length < msgs.length) pending = true;
+      if (!real.length && pending && !waited) { waited = true; const w = await this.waitPending(req); if (w) real = w; }
       if (!real.length) { if (pending) { await sleep(300); continue; } return { err: 'pusta odpowiedź' }; }
       const m = real[real.length - 1];
       if (m.startsWith('7F') && m.length >= 6) { const c = m.substr(4, 2); return { err: `NRC ${c}: ${NRC[c] || 'nieznany'}`, nrc: c }; }
@@ -442,10 +550,121 @@ class ELM {
     if (!present && deep) { r = await this.request('22F187', { attempts: 1 }); present = !r.err || !!r.nrc; }
     return present;
   }
-  async readDid(did) {
+  async readDid(did, asHex) {
     const r = await this.request('22' + did, { attempts: 3 });
     if (r.err || !r.data.startsWith('62' + did)) return null;
-    return asciiOrHex(bytesOf(r.data).slice(3));
+    const b = bytesOf(r.data).slice(3);
+    return asHex ? b.map(hex2).join('') : asciiOrHex(b);
+  }
+  /* Szczegóły błędu UDS: dane rozszerzone (0x19 06, rekord po rekordzie) i dane środowiskowe (0x19 04). */
+  async readDtcDetails(mod, raw) {
+    await this.select(mod.tx, mod.rx);
+    const ext = [];
+    for (let rec = 1; rec <= 8; rec++) {
+      const r = await this.request('1906' + raw + hex2(rec), { attempts: 2 });
+      if (r.err) { if (rec > 4) break; continue; }
+      const b = bytesOf(r.data).slice(6);
+      if (b.length > 1 && b[0] === rec) ext.push({ rec, bytes: b.slice(1) });
+    }
+    let snap = null;
+    const s = await this.request('1904' + raw + 'FF', { attempts: 2 });
+    if (!s.err) { const b = bytesOf(s.data).slice(6); if (b.length) snap = b; }
+    return { ext, snap };
+  }
+
+  /* ---- OBD tryb 06 i 09 ---- */
+  async readTests(onProgress) {
+    await this.select(0x7E0, 0x7E8);
+    const mids = []; let base = 0;
+    while (base <= 0xE0) {
+      const r = await this.request('06' + hex2(base), { attempts: 2 });
+      if (r.err) break;
+      const b = bytesOf(r.data).slice(2, 6); if (b.length < 4) break;
+      for (let i = 0; i < 32; i++) if (b[i >> 3] & (0x80 >> (i & 7))) mids.push(base + i + 1);
+      if (!mids.includes(base + 0x20)) break;
+      base += 0x20;
+    }
+    const tests = [];
+    for (const mid of mids.filter(m => m % 0x20 !== 0)) {
+      onProgress && onProgress(mid);
+      const r = await this.request('06' + hex2(mid), { attempts: 2 });
+      if (!r.err) parseMode06(r.data).forEach(t => tests.push(t));
+    }
+    return { mids, tests };
+  }
+  async readCalib() {
+    await this.select(0x7E0, 0x7E8);
+    const out = {};
+    const r4 = await this.request('0904', { attempts: 2 });
+    if (!r4.err) { const b = bytesOf(r4.data).slice(3); const ids = []; for (let i = 0; i < b.length; i += 16) { const s = asciiOf(b.slice(i, i + 16)); if (s) ids.push(s); } if (ids.length) out.calid = ids; }
+    const r6 = await this.request('0906', { attempts: 2 });
+    if (!r6.err) { const b = bytesOf(r6.data).slice(3); const c = []; for (let i = 0; i + 3 < b.length; i += 4) c.push(b.slice(i, i + 4).map(hex2).join('')); if (c.length) out.cvn = c; }
+    const rA = await this.request('090A', { attempts: 2 });
+    if (!rA.err) { const s = asciiOf(bytesOf(rA.data).slice(3)); if (s) out.ecuName = s; }
+    return out;
+  }
+
+  /* ---- Narzędzia zaawansowane ---- */
+  async raw(tx, rx, hex) {
+    await this.select(tx, rx);
+    return this.request(hex.replace(/\s/g, '').toUpperCase(), { attempts: 3 });
+  }
+  async scanDids(mod, ranges, { onProgress, onFound, stop, extended } = {}) {
+    await this.select(mod.tx, mod.rx);
+    const found = []; let n = 0; const total = ranges.reduce((a, [lo, hi]) => a + hi - lo + 1, 0);
+    await this.send('ATST32'); this.st = '32';
+    let inExt = false;
+    try {
+      if (extended) { const s = await this.request('1003', { attempts: 2 }); inExt = !s.err; }
+      for (const [lo, hi] of ranges) for (let did = lo; did <= hi; did++) {
+        if (stop && stop()) return found;
+        n++; if (n % 8 === 0 && onProgress) onProgress(did, n, total);
+        const r = await this.request('22' + hex4(did), { attempts: 2 });
+        if (r.err || !r.data.startsWith('62' + hex4(did))) continue;
+        const f = { did, bytes: bytesOf(r.data).slice(3) };
+        found.push(f); onFound && onFound(f);
+      }
+      return found;
+    } finally {
+      if (inExt) await this.request('1001', { attempts: 1 });
+      this.st = '64'; await this.send('ATST64');
+    }
+  }
+  async readDidRaw(mod, did) {
+    await this.select(mod.tx, mod.rx);
+    const r = await this.request('22' + hex4(did), { attempts: 1 });
+    return (r.err || !r.data.startsWith('62' + hex4(did))) ? null : bytesOf(r.data).slice(3);
+  }
+  /* Podsłuch magistrali (ATMA). Wołać wewnątrz op(): blokuje adapter do czasu stop(). */
+  async monitor(onLine, onEnd) {
+    for (const c of ['ATH1', 'ATCAF0', 'ATCF700', 'ATCM700']) await this.send(c);
+    this.cur = null;
+    let tail = '', stopping = false, ended = false, endRes;
+    const endP = new Promise(r => { endRes = r; });
+    this.mon = s => {
+      tail += s;
+      const parts = tail.split(/[\r\n]+/); tail = parts.pop();
+      for (const p of parts) { const l = p.replace('>', '').trim(); if (l) onLine(l); }
+      if (s.includes('>') || tail.includes('>')) {
+        const l = tail.replace('>', '').trim(); if (l) onLine(l); tail = '';
+        if (!ended) { ended = true; if (!stopping) this.mon = null; endRes(); if (!stopping && onEnd) onEnd(); }
+      }
+    };
+    await this.t.write('ATMA\r');
+    const restore = async () => {
+      this.mon = null; this.buf = '';
+      await sleep(150);
+      for (const c of ['ATH0', 'ATCAF1', 'ATCRA']) await this.send(c);
+      this.cur = null;
+    };
+    return {
+      ended: endP,
+      stop: async () => {
+        stopping = true;
+        if (!ended) { await this.t.write('\r'); await Promise.race([endP, sleep(2000)]); }
+        await restore();
+      }
+    };
   }
   async readModuleDtcs(mod) {
     await this.select(mod.tx, mod.rx);
@@ -467,7 +686,7 @@ class ELM {
   async scanModule(mod, deep = true) {
     if (!(await this.probe(mod, deep))) return null;
     const info = { ...mod, ident: {} };
-    for (const [did, label] of IDENT_DIDS) { const v = await this.readDid(did); if (v) info.ident[label] = v; }
+    for (const [did, label, kind] of IDENT_DIDS) { const v = await this.readDid(did, kind === 'hex'); if (v) info.ident[label] = v; }
     const d = await this.readModuleDtcs(mod);
     info.dtcs = d.dtcs; info.untested = d.untested || 0; if (d.err) info.err = d.err;
     return info;
@@ -475,7 +694,7 @@ class ELM {
   async clearModule(mod) { await this.select(mod.tx, mod.rx); return this.request('14FFFFFF', { attempts: 6 }); }
   async findUnknown(onProgress) {
     const known = new Set(MODULES.map(m => m.tx)); const found = [];
-    await this.send('ATST32');
+    await this.send('ATST32'); this.st = '32';
     try {
       for (let tx = 0x700; tx < 0x775; tx++) {
         if (known.has(tx)) continue;
@@ -483,9 +702,9 @@ class ELM {
         const mod = { addr: '??', name: 'Moduł 0x' + hex3(tx), tx, rx: tx + 0x6A };
         if (await this.probe(mod, false)) found.push(mod);
       }
-    } finally { await this.send('ATST64'); }
+    } finally { this.st = '64'; await this.send('ATST64'); }
     return found;
   }
 }
 
-if (typeof module !== 'undefined') module.exports = { ELM, PIDS, DERIVED, MODULES, parseElm, saeCode, DTC_DESC };
+if (typeof module !== 'undefined') module.exports = { ELM, PIDS, DERIVED, MODULES, parseElm, saeCode, DTC_DESC, parseMode06, classifyCmd, createIsoTp, midName };
