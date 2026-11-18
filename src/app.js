@@ -43,6 +43,11 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden && sess.on && journal) { if (sess.ok) journal.regSave(CAT, true); sessSave(false); } });
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
+  /* ---------- marka ---------- */
+  const modKey = m => m.bmw != null ? 'b' + m.bmw : 'm' + m.tx;
+  function brand() { const o = store.get('brand', 'auto'); return o !== 'auto' ? o : (brandOf(report.vin) || 'vag'); }
+  function modules() { return brand() === 'bmw' ? BMW_MODULES : MODULES; }
+  const BRAND_NAMES = { vag: 'VAG', bmw: 'BMW' };
   function blankReport() { return { vin: null, calib: null, readiness: null, obd: null, freeze: null, modules: [], absent: [], adapter: null, at: null }; }
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -455,7 +460,7 @@
       chip(`${t.name} · ${id}`, 'on');
       $('#banner').hidden = true;
       connecting = false; tools && tools.onConnect(); setButtons(); buildTiles(); renderState(); startPolling();
-      refreshState().then(() => runScan(false));
+      refreshState().then(() => { tools && !tools.busy() && tools.render(); renderModules(); runScan(false); });
     } catch (err) {
       connecting = false;
       const msg = friendly(err);
@@ -515,7 +520,7 @@
       : `${det.ext.length ? `<div><b>Dane rozszerzone</b> ${det.ext.map(x => `<span class="kvp">rekord ${hex2(x.rec)}: <code>${x.bytes.map(hex2).join(' ')}</code>${x.bytes.length <= 3 ? ` = ${x.bytes.reduce((a, b) => a * 256 + b, 0)}` : ''}</span>`).join('')}</div>` : ''}
          ${det.snap ? `<div><b>Dane środowiskowe</b> <code class="wrap">${det.snap.map(hex2).join(' ')}</code></div>` : ''}
          ${!det.ext.length && !det.snap ? '<span class="muted">Moduł nie zwrócił szczegółów dla tego kodu.</span>' : '<span class="muted">Surowe dane. Bez opisu producenta nie da się nazwać każdego pola. Licznik wystąpień i przebieg zwykle są w danych rozszerzonych.</span>'}`}</div>` : '';
-    const btn = m && d ? `<button class="linkbtn" type="button" data-det="${m.tx}|${d.raw}">${det ? 'Odśwież szczegóły' : 'Szczegóły'}</button>` : '';
+    const btn = m && d ? `<button class="linkbtn" type="button" data-det="${modKey(m)}|${d.raw}">${det ? 'Odśwież szczegóły' : 'Szczegóły'}</button>` : '';
     return `<div class="dtc"><code>${esc(code)}</code><span class="d">${desc ? esc(desc) : '<span class="muted">Kod producenta, brak opisu w bazie</span>'}</span>${flags && flags.length ? `<div class="flags">${flags.map(f => `<span class="flag${f === 'aktywny' ? ' act' : f === 'kontrolka' ? ' mil' : ''}">${esc(f)}</span>`).join('')}${btn}</div>` : ''}${detHtml}</div>`;
   }
   function clearFoot(id, label) { return `<div class="cardfoot" data-foot="${id}"><button class="btn small" type="button" data-clear="${id}">${label}</button></div>`; }
@@ -540,6 +545,7 @@
       ${total ? clearFoot('obd', 'Kasuj kody silnika (OBD)') : ''}`;
   }
   function renderModules() {
+    $('#modTitle').firstChild.textContent = `Moduły ${BRAND_NAMES[brand()]} `;
     const host = $('#modules');
     if (!report.modules.length) { host.innerHTML = `<p class="muted">${scanning ? 'Skanowanie…' : 'Jeszcze nie skanowano.'}</p>`; updateBadge(); return; }
     host.innerHTML = '<div class="cols">' + report.modules.map(m => {
@@ -549,7 +555,7 @@
         ${ident ? `<div class="ident">${ident}</div>` : ''}
         ${m.err ? `<p class="muted" style="margin:0;font-size:13px">Nie udało się odczytać błędów: ${esc(m.err)}</p>` : n ? m.dtcs.map(d => dtcRow(d.full, d.desc, d.flags, m, d)).join('') : '<p class="noerr">Brak błędów</p>'}
         ${m.untested ? `<p class="absent">Pominięto ${m.untested} ${plural(m.untested, 'pozycję', 'pozycje', 'pozycji')} z listy kodów obsługiwanych przez moduł, bez wykrytej usterki.</p>` : ''}
-        ${n ? clearFoot('m' + m.tx, 'Kasuj błędy') : ''}</div>`;
+        ${n ? clearFoot(modKey(m), 'Kasuj błędy') : ''}</div>`;
     }).join('') + '</div>' + (report.absent.length ? `<p class="absent">Bez odpowiedzi (brak w aucie lub inny adres): ${report.absent.map(m => esc(m.addr + ' ' + m.name)).join(', ')}</p>` : '');
     updateBadge();
   }
@@ -569,14 +575,15 @@
       report.obd = await e.op(() => e.readObdDtcs());
       report.freeze = await e.op(() => e.readFreeze(sup));
       renderObd();
-      for (const m of MODULES) {
+      $('#modTitle').firstChild.textContent = `Moduły ${BRAND_NAMES[brand()]} `;
+      for (const m of modules()) {
         if (e !== elm) { prog(''); return; }
         prog(`Moduł ${m.addr} · ${m.name}…`);
         const r = await e.op(() => e.scanModule(m, true));
         if (r) { report.modules.push(r); renderModules(); } else report.absent.push(m);
       }
       if (full && e === elm) {
-        const found = await e.op(() => e.findUnknown(tx => prog(`Szukam modułów: 0x${tx.toString(16).toUpperCase()}…`)));
+        const found = await e.op(() => e.findUnknown(tx => prog(`Szukam modułów: 0x${tx.toString(16).toUpperCase()}…`), brand() === 'bmw'));
         for (const m of found) { prog(`Odczyt ${m.name}…`); const r = await e.op(() => e.scanModule(m, false)); if (r) { report.modules.push(r); renderModules(); } }
       }
       report.at = new Date();
@@ -587,20 +594,25 @@
     finally { scanning = false; renderModules(); setButtons(); }
   }
   $('#btnScan').onclick = () => runScan($('#fullScan').checked);
+  $('#brandSel').value = store.get('brand', 'auto');
+  $('#brandSel').onchange = e => {
+    store.set('brand', e.target.value); renderModules(); tools && tools.render();
+    if (elm && !scanning) runScan(false);
+  };
 
   $('#tab-errors').addEventListener('click', async ev => {
     const btn = ev.target.closest('button'); if (!btn) return;
     if (btn.dataset.det) {
       const e = elm; if (!e) return;
       const [tx, raw] = btn.dataset.det.split('|');
-      const m = report.modules.find(x => String(x.tx) === tx); const d = m && m.dtcs.find(x => x.raw === raw); if (!d) return;
+      const m = report.modules.find(x => modKey(x) === tx); const d = m && m.dtcs.find(x => x.raw === raw); if (!d) return;
       btn.disabled = true; btn.textContent = 'Odczyt…';
       try { d.details = await e.op(() => e.readDtcDetails(m, raw)); } catch (err) { d.details = { err: err.message, ext: [], snap: null }; }
       renderModules(); return;
     }
     if (btn.dataset.clear) {
       const id = btn.dataset.clear, foot = btn.closest('.cardfoot');
-      const m = id === 'obd' ? null : report.modules.find(x => 'm' + x.tx === id);
+      const m = id === 'obd' ? null : report.modules.find(x => modKey(x) === id);
       const what = m ? `w module ${m.addr} ${m.name}` : 'silnika (OBD)';
       foot.innerHTML = `<div class="confirm"><span>Skasować błędy ${esc(what)}? Usunie to też zamrożone ramki i zresetuje gotowość systemów. Aktywne usterki wrócą od razu.</span>
         <div><button class="btn small danger" type="button" data-do="${id}">Kasuj</button><button class="btn small" type="button" data-cancel="1">Anuluj</button></div></div>`;
@@ -610,11 +622,12 @@
     if (btn.dataset.do) {
       const e = elm; if (!e) return;
       const id = btn.dataset.do; btn.disabled = true; btn.textContent = 'Kasowanie…';
-      const m = id === 'obd' ? null : report.modules.find(x => 'm' + x.tx === id);
+      const m = id === 'obd' ? null : report.modules.find(x => modKey(x) === id);
       const r = await e.op(() => m ? e.clearModule(m) : e.clearObd());
       logLine(r.err ? '! kasowanie: ' + r.err : '— skasowano błędy ' + (m ? m.addr : 'OBD'));
       if (m) { const d = await e.op(() => e.readModuleDtcs(m)); m.dtcs = d.dtcs; m.err = d.err; }
-      if (!m || m.tx === 0x7E0) { report.obd = await e.op(() => e.readObdDtcs()); report.freeze = await e.op(() => e.readFreeze(sup)); const em = report.modules.find(x => x.tx === 0x7E0); if (em && !m) { const d = await e.op(() => e.readModuleDtcs(em)); em.dtcs = d.dtcs; } }
+      const isEng = x => x.tx === 0x7E0 || x.bmw === 0x12;
+      if (!m || isEng(m)) { report.obd = await e.op(() => e.readObdDtcs()); report.freeze = await e.op(() => e.readFreeze(sup)); const em = report.modules.find(isEng); if (em && !m) { const d = await e.op(() => e.readModuleDtcs(em)); em.dtcs = d.dtcs; } }
       $('#scanProgress').textContent = r.err ? `Nie udało się skasować: ${r.err}` : `Skasowano. ${m && m.dtcs.length ? 'Część błędów wróciła, bo usterka jest aktywna.' : ''}`;
       renderObd(); renderModules();
     }
@@ -624,7 +637,7 @@
   function buildReport() {
     const L = [];
     L.push('VAG Diagnostyka – raport', 'Data: ' + new Date().toLocaleString('pl-PL'));
-    L.push('Adapter: ' + (report.adapter || '—'), 'VIN: ' + (report.vin || '—'));
+    L.push('Adapter: ' + (report.adapter || '—'), 'VIN: ' + (report.vin || '—'), 'Marka: ' + BRAND_NAMES[brand()] + (store.get('brand', 'auto') === 'auto' ? ' (z VIN)' : ' (wybrana ręcznie)'));
     const cal = report.calib || {};
     if (cal.ecuName || cal.calid) L.push(`Sterownik: ${cal.ecuName || '—'} · kalibracja: ${(cal.calid || []).join(', ') || '—'} · CVN: ${(cal.cvn || []).join(', ') || '—'}`);
     const r = report.readiness;
@@ -670,14 +683,14 @@
   const saveLog = (kind, title, text, opt) => journal.add(kind, title, text, opt);
   panels = createPanels({
     saveLog,
-    vals: () => vals, avail, stateOf, tokens, store, CAT, DTC_DESC, MODULES,
+    vals: () => vals, avail, stateOf, tokens, store, CAT, DTC_DESC, MODULES, modules, brand,
     esc, fmtNum, fmtVal, plural, copyText, logLine,
     elm: () => elm, mode: () => mode, sup: () => sup, report: () => report,
     renderErrors: () => { renderObd(); renderModules(); },
     ensurePolling: () => { if (!polling) startPolling(); }
   });
   tools = createTools({
-    elm: () => elm, esc, fmtNum, plural, copyText, download, stamp, framed, logLine, store, MODULES,
+    elm: () => elm, esc, fmtNum, plural, copyText, download, stamp, framed, logLine, store, MODULES, modules, brand,
     report: () => report, pause, saveLog
   });
   tools.render();

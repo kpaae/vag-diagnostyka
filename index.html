@@ -308,7 +308,7 @@ details.help a { color: var(--accent); }
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-18 16:23 UTC</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-18 18:35 UTC</p>
       </div>
     </div>
     <div class="conn">
@@ -371,6 +371,7 @@ details.help a { color: var(--accent); }
     <div class="toolbar">
       <div class="actions">
         <button id="btnScan" class="btn primary" type="button" disabled>Skanuj wszystkie moduły</button>
+        <select id="brandSel" class="inp" aria-label="Marka"><option value="auto">Marka: z VIN</option><option value="vag">VAG (VW, Audi, Seat, Škoda)</option><option value="bmw">BMW / MINI</option></select>
         <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="fullScan"> Szukaj też modułów spoza listy (ok. 1 min)</label>
       </div>
       <div class="actions">
@@ -385,7 +386,7 @@ details.help a { color: var(--accent); }
     </div>
     <h2 class="sect">Silnik – kody OBD <small>tryby 03 / 07 / 0A</small></h2>
     <div id="obdDtc"><p class="muted">Jeszcze nie odczytano.</p></div>
-    <h2 class="sect">Moduły VAG <small>UDS 0x19</small></h2>
+    <h2 class="sect" id="modTitle">Moduły VAG <small>UDS 0x19</small></h2>
     <div id="modules"><p class="muted">Jeszcze nie skanowano.</p></div>
   </section>
 
@@ -462,7 +463,7 @@ details.help a { color: var(--accent); }
 </main>
 
 <script>
-const APP_VERSION = '2026-11-18 16:23 UTC';
+const APP_VERSION = '2026-11-18 18:35 UTC';
 /* ===== VAG Diagnostyka – rdzeń: ELM327 / OBD-II / UDS / symulator ===== */
 'use strict';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -513,6 +514,35 @@ const MODULES = [
   { addr: '44', name: 'Wspomaganie kierownicy', tx: 0x712, rx: 0x77C },
   { addr: '56', name: 'Radio', tx: 0x773, rx: 0x7DD }
 ];
+/* BMW (D-CAN, adresowanie rozszerzone: tester 0x6F1, odpowiedź 0x600 + adres). Seria F/G – UDS, seria E od ok. 2007 – KWP2000. */
+const BMW_MODULES = [
+  { addr: '12', name: 'DME/DDE – silnik', bmw: 0x12 },
+  { addr: '13', name: 'DME2 – drugi sterownik silnika', bmw: 0x13 },
+  { addr: '18', name: 'EGS – skrzynia biegów', bmw: 0x18 },
+  { addr: '29', name: 'DSC – ABS / stabilizacja', bmw: 0x29 },
+  { addr: '30', name: 'EPS – wspomaganie kierownicy', bmw: 0x30 },
+  { addr: '01', name: 'ACSM – poduszki powietrzne', bmw: 0x01 },
+  { addr: '40', name: 'CAS / FEM / BDC – nadwozie, immobilizer', bmw: 0x40 },
+  { addr: '00', name: 'JBE – moduł centralny (seria E)', bmw: 0x00 },
+  { addr: '10', name: 'ZGW – gateway', bmw: 0x10 },
+  { addr: '1C', name: 'ICM – podwozie', bmw: 0x1C },
+  { addr: '60', name: 'KOMBI – zestaw wskaźników', bmw: 0x60 },
+  { addr: '63', name: 'HU / CIC / NBT – radio i nawigacja', bmw: 0x63 },
+  { addr: '72', name: 'FRM / REM – światła, elektronika tyłu', bmw: 0x72 },
+  { addr: '78', name: 'IHKA – klimatyzacja', bmw: 0x78 },
+  { addr: '56', name: 'FZD – moduł dachu', bmw: 0x56 },
+  { addr: '5D', name: 'KAFAS – kamera asystentów', bmw: 0x5D }
+];
+const BMW_IDENT_DIDS = [['F190', 'VIN'], ['F187', 'Nr części'], ['F189', 'Oprogramowanie'], ['F191', 'Nr części HW'], ['F18C', 'Nr seryjny'], ['F150', 'Wersja HW']];
+const BRAND_WMI = {
+  bmw: ['WBA', 'WBS', 'WBY', 'WBX', 'WB1', 'WB3', 'WB4', 'WB5', 'WMW', '4US', '5UX', '5UM', '5YM', 'X4X', 'LBV', 'WBW'],
+  vag: ['WVW', 'WV1', 'WV2', 'WV3', 'WVG', 'WAU', 'WUA', 'WA1', 'TRU', 'VSS', 'VS6', 'TMB', 'TMP', 'VWV', 'WP0', 'WP1', '3VW', '1VW', '9BW', 'AAV', 'LSV', 'LFV', 'XW8']
+};
+function brandOf(vin) {
+  const w = (vin || '').slice(0, 3).toUpperCase();
+  for (const [b, list] of Object.entries(BRAND_WMI)) if (list.includes(w)) return b;
+  return null;
+}
 const IDENT_DIDS = [['F187', 'Nr części'], ['F197', 'System'], ['F189', 'Oprogramowanie'], ['F191', 'Nr części HW'], ['F18C', 'Nr seryjny'], ['F19E', 'Plik ODX'], ['0600', 'Kodowanie', 'hex']];
 const hex4 = n => n.toString(16).toUpperCase().padStart(4, '0');
 
@@ -597,11 +627,13 @@ function createIsoTp(onMsg) {
   return line => {
     const l = line.replace(/\s/g, '').toUpperCase();
     if (!/^[0-9A-F]{5,}$/.test(l)) return false;
-    const id = parseInt(l.slice(0, 3), 16), d = bytesOf(l.slice(3)); if (!d.length) return false;
+    const id = parseInt(l.slice(0, 3), 16); let d = bytesOf(l.slice(3)); if (!d.length) return false;
+    let ea = null; if (id >= 0x600 && id <= 0x6FF) { ea = d[0]; d = d.slice(1); if (!d.length) return true; }   // BMW: adres w pierwszym bajcie
+    const key = id + ':' + ea;
     const t = d[0] >> 4;
-    if (t === 0) { const n = d[0] & 0xF; if (n) onMsg(id, d.slice(1, 1 + n)); }
-    else if (t === 1) { part[id] = { len: ((d[0] & 0xF) << 8) | d[1], data: d.slice(2) }; }
-    else if (t === 2 && part[id]) { const p = part[id]; p.data.push(...d.slice(1)); if (p.data.length >= p.len) { onMsg(id, p.data.slice(0, p.len)); delete part[id]; } }
+    if (t === 0) { const n = d[0] & 0xF; if (n) onMsg(id, d.slice(1, 1 + n), ea); }
+    else if (t === 1) { part[key] = { len: ((d[0] & 0xF) << 8) | d[1], data: d.slice(2) }; }
+    else if (t === 2 && part[key]) { const p = part[key]; p.data.push(...d.slice(1)); if (p.data.length >= p.len) { onMsg(id, p.data.slice(0, p.len), ea); delete part[key]; } }
     return true;
   };
 }
@@ -792,14 +824,22 @@ function parseElm(lines) {
 
 function saeCode(a, b) { return 'PCBU'[a >> 6] + ((a >> 4) & 3) + (a & 0xF).toString(16).toUpperCase() + hex2(b); }
 
-function decodeUdsDtc(b0, b1, b2, st) {
-  const code = saeCode(b0, b1);
+/* BMW pokazuje kody jako 6 znaków hex (np. 120308), a nie kody SAE. */
+function decodeUdsDtc(b0, b1, b2, st, bmw) {
+  const code = bmw ? hex2(b0) + hex2(b1) + hex2(b2) : saeCode(b0, b1);
   const flags = [st & 0x01 ? 'aktywny' : 'zapisany'];
   if (st & 0x08) flags.push('potwierdzony');
   if (st & 0x04) flags.push('oczekujący');
   if (st & 0x80) flags.push('kontrolka');
   flags.push('status 0x' + hex2(st));
-  return { code, ftb: hex2(b2), raw: hex2(b0) + hex2(b1) + hex2(b2), full: `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: DTC_DESC[code] || '' };
+  return { code, ftb: hex2(b2), raw: hex2(b0) + hex2(b1) + hex2(b2), full: bmw ? code : `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: DTC_DESC[code] || '' };
+}
+
+/* BMW KWP2000 (seria E na D-CAN): kod 2 bajty hex + bajt statusu. */
+function decodeKwpDtc(b0, b1, st) {
+  const code = hex2(b0) + hex2(b1);
+  const flags = [st & 0x20 ? 'aktywny' : 'zapisany']; if (st & 0x40) flags.push('ostrzeżenie'); flags.push('status 0x' + hex2(st));
+  return { code, ftb: '', raw: code, full: code, status: st, real: true, flags, active: !!(st & 0x20), mil: false, desc: '', kwp: true };
 }
 
 function parseMode01(data, defs) {
@@ -876,6 +916,7 @@ class ELM {
   }
   async select(tx, rx) {
     const key = tx + ':' + rx; if (this.cur === key) return;
+    if (this.rawMode) { await this.send('ATCAF1'); this.rawMode = false; }
     await this.send('ATSH' + hex3(tx)); await this.send('ATCRA' + hex3(rx));
     if (this.fcOk) {
       for (const c of ['ATFCSH' + hex3(tx), 'ATFCSD300000', 'ATFCSM1']) {
@@ -889,6 +930,60 @@ class ELM {
     }
     this.cur = key;
   }
+  /* ---- BMW: D-CAN z adresowaniem rozszerzonym. Tester 0x6F1, moduł odpowiada na 0x600 + adres,
+     pierwszy bajt ramki to adres odbiorcy (do modułu) lub 0xF1 (do testera). ISO-TP składamy sami
+     w trybie CAF0, bo tanie klony ELM327 nie obsługują ATCEA. ---- */
+  async bmwSelect(addr) {
+    const key = 'bmw:' + addr; if (this.cur === key) return;
+    if (!this.rawMode) { await this.send('ATCAF0'); this.rawMode = true; }
+    await this.send('ATSH6F1'); await this.send('ATCRA' + hex3(0x600 + addr));
+    this.cur = key;
+  }
+  async bmwSendFrame(addr, payload) {
+    const f = [addr, ...payload]; while (f.length < 8) f.push(0x00);
+    const lines = await this.send(f.map(hex2).join(''));
+    const frames = [];
+    for (const l of lines) {
+      const h = l.replace(/\s/g, '').toUpperCase();
+      if (/^[0-9A-F]+$/.test(h) && h.length >= 4 && h.length % 2 === 0) { const b = bytesOf(h); if (b[0] === 0xF1) frames.push(b.slice(1)); }
+      else if (ELM_ERRORS.some(e => h.startsWith(e.replace(/\s/g, '')))) frames.err = h;
+    }
+    return frames;
+  }
+  async bmwRequest(addr, hex, { attempts = 4 } = {}) {
+    await this.bmwSelect(addr);
+    const pl = bytesOf(hex);
+    if (pl.length > 6) return { err: 'polecenie za długie dla jednej ramki (maks. 6 bajtów)' };
+    for (let a = 0; a < attempts; a++) {
+      let frames = await this.bmwSendFrame(addr, [pl.length, ...pl]);
+      if (!frames.length) return { err: frames.err && !frames.err.startsWith('NODATA') ? frames.err : 'NO DATA' };
+      let msg = null, i = 0;
+      while (i < frames.length && !msg) {
+        const f = frames[i++], t = f[0] >> 4;
+        if (t === 0) { const m = f.slice(1, 1 + (f[0] & 0xF)); if (m[0] === 0x7F && m[2] === 0x78) continue; msg = m; }
+        else if (t === 1) {
+          const len = ((f[0] & 0xF) << 8) | f[1]; let data = f.slice(2);
+          let rest = frames.slice(i).filter(x => (x[0] >> 4) === 2);
+          if (!rest.length) rest = (await this.bmwSendFrame(addr, [0x30, 0x00, 0x00])).filter(x => (x[0] >> 4) === 2);
+          for (const c of rest) data = data.concat(c.slice(1));
+          if (data.length < len) return { err: `niepełna odpowiedź (${data.length} z ${len} bajtów)` };
+          msg = data.slice(0, len);
+        }
+      }
+      if (!msg) { await sleep(400); continue; }   // tylko „czekaj” (7F xx 78) – pytamy ponownie
+      if (msg[0] === 0x7F) { const c = hex2(msg[2] || 0); return { err: `NRC ${c}: ${NRC[c] || 'nieznany'}`, nrc: c }; }
+      if (msg[0] !== ((pl[0] + 0x40) & 0xFF)) return { err: 'nieoczekiwana odpowiedź: ' + msg.map(hex2).join('') };
+      return { data: msg.map(hex2).join('') };
+    }
+    return { err: 'brak odpowiedzi (moduł wciąż przetwarza)' };
+  }
+  /* Żądanie do modułu niezależnie od sposobu adresowania (VAG/OBD: osobne ID, BMW: adres w danych). */
+  async ureq(mod, hex, opts) {
+    if (mod.bmw != null) return this.bmwRequest(mod.bmw, hex, opts);
+    await this.select(mod.tx, mod.rx);
+    return this.request(hex, opts);
+  }
+
   /* Moduł odpowiedział „czekaj” (7F xx 78). Zamiast wysyłać żądanie od nowa (co u wolnych modułów, np. ABS,
      zaczyna przetwarzanie od początku) prosimy adapter, żeby czekał na kilka kolejnych odpowiedzi z dłuższym limitem czasu. */
   async waitPending(req) {
@@ -1009,30 +1104,28 @@ class ELM {
 
   /* ---- UDS, moduły VAG ---- */
   async probe(mod, deep) {
-    await this.select(mod.tx, mod.rx);
-    let r = await this.request('3E00', { attempts: 1 });
+    let r = await this.ureq(mod, '3E00', { attempts: 1 });
     let present = !r.err || !!r.nrc;
-    if (!present && deep) { r = await this.request('22F187', { attempts: 1 }); present = !r.err || !!r.nrc; }
+    if (!present && deep) { r = await this.ureq(mod, mod.bmw != null ? '22F190' : '22F187', { attempts: 1 }); present = !r.err || !!r.nrc; }
     return present;
   }
-  async readDid(did, asHex) {
-    const r = await this.request('22' + did, { attempts: 3 });
+  async readDid(mod, did, asHex) {
+    const r = await this.ureq(mod, '22' + did, { attempts: 3 });
     if (r.err || !r.data.startsWith('62' + did)) return null;
     const b = bytesOf(r.data).slice(3);
     return asHex ? b.map(hex2).join('') : asciiOrHex(b);
   }
   /* Szczegóły błędu UDS: dane rozszerzone (0x19 06, rekord po rekordzie) i dane środowiskowe (0x19 04). */
   async readDtcDetails(mod, raw) {
-    await this.select(mod.tx, mod.rx);
     const ext = [];
     for (let rec = 1; rec <= 8; rec++) {
-      const r = await this.request('1906' + raw + hex2(rec), { attempts: 2 });
+      const r = await this.ureq(mod, '1906' + raw + hex2(rec), { attempts: 2 });
       if (r.err) { if (rec > 4) break; continue; }
       const b = bytesOf(r.data).slice(6);
       if (b.length > 1 && b[0] === rec) ext.push({ rec, bytes: b.slice(1) });
     }
     let snap = null;
-    const s = await this.request('1904' + raw + 'FF', { attempts: 2 });
+    const s = await this.ureq(mod, '1904' + raw + 'FF', { attempts: 2 });
     if (!s.err) { const b = bytesOf(s.data).slice(6); if (b.length) snap = b; }
     return { ext, snap };
   }
@@ -1070,40 +1163,37 @@ class ELM {
   }
 
   /* ---- Narzędzia zaawansowane ---- */
-  async raw(tx, rx, hex) {
-    await this.select(tx, rx);
-    return this.request(hex.replace(/\s/g, '').toUpperCase(), { attempts: 3 });
+  async raw(mod, hex) {
+    return this.ureq(mod, hex.replace(/\s/g, '').toUpperCase(), { attempts: 3 });
   }
   async scanDids(mod, ranges, { onProgress, onFound, stop, extended } = {}) {
-    await this.select(mod.tx, mod.rx);
     const found = []; let n = 0; const total = ranges.reduce((a, [lo, hi]) => a + hi - lo + 1, 0);
     await this.send('ATST32'); this.st = '32';
     let inExt = false;
     try {
-      if (extended) { const s = await this.request('1003', { attempts: 2 }); inExt = !s.err; }
+      if (extended) { const s = await this.ureq(mod, '1003', { attempts: 2 }); inExt = !s.err; }
       for (const [lo, hi] of ranges) for (let did = lo; did <= hi; did++) {
         if (stop && stop()) return found;
         n++; if (n % 8 === 0 && onProgress) onProgress(did, n, total);
-        const r = await this.request('22' + hex4(did), { attempts: 2 });
+        const r = await this.ureq(mod, '22' + hex4(did), { attempts: 2 });
         if (r.err || !r.data.startsWith('62' + hex4(did))) continue;
         const f = { did, bytes: bytesOf(r.data).slice(3) };
         found.push(f); onFound && onFound(f);
       }
       return found;
     } finally {
-      if (inExt) await this.request('1001', { attempts: 1 });
+      if (inExt) await this.ureq(mod, '1001', { attempts: 1 });
       this.st = '64'; await this.send('ATST64');
     }
   }
   async readDidRaw(mod, did) {
-    await this.select(mod.tx, mod.rx);
-    const r = await this.request('22' + hex4(did), { attempts: 1 });
+    const r = await this.ureq(mod, '22' + hex4(did), { attempts: 1 });
     return (r.err || !r.data.startsWith('62' + hex4(did))) ? null : bytesOf(r.data).slice(3);
   }
   /* Podsłuch magistrali (ATMA). Wołać wewnątrz op(): blokuje adapter do czasu stop(). */
   async monitor(onLine, onEnd) {
-    for (const c of ['ATH1', 'ATCAF0', 'ATCF700', 'ATCM700']) await this.send(c);
-    this.cur = null;
+    for (const c of ['ATH1', 'ATCAF0', 'ATCF600', 'ATCM600']) await this.send(c);
+    this.cur = null; this.rawMode = false;
     let tail = '', stopping = false, ended = false, endRes;
     const endP = new Promise(r => { endRes = r; });
     this.mon = s => {
@@ -1132,6 +1222,7 @@ class ELM {
     };
   }
   async readModuleDtcs(mod) {
+    if (mod.bmw != null) return this.readBmwDtcs(mod);
     await this.select(mod.tx, mod.rx);
     /* Maska 0xFF zwraca u VAG wszystkie kody obsługiwane przez moduł (status 0x50 = test jeszcze nie wykonany),
        a nie tylko usterki. Pytamy o statusy usterek (0x2F), a drugi raz o same potwierdzone (0x08), gdy odpowiedź jest za długa. */
@@ -1151,14 +1242,56 @@ class ELM {
   async scanModule(mod, deep = true) {
     if (!(await this.probe(mod, deep))) return null;
     const info = { ...mod, ident: {} };
-    for (const [did, label, kind] of IDENT_DIDS) { const v = await this.readDid(did, kind === 'hex'); if (v) info.ident[label] = v; }
+    for (const [did, label, kind] of (mod.bmw != null ? BMW_IDENT_DIDS : IDENT_DIDS)) { const v = await this.readDid(mod, did, kind === 'hex'); if (v) info.ident[label] = v; }
+    if (mod.bmw != null && !Object.keys(info.ident).length) {   // E-series (KWP2000): identyfikacja 0x1A 0x80
+      const r = await this.ureq(mod, '1A80', { attempts: 2 }); if (!r.err) info.ident['Identyfikacja (KWP)'] = asciiOrHex(bytesOf(r.data).slice(2));
+    }
     const d = await this.readModuleDtcs(mod);
     info.dtcs = d.dtcs; info.untested = d.untested || 0; if (d.err) info.err = d.err;
     return info;
   }
-  async clearModule(mod) { await this.select(mod.tx, mod.rx); return this.request('14FFFFFF', { attempts: 6 }); }
-  async findUnknown(onProgress) {
+  async clearModule(mod) {
+    const r = await this.ureq(mod, '14FFFFFF', { attempts: 6 });
+    if (r.err && r.nrc && mod.bmw != null) return this.ureq(mod, '14FFFF', { attempts: 6 });   // KWP2000
+    return r;
+  }
+  /* BMW: UDS 0x19 02, a gdy moduł nie zna tej usługi (starsze serie E na D-CAN) – KWP2000 0x18 02 FF FF. */
+  async readBmwDtcs(mod) {
+    let r = null;
+    for (const mask of [0x2F, 0x0C, 0x08]) { r = await this.ureq(mod, '1902' + hex2(mask)); if (!r.err || r.nrc !== '31') break; }
+    if (!r.err) {
+      const b = bytesOf(r.data).slice(3); const all = [];
+      for (let i = 0; i + 3 < b.length; i += 4) all.push(decodeUdsDtc(b[i], b[i + 1], b[i + 2], b[i + 3], true));
+      const dtcs = all.filter(d => d.real);
+      return { dtcs, untested: all.length - dtcs.length };
+    }
+    if (r.nrc === '11' || r.nrc === '12') {
+      const k = await this.ureq(mod, '1802FFFF');
+      if (!k.err) {
+        const b = bytesOf(k.data); const n = b[1] || 0, list = [];
+        for (let i = 2; i + 2 < b.length && list.length < n; i += 3) list.push(decodeKwpDtc(b[i], b[i + 1], b[i + 2]));
+        return { dtcs: list, untested: 0, kwp: true };
+      }
+      return { err: k.err, dtcs: [], untested: 0 };
+    }
+    return { err: r.err, dtcs: [], untested: 0 };
+  }
+  async findUnknownBmw(onProgress) {
+    const known = new Set(BMW_MODULES.map(m => m.bmw)); const found = [];
+    await this.send('ATST32'); this.st = '32';
+    try {
+      for (let a = 0x00; a <= 0x7F; a++) {
+        if (known.has(a)) continue;
+        onProgress && onProgress(0x600 + a);
+        const mod = { addr: hex2(a), name: 'Moduł BMW 0x' + hex2(a), bmw: a };
+        if (await this.probe(mod, false)) found.push(mod);
+      }
+    } finally { this.st = '64'; await this.send('ATST64'); }
+    return found;
+  }
+  async findUnknown(onProgress, bmw) {
     const known = new Set(MODULES.map(m => m.tx)); const found = [];
+    if (bmw) return this.findUnknownBmw(onProgress);
     await this.send('ATST32'); this.st = '32';
     try {
       for (let tx = 0x700; tx < 0x775; tx++) {
@@ -1205,7 +1338,11 @@ function createPanels(api) {
       el.dataset.s = v == null ? '' : api.stateOf(k, v);
     });
   }
-  function codeHits(codes, addrs) {
+  /* Adresy modułów w panelach są podane po VAG-owsku (01 silnik, 08 klimatyzacja); dla BMW tłumaczymy je na adresy BMW. */
+  const mapAddr = a => api.brand() === 'bmw' ? ({ '01': '12', '08': '78' }[a] || a) : a;
+  const sameMod = (x, m) => (x.bmw != null || m.bmw != null) ? x.bmw === m.bmw : x.tx === m.tx;
+  function codeHits(codes, addrs0) {
+    const addrs = addrs0.map(mapAddr), ENG = mapAddr('01');
     const rep = api.report(), hits = [], seen = new Set();
     const add = (shown, base, src, flags) => { const key = shown + src; if (seen.has(key)) return; seen.add(key); hits.push({ shown, base, src, flags: flags || '', desc: api.DTC_DESC[base] || '' }); };
     if (rep.obd) {
@@ -1214,9 +1351,9 @@ function createPanels(api) {
     }
     rep.modules.forEach(m => {
       const whole = addrs.includes(m.addr);
-      m.dtcs.forEach(d => { if (whole || (m.addr === '01' && codes.includes(d.code))) add(d.full, d.code, 'moduł ' + m.addr, d.flags.filter(x => !x.startsWith('status')).join(', ')); });
+      m.dtcs.forEach(d => { if (whole || (m.addr === ENG && codes.includes(d.code))) add(d.full, d.code, 'moduł ' + m.addr, d.flags.filter(x => !x.startsWith('status')).join(', ')); });
     });
-    const read = !!rep.obd || rep.modules.some(m => m.addr === '01' || addrs.includes(m.addr));
+    const read = !!rep.obd || rep.modules.some(m => m.addr === ENG || addrs.includes(m.addr));
     return { hits, read };
   }
   const codeList = hits => `<div class="codes">${hits.map(h => `<div class="codeline"><code>${esc(h.shown)}</code><span>${esc(h.desc || 'kod producenta, brak opisu')}</span><span class="flag">${esc(h.src)}${h.flags ? ' · ' + esc(h.flags) : ''}</span></div>`).join('')}</div>`;
@@ -1231,12 +1368,12 @@ function createPanels(api) {
       const rep = api.report();
       rep.obd = await e.op(() => e.readObdDtcs());
       rep.freeze = await e.op(() => e.readFreeze(api.sup()));
-      for (const addr of addrs) {
-        const m = api.MODULES.find(x => x.addr === addr); if (!m) continue;
+      for (const addr of addrs.map(mapAddr)) {
+        const m = api.modules().find(x => x.addr === addr); if (!m) continue;
         const r = await e.op(() => e.scanModule(m, true));
-        const i = rep.modules.findIndex(x => x.tx === m.tx);
-        if (r) { if (i >= 0) rep.modules[i] = r; else rep.modules.push(r); rep.absent = rep.absent.filter(x => x.tx !== m.tx); }
-        else if (i < 0 && !rep.absent.some(x => x.tx === m.tx)) rep.absent.push(m);
+        const i = rep.modules.findIndex(x => sameMod(x, m));
+        if (r) { if (i >= 0) rep.modules[i] = r; else rep.modules.push(r); rep.absent = rep.absent.filter(x => !sameMod(x, m)); }
+        else if (i < 0 && !rep.absent.some(x => sameMod(x, m))) rep.absent.push(m);
       }
       api.renderErrors();
     } catch (err) { api.logLine('! ' + err.message); }
@@ -1624,11 +1761,11 @@ function createPanels(api) {
     const el = $('#hCodes'); if (!el) return;
     const { hits, read } = codeHits(HEAT_CODES, ['08']);
     if (!read) { el.innerHTML = '<p class="small muted">Kody nie zostały jeszcze odczytane.</p>'; return; }
-    const rep = api.report(), clim = rep.modules.find(m => m.addr === '08');
-    const eng = hits.filter(h => h.src !== 'moduł 08'), cl = hits.filter(h => h.src === 'moduł 08');
+    const rep = api.report(), clim = rep.modules.find(m => m.addr === mapAddr('08'));
+    const cs = 'moduł ' + mapAddr('08'); const eng = hits.filter(h => h.src !== cs), cl = hits.filter(h => h.src === cs);
     let html = '';
-    if (clim) html += clim.err ? `<p class="small">Climatronic: nie udało się odczytać błędów (${esc(clim.err)}).</p>` : cl.length ? `<p class="small muted">Climatronic:</p>${codeList(cl)}` : '<p class="noerr">Climatronic: brak błędów</p>';
-    else html += rep.absent.some(m => m.addr === '08') ? '<p class="small muted">Climatronic nie odpowiedział.</p>' : '<p class="small muted">Climatronic jeszcze nie odczytany.</p>';
+    if (clim) html += clim.err ? `<p class="small">Klimatyzacja: nie udało się odczytać błędów (${esc(clim.err)}).</p>` : cl.length ? `<p class="small muted">Klimatyzacja:</p>${codeList(cl)}` : '<p class="noerr">Klimatyzacja: brak błędów</p>';
+    else html += rep.absent.some(m => m.addr === mapAddr('08')) ? '<p class="small muted">Moduł klimatyzacji nie odpowiedział.</p>' : '<p class="small muted">Moduł klimatyzacji jeszcze nie odczytany.</p>';
     html += eng.length ? `<p class="small muted">Silnik:</p>${codeList(eng)}` : '<p class="noerr">Silnik: brak kodów związanych z chłodzeniem</p>';
     el.innerHTML = html;
   }
@@ -1754,13 +1891,19 @@ function createTools(api) {
   };
 
   /* ---------- moduły ---------- */
+  const keyOf = m => m.bmw != null ? 'B:' + hex2(m.bmw) : hex3(m.tx) + ':' + hex3(m.rx);
   function modList() {
-    const list = api.MODULES.map(m => ({ key: hex3(m.tx) + ':' + hex3(m.rx), label: `${m.addr} ${m.name}`, tx: m.tx, rx: m.rx }));
-    for (const m of api.report().modules) if (!api.MODULES.some(x => x.tx === m.tx)) list.push({ key: hex3(m.tx) + ':' + hex3(m.rx), label: m.name, tx: m.tx, rx: m.rx });
+    const base = api.modules();
+    const list = base.map(m => ({ key: keyOf(m), label: `${m.addr} ${m.name}` }));
+    for (const m of api.report().modules) if (!list.some(x => x.key === keyOf(m))) list.push({ key: keyOf(m), label: m.name });
+    if (api.brand() === 'bmw') list.push({ key: '7E0:7E8', label: 'OBD silnika (7E0)' });
     return list;
   }
-  function modOf(key) { const [a, b] = key.split(':'); return { tx: parseInt(a, 16), rx: parseInt(b, 16) }; }
-  function modName(id) {
+  function modOf(key) { const [a, b] = key.split(':'); return a === 'B' ? { bmw: parseInt(b, 16) } : { tx: parseInt(a, 16), rx: parseInt(b, 16) }; }
+  const modLabel = m => m.bmw != null ? 'BMW 0x' + hex2(m.bmw) : '0x' + hex3(m.tx);
+  function modName(id, ea) {
+    if (id === 0x6F1) { const m = BMW_MODULES.find(x => x.bmw === ea); return `${hex2(ea ?? 0)} ${m ? m.name.split(' – ')[0] : 'BMW'} ←`; }
+    if (id >= 0x600 && id <= 0x6FF) { const a = id - 0x600, m = BMW_MODULES.find(x => x.bmw === a); return `${hex2(a)} ${m ? m.name.split(' – ')[0] : 'BMW'} →`; }
     if (id === 0x7DF) return 'OBD, wszystkie';
     for (const m of api.MODULES) { if (m.tx === id) return `${m.addr} ${m.name} ←`; if (m.rx === id) return `${m.addr} ${m.name} →`; }
     return '0x' + hex3(id);
@@ -1773,6 +1916,10 @@ function createTools(api) {
   /* ---------- render ---------- */
   function render() {
     const h = host(); if (!h) return;
+    const def = api.brand() === 'bmw' ? 'B:12' : '7E0:7E8', keys = modList().map(m => m.key);
+    if (st.brand !== api.brand()) { st.brand = api.brand(); st.scan.mod = def; if (st.con.mod !== 'custom') st.con.mod = def; }
+    if (!keys.includes(st.scan.mod)) st.scan.mod = def;
+    if (st.con.mod !== 'custom' && !keys.includes(st.con.mod)) st.con.mod = def;
     const on = !!api.elm();
     h.innerHTML = `
       <div class="panel-intro"><h2 class="ptitle">Narzędzia</h2>
@@ -1935,7 +2082,7 @@ function createTools(api) {
     const ranges = parseRanges($('#tScanRng').value);
     if (!ranges) { $('#tScanSt').textContent = 'Zły zakres. Wpisz np. 1000-1FFF albo 0100-01FF, F400-F4FF (łącznie do 16 384 numerów).'; return; }
     const S = st.scan; S.running = true; S.stop = false; S.watch = false; S.found = []; S.base = {}; S.last = {}; S.changed = new Set();
-    S.mod = $('#tScanMod').value === 'custom' ? '7E0:7E8' : $('#tScanMod').value;
+    S.mod = $('#tScanMod').value === 'custom' ? st.scan.mod : $('#tScanMod').value;
     const mod = modOf(S.mod); const resume = api.pause(); const t0 = now();
     sync(); renderScan();
     try {
@@ -1989,8 +2136,8 @@ function createTools(api) {
       </tbody></table>${L.length > 400 ? `<p class="small muted">Pokazano 400 z ${L.length}. Pełna lista jest w „Kopiuj listę”.</p>` : ''}`;
   }
   function scanText() {
-    const S = st.scan, m = modOf(S.mod);
-    return [`Skaner 0x22 · moduł TX ${hex3(m.tx)} RX ${hex3(m.rx)} · ${S.found.length} DID · zmienne: ${S.changed.size}`,
+ const S = st.scan, m = modOf(S.mod);
+    return [`Skaner 0x22 · moduł ${m.bmw != null ? 'BMW 0x' + hex2(m.bmw) : `TX ${hex3(m.tx)} RX ${hex3(m.rx)}`} · ${S.found.length} DID · zmienne: ${S.changed.size}`,
       ...S.found.map(fd => `${hex4(fd.did)}  ${S.changed.has(fd.did) ? 'ZMIENNY' : '       '}  start: ${hexs(S.base[fd.did] || fd.bytes)}${S.changed.has(fd.did) ? '  teraz: ' + hexs(S.last[fd.did]) : ''}`)].join('\n');
   }
 
@@ -2015,7 +2162,7 @@ function createTools(api) {
     const c = classifyCmd(hex);
     if (c.level === 'block') { conLine('✕ ' + hex + ' – ' + c.why, 'err'); return; }
     if (c.level === 'write' && !confirmed) {
-      $('#tConConfirm').innerHTML = `<div class="confirm"><span><b>${esc(hex)}</b> do 0x${hex3(mod.tx)}: ${esc(c.why)} Wyślij tylko, jeśli wiesz, co robi to polecenie w tym module (np. odczytałeś je z podsłuchu procedury). Silnik w trakcie testów elementów może się zachowywać nietypowo.</span>
+      $('#tConConfirm').innerHTML = `<div class="confirm"><span><b>${esc(hex)}</b> do ${modLabel(mod)}: ${esc(c.why)} Wyślij tylko, jeśli wiesz, co robi to polecenie w tym module (np. odczytałeś je z podsłuchu procedury). Silnik w trakcie testów elementów może się zachowywać nietypowo.</span>
         <div><button class="btn small danger" type="button" id="tConYes">Wyślij</button><button class="btn small" type="button" id="tConNo">Anuluj</button></div></div>`;
       $('#tConYes').onclick = () => conSend(hex, true);
       $('#tConNo').onclick = () => { $('#tConConfirm').innerHTML = ''; };
@@ -2025,9 +2172,9 @@ function createTools(api) {
   }
   async function run(mod, hex) {
     const e = api.elm(); if (!e) return;
-    conLine(`> [${hex3(mod.tx)}] ${hex}  · ${classifyCmd(hex).why}`, 'req');
+    conLine(`> [${modLabel(mod)}] ${hex}  · ${classifyCmd(hex).why}`, 'req');
     try {
-      const r = await e.op(() => e.raw(mod.tx, mod.rx, hex));
+      const r = await e.op(() => e.raw(mod, hex));
       if (r.err) conLine('< ' + r.err, 'err');
       else { const b = bytesOf(r.data); const txt = asciiOrHex(b.slice(3)); conLine('< ' + hexs(b) + (b.length > 3 && txt !== hexs(b.slice(3)) ? `   „${txt}”` : ''), 'ok'); }
       if (!r.err && hex.startsWith('10')) { if (hex === '1001') stopKeep(); else startKeep(mod); }
@@ -2035,7 +2182,7 @@ function createTools(api) {
   }
   function startKeep(mod) {
     stopKeep();
-    st.con.keep = setInterval(() => { const e = api.elm(); if (!e || st.mon.running) return stopKeep(); e.op(() => e.raw(mod.tx, mod.rx, '3E00')).catch(() => {}); }, 2500);
+    st.con.keep = setInterval(() => { const e = api.elm(); if (!e || st.mon.running) return stopKeep(); e.op(() => e.raw(mod, '3E00')).catch(() => {}); }, 2500);
     conLine('— sesja podtrzymywana automatycznie (3E00 co 2,5 s). Wyślij 1001, żeby wrócić do sesji domyślnej.', 'muted');
   }
   function stopKeep() { if (st.con.keep) { clearInterval(st.con.keep); st.con.keep = null; } }
@@ -2052,10 +2199,11 @@ function createTools(api) {
     stopKeep();
     const M = st.mon; M.running = true; M.msgs = []; M.raw = []; M.t0 = now(); M.frames = 0; M.restarts = 0;
     M.resume = api.pause(); sync(); renderMon();
-    const tp = createIsoTp((id, bytes) => {
+    const tp = createIsoTp((id, bytes, ea) => {
       const t = (now() - M.t0) / 1000;
-      const c = id === 0x7DF || api.MODULES.some(m => m.tx === id) || (id >= 0x700 && id < 0x776 && !api.MODULES.some(m => m.rx === id)) ? classifyCmd(bytes.map(hex2).join('')) : null;
-      M.msgs.push({ t, id, bytes, w: c && c.level !== 'read', req: !!c });
+      const isReq = id === 0x7DF || id === 0x6F1 || api.MODULES.some(m => m.tx === id) || (id >= 0x700 && id < 0x776 && !api.MODULES.some(m => m.rx === id));
+      const c = isReq ? classifyCmd(bytes.map(hex2).join('')) : null;
+      M.msgs.push({ t, id, ea, bytes, w: c && c.level !== 'read', req: !!c });
       if (M.msgs.length > 20000) M.msgs.shift();
       schedule();
     });
@@ -2090,7 +2238,7 @@ function createTools(api) {
     const M = st.mon, V = monVisible();
     const nw = M.msgs.filter(m => m.w).length;
     s.textContent = M.running || M.raw.length ? `${M.running ? 'Nasłuch' : 'Zapisano'}: ${M.frames} ramek, ${M.msgs.length} wiadomości, w tym ${nw} ${plural(nw, 'polecenie zmieniające', 'polecenia zmieniające', 'poleceń zmieniających')}${M.restarts ? `, wznowień po przepełnieniu: ${M.restarts}` : ''}.` : '';
-    el.innerHTML = V.slice(-300).map(m => `<div class="msg${m.w ? ' w' : ''}${m.req ? ' rq' : ''}"><span class="mt">${m.t.toFixed(2)}</span><span class="mid">${esc(modName(m.id))}</span><code>${esc(hexs(m.bytes.slice(0, 40)))}${m.bytes.length > 40 ? ' …' : ''}</code><span class="ms">${esc(svcLabel(m.bytes))}</span></div>`).join('')
+    el.innerHTML = V.slice(-300).map(m => `<div class="msg${m.w ? ' w' : ''}${m.req ? ' rq' : ''}"><span class="mt">${m.t.toFixed(2)}</span><span class="mid">${esc(modName(m.id, m.ea))}</span><code>${esc(hexs(m.bytes.slice(0, 40)))}${m.bytes.length > 40 ? ' …' : ''}</code><span class="ms">${esc(svcLabel(m.bytes))}</span></div>`).join('')
       || (M.running ? '<p class="small muted">Czekam na komunikację diagnostyczną…</p>' : '');
     if (M.running) el.scrollTop = el.scrollHeight;
     sync();
@@ -2099,7 +2247,7 @@ function createTools(api) {
     const M = st.mon;
     return ['VAG Diagnostyka – podsłuch magistrali', 'Data: ' + new Date().toLocaleString('pl-PL'), '',
       '== Wiadomości (złożone ISO-TP) ==',
-      ...M.msgs.map(m => `${m.t.toFixed(3)}  ${hex3(m.id)}  ${modName(m.id).padEnd(28)}  ${hexs(m.bytes)}  ${svcLabel(m.bytes)}${m.w ? '  [ZMIENIA]' : ''}`),
+      ...M.msgs.map(m => `${m.t.toFixed(3)}  ${hex3(m.id)}${m.ea != null ? '/' + hex2(m.ea) : '   '}  ${modName(m.id, m.ea).padEnd(28)}  ${hexs(m.bytes)}  ${svcLabel(m.bytes)}${m.w ? '  [ZMIENIA]' : ''}`),
       '', '== Surowe ramki ==', ...M.raw].join('\n');
   }
 
@@ -2620,6 +2768,11 @@ function createBridge(api) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && sess.on && journal) { if (sess.ok) journal.regSave(CAT, true); sessSave(false); } });
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
+  /* ---------- marka ---------- */
+  const modKey = m => m.bmw != null ? 'b' + m.bmw : 'm' + m.tx;
+  function brand() { const o = store.get('brand', 'auto'); return o !== 'auto' ? o : (brandOf(report.vin) || 'vag'); }
+  function modules() { return brand() === 'bmw' ? BMW_MODULES : MODULES; }
+  const BRAND_NAMES = { vag: 'VAG', bmw: 'BMW' };
   function blankReport() { return { vin: null, calib: null, readiness: null, obd: null, freeze: null, modules: [], absent: [], adapter: null, at: null }; }
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -3032,7 +3185,7 @@ function createBridge(api) {
       chip(`${t.name} · ${id}`, 'on');
       $('#banner').hidden = true;
       connecting = false; tools && tools.onConnect(); setButtons(); buildTiles(); renderState(); startPolling();
-      refreshState().then(() => runScan(false));
+      refreshState().then(() => { tools && !tools.busy() && tools.render(); renderModules(); runScan(false); });
     } catch (err) {
       connecting = false;
       const msg = friendly(err);
@@ -3092,7 +3245,7 @@ function createBridge(api) {
       : `${det.ext.length ? `<div><b>Dane rozszerzone</b> ${det.ext.map(x => `<span class="kvp">rekord ${hex2(x.rec)}: <code>${x.bytes.map(hex2).join(' ')}</code>${x.bytes.length <= 3 ? ` = ${x.bytes.reduce((a, b) => a * 256 + b, 0)}` : ''}</span>`).join('')}</div>` : ''}
          ${det.snap ? `<div><b>Dane środowiskowe</b> <code class="wrap">${det.snap.map(hex2).join(' ')}</code></div>` : ''}
          ${!det.ext.length && !det.snap ? '<span class="muted">Moduł nie zwrócił szczegółów dla tego kodu.</span>' : '<span class="muted">Surowe dane. Bez opisu producenta nie da się nazwać każdego pola. Licznik wystąpień i przebieg zwykle są w danych rozszerzonych.</span>'}`}</div>` : '';
-    const btn = m && d ? `<button class="linkbtn" type="button" data-det="${m.tx}|${d.raw}">${det ? 'Odśwież szczegóły' : 'Szczegóły'}</button>` : '';
+    const btn = m && d ? `<button class="linkbtn" type="button" data-det="${modKey(m)}|${d.raw}">${det ? 'Odśwież szczegóły' : 'Szczegóły'}</button>` : '';
     return `<div class="dtc"><code>${esc(code)}</code><span class="d">${desc ? esc(desc) : '<span class="muted">Kod producenta, brak opisu w bazie</span>'}</span>${flags && flags.length ? `<div class="flags">${flags.map(f => `<span class="flag${f === 'aktywny' ? ' act' : f === 'kontrolka' ? ' mil' : ''}">${esc(f)}</span>`).join('')}${btn}</div>` : ''}${detHtml}</div>`;
   }
   function clearFoot(id, label) { return `<div class="cardfoot" data-foot="${id}"><button class="btn small" type="button" data-clear="${id}">${label}</button></div>`; }
@@ -3117,6 +3270,7 @@ function createBridge(api) {
       ${total ? clearFoot('obd', 'Kasuj kody silnika (OBD)') : ''}`;
   }
   function renderModules() {
+    $('#modTitle').firstChild.textContent = `Moduły ${BRAND_NAMES[brand()]} `;
     const host = $('#modules');
     if (!report.modules.length) { host.innerHTML = `<p class="muted">${scanning ? 'Skanowanie…' : 'Jeszcze nie skanowano.'}</p>`; updateBadge(); return; }
     host.innerHTML = '<div class="cols">' + report.modules.map(m => {
@@ -3126,7 +3280,7 @@ function createBridge(api) {
         ${ident ? `<div class="ident">${ident}</div>` : ''}
         ${m.err ? `<p class="muted" style="margin:0;font-size:13px">Nie udało się odczytać błędów: ${esc(m.err)}</p>` : n ? m.dtcs.map(d => dtcRow(d.full, d.desc, d.flags, m, d)).join('') : '<p class="noerr">Brak błędów</p>'}
         ${m.untested ? `<p class="absent">Pominięto ${m.untested} ${plural(m.untested, 'pozycję', 'pozycje', 'pozycji')} z listy kodów obsługiwanych przez moduł, bez wykrytej usterki.</p>` : ''}
-        ${n ? clearFoot('m' + m.tx, 'Kasuj błędy') : ''}</div>`;
+        ${n ? clearFoot(modKey(m), 'Kasuj błędy') : ''}</div>`;
     }).join('') + '</div>' + (report.absent.length ? `<p class="absent">Bez odpowiedzi (brak w aucie lub inny adres): ${report.absent.map(m => esc(m.addr + ' ' + m.name)).join(', ')}</p>` : '');
     updateBadge();
   }
@@ -3146,14 +3300,15 @@ function createBridge(api) {
       report.obd = await e.op(() => e.readObdDtcs());
       report.freeze = await e.op(() => e.readFreeze(sup));
       renderObd();
-      for (const m of MODULES) {
+      $('#modTitle').firstChild.textContent = `Moduły ${BRAND_NAMES[brand()]} `;
+      for (const m of modules()) {
         if (e !== elm) { prog(''); return; }
         prog(`Moduł ${m.addr} · ${m.name}…`);
         const r = await e.op(() => e.scanModule(m, true));
         if (r) { report.modules.push(r); renderModules(); } else report.absent.push(m);
       }
       if (full && e === elm) {
-        const found = await e.op(() => e.findUnknown(tx => prog(`Szukam modułów: 0x${tx.toString(16).toUpperCase()}…`)));
+        const found = await e.op(() => e.findUnknown(tx => prog(`Szukam modułów: 0x${tx.toString(16).toUpperCase()}…`), brand() === 'bmw'));
         for (const m of found) { prog(`Odczyt ${m.name}…`); const r = await e.op(() => e.scanModule(m, false)); if (r) { report.modules.push(r); renderModules(); } }
       }
       report.at = new Date();
@@ -3164,20 +3319,25 @@ function createBridge(api) {
     finally { scanning = false; renderModules(); setButtons(); }
   }
   $('#btnScan').onclick = () => runScan($('#fullScan').checked);
+  $('#brandSel').value = store.get('brand', 'auto');
+  $('#brandSel').onchange = e => {
+    store.set('brand', e.target.value); renderModules(); tools && tools.render();
+    if (elm && !scanning) runScan(false);
+  };
 
   $('#tab-errors').addEventListener('click', async ev => {
     const btn = ev.target.closest('button'); if (!btn) return;
     if (btn.dataset.det) {
       const e = elm; if (!e) return;
       const [tx, raw] = btn.dataset.det.split('|');
-      const m = report.modules.find(x => String(x.tx) === tx); const d = m && m.dtcs.find(x => x.raw === raw); if (!d) return;
+      const m = report.modules.find(x => modKey(x) === tx); const d = m && m.dtcs.find(x => x.raw === raw); if (!d) return;
       btn.disabled = true; btn.textContent = 'Odczyt…';
       try { d.details = await e.op(() => e.readDtcDetails(m, raw)); } catch (err) { d.details = { err: err.message, ext: [], snap: null }; }
       renderModules(); return;
     }
     if (btn.dataset.clear) {
       const id = btn.dataset.clear, foot = btn.closest('.cardfoot');
-      const m = id === 'obd' ? null : report.modules.find(x => 'm' + x.tx === id);
+      const m = id === 'obd' ? null : report.modules.find(x => modKey(x) === id);
       const what = m ? `w module ${m.addr} ${m.name}` : 'silnika (OBD)';
       foot.innerHTML = `<div class="confirm"><span>Skasować błędy ${esc(what)}? Usunie to też zamrożone ramki i zresetuje gotowość systemów. Aktywne usterki wrócą od razu.</span>
         <div><button class="btn small danger" type="button" data-do="${id}">Kasuj</button><button class="btn small" type="button" data-cancel="1">Anuluj</button></div></div>`;
@@ -3187,11 +3347,12 @@ function createBridge(api) {
     if (btn.dataset.do) {
       const e = elm; if (!e) return;
       const id = btn.dataset.do; btn.disabled = true; btn.textContent = 'Kasowanie…';
-      const m = id === 'obd' ? null : report.modules.find(x => 'm' + x.tx === id);
+      const m = id === 'obd' ? null : report.modules.find(x => modKey(x) === id);
       const r = await e.op(() => m ? e.clearModule(m) : e.clearObd());
       logLine(r.err ? '! kasowanie: ' + r.err : '— skasowano błędy ' + (m ? m.addr : 'OBD'));
       if (m) { const d = await e.op(() => e.readModuleDtcs(m)); m.dtcs = d.dtcs; m.err = d.err; }
-      if (!m || m.tx === 0x7E0) { report.obd = await e.op(() => e.readObdDtcs()); report.freeze = await e.op(() => e.readFreeze(sup)); const em = report.modules.find(x => x.tx === 0x7E0); if (em && !m) { const d = await e.op(() => e.readModuleDtcs(em)); em.dtcs = d.dtcs; } }
+      const isEng = x => x.tx === 0x7E0 || x.bmw === 0x12;
+      if (!m || isEng(m)) { report.obd = await e.op(() => e.readObdDtcs()); report.freeze = await e.op(() => e.readFreeze(sup)); const em = report.modules.find(isEng); if (em && !m) { const d = await e.op(() => e.readModuleDtcs(em)); em.dtcs = d.dtcs; } }
       $('#scanProgress').textContent = r.err ? `Nie udało się skasować: ${r.err}` : `Skasowano. ${m && m.dtcs.length ? 'Część błędów wróciła, bo usterka jest aktywna.' : ''}`;
       renderObd(); renderModules();
     }
@@ -3201,7 +3362,7 @@ function createBridge(api) {
   function buildReport() {
     const L = [];
     L.push('VAG Diagnostyka – raport', 'Data: ' + new Date().toLocaleString('pl-PL'));
-    L.push('Adapter: ' + (report.adapter || '—'), 'VIN: ' + (report.vin || '—'));
+    L.push('Adapter: ' + (report.adapter || '—'), 'VIN: ' + (report.vin || '—'), 'Marka: ' + BRAND_NAMES[brand()] + (store.get('brand', 'auto') === 'auto' ? ' (z VIN)' : ' (wybrana ręcznie)'));
     const cal = report.calib || {};
     if (cal.ecuName || cal.calid) L.push(`Sterownik: ${cal.ecuName || '—'} · kalibracja: ${(cal.calid || []).join(', ') || '—'} · CVN: ${(cal.cvn || []).join(', ') || '—'}`);
     const r = report.readiness;
@@ -3247,14 +3408,14 @@ function createBridge(api) {
   const saveLog = (kind, title, text, opt) => journal.add(kind, title, text, opt);
   panels = createPanels({
     saveLog,
-    vals: () => vals, avail, stateOf, tokens, store, CAT, DTC_DESC, MODULES,
+    vals: () => vals, avail, stateOf, tokens, store, CAT, DTC_DESC, MODULES, modules, brand,
     esc, fmtNum, fmtVal, plural, copyText, logLine,
     elm: () => elm, mode: () => mode, sup: () => sup, report: () => report,
     renderErrors: () => { renderObd(); renderModules(); },
     ensurePolling: () => { if (!polling) startPolling(); }
   });
   tools = createTools({
-    elm: () => elm, esc, fmtNum, plural, copyText, download, stamp, framed, logLine, store, MODULES,
+    elm: () => elm, esc, fmtNum, plural, copyText, download, stamp, framed, logLine, store, MODULES, modules, brand,
     report: () => report, pause, saveLog
   });
   tools.render();

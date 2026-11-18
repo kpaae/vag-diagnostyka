@@ -16,13 +16,19 @@ function createTools(api) {
   };
 
   /* ---------- moduły ---------- */
+  const keyOf = m => m.bmw != null ? 'B:' + hex2(m.bmw) : hex3(m.tx) + ':' + hex3(m.rx);
   function modList() {
-    const list = api.MODULES.map(m => ({ key: hex3(m.tx) + ':' + hex3(m.rx), label: `${m.addr} ${m.name}`, tx: m.tx, rx: m.rx }));
-    for (const m of api.report().modules) if (!api.MODULES.some(x => x.tx === m.tx)) list.push({ key: hex3(m.tx) + ':' + hex3(m.rx), label: m.name, tx: m.tx, rx: m.rx });
+    const base = api.modules();
+    const list = base.map(m => ({ key: keyOf(m), label: `${m.addr} ${m.name}` }));
+    for (const m of api.report().modules) if (!list.some(x => x.key === keyOf(m))) list.push({ key: keyOf(m), label: m.name });
+    if (api.brand() === 'bmw') list.push({ key: '7E0:7E8', label: 'OBD silnika (7E0)' });
     return list;
   }
-  function modOf(key) { const [a, b] = key.split(':'); return { tx: parseInt(a, 16), rx: parseInt(b, 16) }; }
-  function modName(id) {
+  function modOf(key) { const [a, b] = key.split(':'); return a === 'B' ? { bmw: parseInt(b, 16) } : { tx: parseInt(a, 16), rx: parseInt(b, 16) }; }
+  const modLabel = m => m.bmw != null ? 'BMW 0x' + hex2(m.bmw) : '0x' + hex3(m.tx);
+  function modName(id, ea) {
+    if (id === 0x6F1) { const m = BMW_MODULES.find(x => x.bmw === ea); return `${hex2(ea ?? 0)} ${m ? m.name.split(' – ')[0] : 'BMW'} ←`; }
+    if (id >= 0x600 && id <= 0x6FF) { const a = id - 0x600, m = BMW_MODULES.find(x => x.bmw === a); return `${hex2(a)} ${m ? m.name.split(' – ')[0] : 'BMW'} →`; }
     if (id === 0x7DF) return 'OBD, wszystkie';
     for (const m of api.MODULES) { if (m.tx === id) return `${m.addr} ${m.name} ←`; if (m.rx === id) return `${m.addr} ${m.name} →`; }
     return '0x' + hex3(id);
@@ -35,6 +41,10 @@ function createTools(api) {
   /* ---------- render ---------- */
   function render() {
     const h = host(); if (!h) return;
+    const def = api.brand() === 'bmw' ? 'B:12' : '7E0:7E8', keys = modList().map(m => m.key);
+    if (st.brand !== api.brand()) { st.brand = api.brand(); st.scan.mod = def; if (st.con.mod !== 'custom') st.con.mod = def; }
+    if (!keys.includes(st.scan.mod)) st.scan.mod = def;
+    if (st.con.mod !== 'custom' && !keys.includes(st.con.mod)) st.con.mod = def;
     const on = !!api.elm();
     h.innerHTML = `
       <div class="panel-intro"><h2 class="ptitle">Narzędzia</h2>
@@ -197,7 +207,7 @@ function createTools(api) {
     const ranges = parseRanges($('#tScanRng').value);
     if (!ranges) { $('#tScanSt').textContent = 'Zły zakres. Wpisz np. 1000-1FFF albo 0100-01FF, F400-F4FF (łącznie do 16 384 numerów).'; return; }
     const S = st.scan; S.running = true; S.stop = false; S.watch = false; S.found = []; S.base = {}; S.last = {}; S.changed = new Set();
-    S.mod = $('#tScanMod').value === 'custom' ? '7E0:7E8' : $('#tScanMod').value;
+    S.mod = $('#tScanMod').value === 'custom' ? st.scan.mod : $('#tScanMod').value;
     const mod = modOf(S.mod); const resume = api.pause(); const t0 = now();
     sync(); renderScan();
     try {
@@ -251,8 +261,8 @@ function createTools(api) {
       </tbody></table>${L.length > 400 ? `<p class="small muted">Pokazano 400 z ${L.length}. Pełna lista jest w „Kopiuj listę”.</p>` : ''}`;
   }
   function scanText() {
-    const S = st.scan, m = modOf(S.mod);
-    return [`Skaner 0x22 · moduł TX ${hex3(m.tx)} RX ${hex3(m.rx)} · ${S.found.length} DID · zmienne: ${S.changed.size}`,
+ const S = st.scan, m = modOf(S.mod);
+    return [`Skaner 0x22 · moduł ${m.bmw != null ? 'BMW 0x' + hex2(m.bmw) : `TX ${hex3(m.tx)} RX ${hex3(m.rx)}`} · ${S.found.length} DID · zmienne: ${S.changed.size}`,
       ...S.found.map(fd => `${hex4(fd.did)}  ${S.changed.has(fd.did) ? 'ZMIENNY' : '       '}  start: ${hexs(S.base[fd.did] || fd.bytes)}${S.changed.has(fd.did) ? '  teraz: ' + hexs(S.last[fd.did]) : ''}`)].join('\n');
   }
 
@@ -277,7 +287,7 @@ function createTools(api) {
     const c = classifyCmd(hex);
     if (c.level === 'block') { conLine('✕ ' + hex + ' – ' + c.why, 'err'); return; }
     if (c.level === 'write' && !confirmed) {
-      $('#tConConfirm').innerHTML = `<div class="confirm"><span><b>${esc(hex)}</b> do 0x${hex3(mod.tx)}: ${esc(c.why)} Wyślij tylko, jeśli wiesz, co robi to polecenie w tym module (np. odczytałeś je z podsłuchu procedury). Silnik w trakcie testów elementów może się zachowywać nietypowo.</span>
+      $('#tConConfirm').innerHTML = `<div class="confirm"><span><b>${esc(hex)}</b> do ${modLabel(mod)}: ${esc(c.why)} Wyślij tylko, jeśli wiesz, co robi to polecenie w tym module (np. odczytałeś je z podsłuchu procedury). Silnik w trakcie testów elementów może się zachowywać nietypowo.</span>
         <div><button class="btn small danger" type="button" id="tConYes">Wyślij</button><button class="btn small" type="button" id="tConNo">Anuluj</button></div></div>`;
       $('#tConYes').onclick = () => conSend(hex, true);
       $('#tConNo').onclick = () => { $('#tConConfirm').innerHTML = ''; };
@@ -287,9 +297,9 @@ function createTools(api) {
   }
   async function run(mod, hex) {
     const e = api.elm(); if (!e) return;
-    conLine(`> [${hex3(mod.tx)}] ${hex}  · ${classifyCmd(hex).why}`, 'req');
+    conLine(`> [${modLabel(mod)}] ${hex}  · ${classifyCmd(hex).why}`, 'req');
     try {
-      const r = await e.op(() => e.raw(mod.tx, mod.rx, hex));
+      const r = await e.op(() => e.raw(mod, hex));
       if (r.err) conLine('< ' + r.err, 'err');
       else { const b = bytesOf(r.data); const txt = asciiOrHex(b.slice(3)); conLine('< ' + hexs(b) + (b.length > 3 && txt !== hexs(b.slice(3)) ? `   „${txt}”` : ''), 'ok'); }
       if (!r.err && hex.startsWith('10')) { if (hex === '1001') stopKeep(); else startKeep(mod); }
@@ -297,7 +307,7 @@ function createTools(api) {
   }
   function startKeep(mod) {
     stopKeep();
-    st.con.keep = setInterval(() => { const e = api.elm(); if (!e || st.mon.running) return stopKeep(); e.op(() => e.raw(mod.tx, mod.rx, '3E00')).catch(() => {}); }, 2500);
+    st.con.keep = setInterval(() => { const e = api.elm(); if (!e || st.mon.running) return stopKeep(); e.op(() => e.raw(mod, '3E00')).catch(() => {}); }, 2500);
     conLine('— sesja podtrzymywana automatycznie (3E00 co 2,5 s). Wyślij 1001, żeby wrócić do sesji domyślnej.', 'muted');
   }
   function stopKeep() { if (st.con.keep) { clearInterval(st.con.keep); st.con.keep = null; } }
@@ -314,10 +324,11 @@ function createTools(api) {
     stopKeep();
     const M = st.mon; M.running = true; M.msgs = []; M.raw = []; M.t0 = now(); M.frames = 0; M.restarts = 0;
     M.resume = api.pause(); sync(); renderMon();
-    const tp = createIsoTp((id, bytes) => {
+    const tp = createIsoTp((id, bytes, ea) => {
       const t = (now() - M.t0) / 1000;
-      const c = id === 0x7DF || api.MODULES.some(m => m.tx === id) || (id >= 0x700 && id < 0x776 && !api.MODULES.some(m => m.rx === id)) ? classifyCmd(bytes.map(hex2).join('')) : null;
-      M.msgs.push({ t, id, bytes, w: c && c.level !== 'read', req: !!c });
+      const isReq = id === 0x7DF || id === 0x6F1 || api.MODULES.some(m => m.tx === id) || (id >= 0x700 && id < 0x776 && !api.MODULES.some(m => m.rx === id));
+      const c = isReq ? classifyCmd(bytes.map(hex2).join('')) : null;
+      M.msgs.push({ t, id, ea, bytes, w: c && c.level !== 'read', req: !!c });
       if (M.msgs.length > 20000) M.msgs.shift();
       schedule();
     });
@@ -352,7 +363,7 @@ function createTools(api) {
     const M = st.mon, V = monVisible();
     const nw = M.msgs.filter(m => m.w).length;
     s.textContent = M.running || M.raw.length ? `${M.running ? 'Nasłuch' : 'Zapisano'}: ${M.frames} ramek, ${M.msgs.length} wiadomości, w tym ${nw} ${plural(nw, 'polecenie zmieniające', 'polecenia zmieniające', 'poleceń zmieniających')}${M.restarts ? `, wznowień po przepełnieniu: ${M.restarts}` : ''}.` : '';
-    el.innerHTML = V.slice(-300).map(m => `<div class="msg${m.w ? ' w' : ''}${m.req ? ' rq' : ''}"><span class="mt">${m.t.toFixed(2)}</span><span class="mid">${esc(modName(m.id))}</span><code>${esc(hexs(m.bytes.slice(0, 40)))}${m.bytes.length > 40 ? ' …' : ''}</code><span class="ms">${esc(svcLabel(m.bytes))}</span></div>`).join('')
+    el.innerHTML = V.slice(-300).map(m => `<div class="msg${m.w ? ' w' : ''}${m.req ? ' rq' : ''}"><span class="mt">${m.t.toFixed(2)}</span><span class="mid">${esc(modName(m.id, m.ea))}</span><code>${esc(hexs(m.bytes.slice(0, 40)))}${m.bytes.length > 40 ? ' …' : ''}</code><span class="ms">${esc(svcLabel(m.bytes))}</span></div>`).join('')
       || (M.running ? '<p class="small muted">Czekam na komunikację diagnostyczną…</p>' : '');
     if (M.running) el.scrollTop = el.scrollHeight;
     sync();
@@ -361,7 +372,7 @@ function createTools(api) {
     const M = st.mon;
     return ['VAG Diagnostyka – podsłuch magistrali', 'Data: ' + new Date().toLocaleString('pl-PL'), '',
       '== Wiadomości (złożone ISO-TP) ==',
-      ...M.msgs.map(m => `${m.t.toFixed(3)}  ${hex3(m.id)}  ${modName(m.id).padEnd(28)}  ${hexs(m.bytes)}  ${svcLabel(m.bytes)}${m.w ? '  [ZMIENIA]' : ''}`),
+      ...M.msgs.map(m => `${m.t.toFixed(3)}  ${hex3(m.id)}${m.ea != null ? '/' + hex2(m.ea) : '   '}  ${modName(m.id, m.ea).padEnd(28)}  ${hexs(m.bytes)}  ${svcLabel(m.bytes)}${m.w ? '  [ZMIENIA]' : ''}`),
       '', '== Surowe ramki ==', ...M.raw].join('\n');
   }
 

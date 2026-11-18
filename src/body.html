@@ -67,6 +67,7 @@
     <div class="toolbar">
       <div class="actions">
         <button id="btnScan" class="btn primary" type="button" disabled>Skanuj wszystkie moduły</button>
+        <select id="brandSel" class="inp" aria-label="Marka"><option value="auto">Marka: z VIN</option><option value="vag">VAG (VW, Audi, Seat, Škoda)</option><option value="bmw">BMW / MINI</option></select>
         <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="fullScan"> Szukaj też modułów spoza listy (ok. 1 min)</label>
       </div>
       <div class="actions">
@@ -81,7 +82,7 @@
     </div>
     <h2 class="sect">Silnik – kody OBD <small>tryby 03 / 07 / 0A</small></h2>
     <div id="obdDtc"><p class="muted">Jeszcze nie odczytano.</p></div>
-    <h2 class="sect">Moduły VAG <small>UDS 0x19</small></h2>
+    <h2 class="sect" id="modTitle">Moduły VAG <small>UDS 0x19</small></h2>
     <div id="modules"><p class="muted">Jeszcze nie skanowano.</p></div>
   </section>
 

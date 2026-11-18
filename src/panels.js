@@ -30,7 +30,11 @@ function createPanels(api) {
       el.dataset.s = v == null ? '' : api.stateOf(k, v);
     });
   }
-  function codeHits(codes, addrs) {
+  /* Adresy modułów w panelach są podane po VAG-owsku (01 silnik, 08 klimatyzacja); dla BMW tłumaczymy je na adresy BMW. */
+  const mapAddr = a => api.brand() === 'bmw' ? ({ '01': '12', '08': '78' }[a] || a) : a;
+  const sameMod = (x, m) => (x.bmw != null || m.bmw != null) ? x.bmw === m.bmw : x.tx === m.tx;
+  function codeHits(codes, addrs0) {
+    const addrs = addrs0.map(mapAddr), ENG = mapAddr('01');
     const rep = api.report(), hits = [], seen = new Set();
     const add = (shown, base, src, flags) => { const key = shown + src; if (seen.has(key)) return; seen.add(key); hits.push({ shown, base, src, flags: flags || '', desc: api.DTC_DESC[base] || '' }); };
     if (rep.obd) {
@@ -39,9 +43,9 @@ function createPanels(api) {
     }
     rep.modules.forEach(m => {
       const whole = addrs.includes(m.addr);
-      m.dtcs.forEach(d => { if (whole || (m.addr === '01' && codes.includes(d.code))) add(d.full, d.code, 'moduł ' + m.addr, d.flags.filter(x => !x.startsWith('status')).join(', ')); });
+      m.dtcs.forEach(d => { if (whole || (m.addr === ENG && codes.includes(d.code))) add(d.full, d.code, 'moduł ' + m.addr, d.flags.filter(x => !x.startsWith('status')).join(', ')); });
     });
-    const read = !!rep.obd || rep.modules.some(m => m.addr === '01' || addrs.includes(m.addr));
+    const read = !!rep.obd || rep.modules.some(m => m.addr === ENG || addrs.includes(m.addr));
     return { hits, read };
   }
   const codeList = hits => `<div class="codes">${hits.map(h => `<div class="codeline"><code>${esc(h.shown)}</code><span>${esc(h.desc || 'kod producenta, brak opisu')}</span><span class="flag">${esc(h.src)}${h.flags ? ' · ' + esc(h.flags) : ''}</span></div>`).join('')}</div>`;
@@ -56,12 +60,12 @@ function createPanels(api) {
       const rep = api.report();
       rep.obd = await e.op(() => e.readObdDtcs());
       rep.freeze = await e.op(() => e.readFreeze(api.sup()));
-      for (const addr of addrs) {
-        const m = api.MODULES.find(x => x.addr === addr); if (!m) continue;
+      for (const addr of addrs.map(mapAddr)) {
+        const m = api.modules().find(x => x.addr === addr); if (!m) continue;
         const r = await e.op(() => e.scanModule(m, true));
-        const i = rep.modules.findIndex(x => x.tx === m.tx);
-        if (r) { if (i >= 0) rep.modules[i] = r; else rep.modules.push(r); rep.absent = rep.absent.filter(x => x.tx !== m.tx); }
-        else if (i < 0 && !rep.absent.some(x => x.tx === m.tx)) rep.absent.push(m);
+        const i = rep.modules.findIndex(x => sameMod(x, m));
+        if (r) { if (i >= 0) rep.modules[i] = r; else rep.modules.push(r); rep.absent = rep.absent.filter(x => !sameMod(x, m)); }
+        else if (i < 0 && !rep.absent.some(x => sameMod(x, m))) rep.absent.push(m);
       }
       api.renderErrors();
     } catch (err) { api.logLine('! ' + err.message); }
@@ -449,11 +453,11 @@ function createPanels(api) {
     const el = $('#hCodes'); if (!el) return;
     const { hits, read } = codeHits(HEAT_CODES, ['08']);
     if (!read) { el.innerHTML = '<p class="small muted">Kody nie zostały jeszcze odczytane.</p>'; return; }
-    const rep = api.report(), clim = rep.modules.find(m => m.addr === '08');
-    const eng = hits.filter(h => h.src !== 'moduł 08'), cl = hits.filter(h => h.src === 'moduł 08');
+    const rep = api.report(), clim = rep.modules.find(m => m.addr === mapAddr('08'));
+    const cs = 'moduł ' + mapAddr('08'); const eng = hits.filter(h => h.src !== cs), cl = hits.filter(h => h.src === cs);
     let html = '';
-    if (clim) html += clim.err ? `<p class="small">Climatronic: nie udało się odczytać błędów (${esc(clim.err)}).</p>` : cl.length ? `<p class="small muted">Climatronic:</p>${codeList(cl)}` : '<p class="noerr">Climatronic: brak błędów</p>';
-    else html += rep.absent.some(m => m.addr === '08') ? '<p class="small muted">Climatronic nie odpowiedział.</p>' : '<p class="small muted">Climatronic jeszcze nie odczytany.</p>';
+    if (clim) html += clim.err ? `<p class="small">Klimatyzacja: nie udało się odczytać błędów (${esc(clim.err)}).</p>` : cl.length ? `<p class="small muted">Klimatyzacja:</p>${codeList(cl)}` : '<p class="noerr">Klimatyzacja: brak błędów</p>';
+    else html += rep.absent.some(m => m.addr === mapAddr('08')) ? '<p class="small muted">Moduł klimatyzacji nie odpowiedział.</p>' : '<p class="small muted">Moduł klimatyzacji jeszcze nie odczytany.</p>';
     html += eng.length ? `<p class="small muted">Silnik:</p>${codeList(eng)}` : '<p class="noerr">Silnik: brak kodów związanych z chłodzeniem</p>';
     el.innerHTML = html;
   }

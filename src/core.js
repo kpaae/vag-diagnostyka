@@ -48,6 +48,35 @@ const MODULES = [
   { addr: '44', name: 'Wspomaganie kierownicy', tx: 0x712, rx: 0x77C },
   { addr: '56', name: 'Radio', tx: 0x773, rx: 0x7DD }
 ];
+/* BMW (D-CAN, adresowanie rozszerzone: tester 0x6F1, odpowiedź 0x600 + adres). Seria F/G – UDS, seria E od ok. 2007 – KWP2000. */
+const BMW_MODULES = [
+  { addr: '12', name: 'DME/DDE – silnik', bmw: 0x12 },
+  { addr: '13', name: 'DME2 – drugi sterownik silnika', bmw: 0x13 },
+  { addr: '18', name: 'EGS – skrzynia biegów', bmw: 0x18 },
+  { addr: '29', name: 'DSC – ABS / stabilizacja', bmw: 0x29 },
+  { addr: '30', name: 'EPS – wspomaganie kierownicy', bmw: 0x30 },
+  { addr: '01', name: 'ACSM – poduszki powietrzne', bmw: 0x01 },
+  { addr: '40', name: 'CAS / FEM / BDC – nadwozie, immobilizer', bmw: 0x40 },
+  { addr: '00', name: 'JBE – moduł centralny (seria E)', bmw: 0x00 },
+  { addr: '10', name: 'ZGW – gateway', bmw: 0x10 },
+  { addr: '1C', name: 'ICM – podwozie', bmw: 0x1C },
+  { addr: '60', name: 'KOMBI – zestaw wskaźników', bmw: 0x60 },
+  { addr: '63', name: 'HU / CIC / NBT – radio i nawigacja', bmw: 0x63 },
+  { addr: '72', name: 'FRM / REM – światła, elektronika tyłu', bmw: 0x72 },
+  { addr: '78', name: 'IHKA – klimatyzacja', bmw: 0x78 },
+  { addr: '56', name: 'FZD – moduł dachu', bmw: 0x56 },
+  { addr: '5D', name: 'KAFAS – kamera asystentów', bmw: 0x5D }
+];
+const BMW_IDENT_DIDS = [['F190', 'VIN'], ['F187', 'Nr części'], ['F189', 'Oprogramowanie'], ['F191', 'Nr części HW'], ['F18C', 'Nr seryjny'], ['F150', 'Wersja HW']];
+const BRAND_WMI = {
+  bmw: ['WBA', 'WBS', 'WBY', 'WBX', 'WB1', 'WB3', 'WB4', 'WB5', 'WMW', '4US', '5UX', '5UM', '5YM', 'X4X', 'LBV', 'WBW'],
+  vag: ['WVW', 'WV1', 'WV2', 'WV3', 'WVG', 'WAU', 'WUA', 'WA1', 'TRU', 'VSS', 'VS6', 'TMB', 'TMP', 'VWV', 'WP0', 'WP1', '3VW', '1VW', '9BW', 'AAV', 'LSV', 'LFV', 'XW8']
+};
+function brandOf(vin) {
+  const w = (vin || '').slice(0, 3).toUpperCase();
+  for (const [b, list] of Object.entries(BRAND_WMI)) if (list.includes(w)) return b;
+  return null;
+}
 const IDENT_DIDS = [['F187', 'Nr części'], ['F197', 'System'], ['F189', 'Oprogramowanie'], ['F191', 'Nr części HW'], ['F18C', 'Nr seryjny'], ['F19E', 'Plik ODX'], ['0600', 'Kodowanie', 'hex']];
 const hex4 = n => n.toString(16).toUpperCase().padStart(4, '0');
 
@@ -132,11 +161,13 @@ function createIsoTp(onMsg) {
   return line => {
     const l = line.replace(/\s/g, '').toUpperCase();
     if (!/^[0-9A-F]{5,}$/.test(l)) return false;
-    const id = parseInt(l.slice(0, 3), 16), d = bytesOf(l.slice(3)); if (!d.length) return false;
+    const id = parseInt(l.slice(0, 3), 16); let d = bytesOf(l.slice(3)); if (!d.length) return false;
+    let ea = null; if (id >= 0x600 && id <= 0x6FF) { ea = d[0]; d = d.slice(1); if (!d.length) return true; }   // BMW: adres w pierwszym bajcie
+    const key = id + ':' + ea;
     const t = d[0] >> 4;
-    if (t === 0) { const n = d[0] & 0xF; if (n) onMsg(id, d.slice(1, 1 + n)); }
-    else if (t === 1) { part[id] = { len: ((d[0] & 0xF) << 8) | d[1], data: d.slice(2) }; }
-    else if (t === 2 && part[id]) { const p = part[id]; p.data.push(...d.slice(1)); if (p.data.length >= p.len) { onMsg(id, p.data.slice(0, p.len)); delete part[id]; } }
+    if (t === 0) { const n = d[0] & 0xF; if (n) onMsg(id, d.slice(1, 1 + n), ea); }
+    else if (t === 1) { part[key] = { len: ((d[0] & 0xF) << 8) | d[1], data: d.slice(2) }; }
+    else if (t === 2 && part[key]) { const p = part[key]; p.data.push(...d.slice(1)); if (p.data.length >= p.len) { onMsg(id, p.data.slice(0, p.len), ea); delete part[key]; } }
     return true;
   };
 }
@@ -327,14 +358,22 @@ function parseElm(lines) {
 
 function saeCode(a, b) { return 'PCBU'[a >> 6] + ((a >> 4) & 3) + (a & 0xF).toString(16).toUpperCase() + hex2(b); }
 
-function decodeUdsDtc(b0, b1, b2, st) {
-  const code = saeCode(b0, b1);
+/* BMW pokazuje kody jako 6 znaków hex (np. 120308), a nie kody SAE. */
+function decodeUdsDtc(b0, b1, b2, st, bmw) {
+  const code = bmw ? hex2(b0) + hex2(b1) + hex2(b2) : saeCode(b0, b1);
   const flags = [st & 0x01 ? 'aktywny' : 'zapisany'];
   if (st & 0x08) flags.push('potwierdzony');
   if (st & 0x04) flags.push('oczekujący');
   if (st & 0x80) flags.push('kontrolka');
   flags.push('status 0x' + hex2(st));
-  return { code, ftb: hex2(b2), raw: hex2(b0) + hex2(b1) + hex2(b2), full: `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: DTC_DESC[code] || '' };
+  return { code, ftb: hex2(b2), raw: hex2(b0) + hex2(b1) + hex2(b2), full: bmw ? code : `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: DTC_DESC[code] || '' };
+}
+
+/* BMW KWP2000 (seria E na D-CAN): kod 2 bajty hex + bajt statusu. */
+function decodeKwpDtc(b0, b1, st) {
+  const code = hex2(b0) + hex2(b1);
+  const flags = [st & 0x20 ? 'aktywny' : 'zapisany']; if (st & 0x40) flags.push('ostrzeżenie'); flags.push('status 0x' + hex2(st));
+  return { code, ftb: '', raw: code, full: code, status: st, real: true, flags, active: !!(st & 0x20), mil: false, desc: '', kwp: true };
 }
 
 function parseMode01(data, defs) {
@@ -411,6 +450,7 @@ class ELM {
   }
   async select(tx, rx) {
     const key = tx + ':' + rx; if (this.cur === key) return;
+    if (this.rawMode) { await this.send('ATCAF1'); this.rawMode = false; }
     await this.send('ATSH' + hex3(tx)); await this.send('ATCRA' + hex3(rx));
     if (this.fcOk) {
       for (const c of ['ATFCSH' + hex3(tx), 'ATFCSD300000', 'ATFCSM1']) {
@@ -424,6 +464,60 @@ class ELM {
     }
     this.cur = key;
   }
+  /* ---- BMW: D-CAN z adresowaniem rozszerzonym. Tester 0x6F1, moduł odpowiada na 0x600 + adres,
+     pierwszy bajt ramki to adres odbiorcy (do modułu) lub 0xF1 (do testera). ISO-TP składamy sami
+     w trybie CAF0, bo tanie klony ELM327 nie obsługują ATCEA. ---- */
+  async bmwSelect(addr) {
+    const key = 'bmw:' + addr; if (this.cur === key) return;
+    if (!this.rawMode) { await this.send('ATCAF0'); this.rawMode = true; }
+    await this.send('ATSH6F1'); await this.send('ATCRA' + hex3(0x600 + addr));
+    this.cur = key;
+  }
+  async bmwSendFrame(addr, payload) {
+    const f = [addr, ...payload]; while (f.length < 8) f.push(0x00);
+    const lines = await this.send(f.map(hex2).join(''));
+    const frames = [];
+    for (const l of lines) {
+      const h = l.replace(/\s/g, '').toUpperCase();
+      if (/^[0-9A-F]+$/.test(h) && h.length >= 4 && h.length % 2 === 0) { const b = bytesOf(h); if (b[0] === 0xF1) frames.push(b.slice(1)); }
+      else if (ELM_ERRORS.some(e => h.startsWith(e.replace(/\s/g, '')))) frames.err = h;
+    }
+    return frames;
+  }
+  async bmwRequest(addr, hex, { attempts = 4 } = {}) {
+    await this.bmwSelect(addr);
+    const pl = bytesOf(hex);
+    if (pl.length > 6) return { err: 'polecenie za długie dla jednej ramki (maks. 6 bajtów)' };
+    for (let a = 0; a < attempts; a++) {
+      let frames = await this.bmwSendFrame(addr, [pl.length, ...pl]);
+      if (!frames.length) return { err: frames.err && !frames.err.startsWith('NODATA') ? frames.err : 'NO DATA' };
+      let msg = null, i = 0;
+      while (i < frames.length && !msg) {
+        const f = frames[i++], t = f[0] >> 4;
+        if (t === 0) { const m = f.slice(1, 1 + (f[0] & 0xF)); if (m[0] === 0x7F && m[2] === 0x78) continue; msg = m; }
+        else if (t === 1) {
+          const len = ((f[0] & 0xF) << 8) | f[1]; let data = f.slice(2);
+          let rest = frames.slice(i).filter(x => (x[0] >> 4) === 2);
+          if (!rest.length) rest = (await this.bmwSendFrame(addr, [0x30, 0x00, 0x00])).filter(x => (x[0] >> 4) === 2);
+          for (const c of rest) data = data.concat(c.slice(1));
+          if (data.length < len) return { err: `niepełna odpowiedź (${data.length} z ${len} bajtów)` };
+          msg = data.slice(0, len);
+        }
+      }
+      if (!msg) { await sleep(400); continue; }   // tylko „czekaj” (7F xx 78) – pytamy ponownie
+      if (msg[0] === 0x7F) { const c = hex2(msg[2] || 0); return { err: `NRC ${c}: ${NRC[c] || 'nieznany'}`, nrc: c }; }
+      if (msg[0] !== ((pl[0] + 0x40) & 0xFF)) return { err: 'nieoczekiwana odpowiedź: ' + msg.map(hex2).join('') };
+      return { data: msg.map(hex2).join('') };
+    }
+    return { err: 'brak odpowiedzi (moduł wciąż przetwarza)' };
+  }
+  /* Żądanie do modułu niezależnie od sposobu adresowania (VAG/OBD: osobne ID, BMW: adres w danych). */
+  async ureq(mod, hex, opts) {
+    if (mod.bmw != null) return this.bmwRequest(mod.bmw, hex, opts);
+    await this.select(mod.tx, mod.rx);
+    return this.request(hex, opts);
+  }
+
   /* Moduł odpowiedział „czekaj” (7F xx 78). Zamiast wysyłać żądanie od nowa (co u wolnych modułów, np. ABS,
      zaczyna przetwarzanie od początku) prosimy adapter, żeby czekał na kilka kolejnych odpowiedzi z dłuższym limitem czasu. */
   async waitPending(req) {
@@ -544,30 +638,28 @@ class ELM {
 
   /* ---- UDS, moduły VAG ---- */
   async probe(mod, deep) {
-    await this.select(mod.tx, mod.rx);
-    let r = await this.request('3E00', { attempts: 1 });
+    let r = await this.ureq(mod, '3E00', { attempts: 1 });
     let present = !r.err || !!r.nrc;
-    if (!present && deep) { r = await this.request('22F187', { attempts: 1 }); present = !r.err || !!r.nrc; }
+    if (!present && deep) { r = await this.ureq(mod, mod.bmw != null ? '22F190' : '22F187', { attempts: 1 }); present = !r.err || !!r.nrc; }
     return present;
   }
-  async readDid(did, asHex) {
-    const r = await this.request('22' + did, { attempts: 3 });
+  async readDid(mod, did, asHex) {
+    const r = await this.ureq(mod, '22' + did, { attempts: 3 });
     if (r.err || !r.data.startsWith('62' + did)) return null;
     const b = bytesOf(r.data).slice(3);
     return asHex ? b.map(hex2).join('') : asciiOrHex(b);
   }
   /* Szczegóły błędu UDS: dane rozszerzone (0x19 06, rekord po rekordzie) i dane środowiskowe (0x19 04). */
   async readDtcDetails(mod, raw) {
-    await this.select(mod.tx, mod.rx);
     const ext = [];
     for (let rec = 1; rec <= 8; rec++) {
-      const r = await this.request('1906' + raw + hex2(rec), { attempts: 2 });
+      const r = await this.ureq(mod, '1906' + raw + hex2(rec), { attempts: 2 });
       if (r.err) { if (rec > 4) break; continue; }
       const b = bytesOf(r.data).slice(6);
       if (b.length > 1 && b[0] === rec) ext.push({ rec, bytes: b.slice(1) });
     }
     let snap = null;
-    const s = await this.request('1904' + raw + 'FF', { attempts: 2 });
+    const s = await this.ureq(mod, '1904' + raw + 'FF', { attempts: 2 });
     if (!s.err) { const b = bytesOf(s.data).slice(6); if (b.length) snap = b; }
     return { ext, snap };
   }
@@ -605,40 +697,37 @@ class ELM {
   }
 
   /* ---- Narzędzia zaawansowane ---- */
-  async raw(tx, rx, hex) {
-    await this.select(tx, rx);
-    return this.request(hex.replace(/\s/g, '').toUpperCase(), { attempts: 3 });
+  async raw(mod, hex) {
+    return this.ureq(mod, hex.replace(/\s/g, '').toUpperCase(), { attempts: 3 });
   }
   async scanDids(mod, ranges, { onProgress, onFound, stop, extended } = {}) {
-    await this.select(mod.tx, mod.rx);
     const found = []; let n = 0; const total = ranges.reduce((a, [lo, hi]) => a + hi - lo + 1, 0);
     await this.send('ATST32'); this.st = '32';
     let inExt = false;
     try {
-      if (extended) { const s = await this.request('1003', { attempts: 2 }); inExt = !s.err; }
+      if (extended) { const s = await this.ureq(mod, '1003', { attempts: 2 }); inExt = !s.err; }
       for (const [lo, hi] of ranges) for (let did = lo; did <= hi; did++) {
         if (stop && stop()) return found;
         n++; if (n % 8 === 0 && onProgress) onProgress(did, n, total);
-        const r = await this.request('22' + hex4(did), { attempts: 2 });
+        const r = await this.ureq(mod, '22' + hex4(did), { attempts: 2 });
         if (r.err || !r.data.startsWith('62' + hex4(did))) continue;
         const f = { did, bytes: bytesOf(r.data).slice(3) };
         found.push(f); onFound && onFound(f);
       }
       return found;
     } finally {
-      if (inExt) await this.request('1001', { attempts: 1 });
+      if (inExt) await this.ureq(mod, '1001', { attempts: 1 });
       this.st = '64'; await this.send('ATST64');
     }
   }
   async readDidRaw(mod, did) {
-    await this.select(mod.tx, mod.rx);
-    const r = await this.request('22' + hex4(did), { attempts: 1 });
+    const r = await this.ureq(mod, '22' + hex4(did), { attempts: 1 });
     return (r.err || !r.data.startsWith('62' + hex4(did))) ? null : bytesOf(r.data).slice(3);
   }
   /* Podsłuch magistrali (ATMA). Wołać wewnątrz op(): blokuje adapter do czasu stop(). */
   async monitor(onLine, onEnd) {
-    for (const c of ['ATH1', 'ATCAF0', 'ATCF700', 'ATCM700']) await this.send(c);
-    this.cur = null;
+    for (const c of ['ATH1', 'ATCAF0', 'ATCF600', 'ATCM600']) await this.send(c);
+    this.cur = null; this.rawMode = false;
     let tail = '', stopping = false, ended = false, endRes;
     const endP = new Promise(r => { endRes = r; });
     this.mon = s => {
@@ -667,6 +756,7 @@ class ELM {
     };
   }
   async readModuleDtcs(mod) {
+    if (mod.bmw != null) return this.readBmwDtcs(mod);
     await this.select(mod.tx, mod.rx);
     /* Maska 0xFF zwraca u VAG wszystkie kody obsługiwane przez moduł (status 0x50 = test jeszcze nie wykonany),
        a nie tylko usterki. Pytamy o statusy usterek (0x2F), a drugi raz o same potwierdzone (0x08), gdy odpowiedź jest za długa. */
@@ -686,14 +776,56 @@ class ELM {
   async scanModule(mod, deep = true) {
     if (!(await this.probe(mod, deep))) return null;
     const info = { ...mod, ident: {} };
-    for (const [did, label, kind] of IDENT_DIDS) { const v = await this.readDid(did, kind === 'hex'); if (v) info.ident[label] = v; }
+    for (const [did, label, kind] of (mod.bmw != null ? BMW_IDENT_DIDS : IDENT_DIDS)) { const v = await this.readDid(mod, did, kind === 'hex'); if (v) info.ident[label] = v; }
+    if (mod.bmw != null && !Object.keys(info.ident).length) {   // E-series (KWP2000): identyfikacja 0x1A 0x80
+      const r = await this.ureq(mod, '1A80', { attempts: 2 }); if (!r.err) info.ident['Identyfikacja (KWP)'] = asciiOrHex(bytesOf(r.data).slice(2));
+    }
     const d = await this.readModuleDtcs(mod);
     info.dtcs = d.dtcs; info.untested = d.untested || 0; if (d.err) info.err = d.err;
     return info;
   }
-  async clearModule(mod) { await this.select(mod.tx, mod.rx); return this.request('14FFFFFF', { attempts: 6 }); }
-  async findUnknown(onProgress) {
+  async clearModule(mod) {
+    const r = await this.ureq(mod, '14FFFFFF', { attempts: 6 });
+    if (r.err && r.nrc && mod.bmw != null) return this.ureq(mod, '14FFFF', { attempts: 6 });   // KWP2000
+    return r;
+  }
+  /* BMW: UDS 0x19 02, a gdy moduł nie zna tej usługi (starsze serie E na D-CAN) – KWP2000 0x18 02 FF FF. */
+  async readBmwDtcs(mod) {
+    let r = null;
+    for (const mask of [0x2F, 0x0C, 0x08]) { r = await this.ureq(mod, '1902' + hex2(mask)); if (!r.err || r.nrc !== '31') break; }
+    if (!r.err) {
+      const b = bytesOf(r.data).slice(3); const all = [];
+      for (let i = 0; i + 3 < b.length; i += 4) all.push(decodeUdsDtc(b[i], b[i + 1], b[i + 2], b[i + 3], true));
+      const dtcs = all.filter(d => d.real);
+      return { dtcs, untested: all.length - dtcs.length };
+    }
+    if (r.nrc === '11' || r.nrc === '12') {
+      const k = await this.ureq(mod, '1802FFFF');
+      if (!k.err) {
+        const b = bytesOf(k.data); const n = b[1] || 0, list = [];
+        for (let i = 2; i + 2 < b.length && list.length < n; i += 3) list.push(decodeKwpDtc(b[i], b[i + 1], b[i + 2]));
+        return { dtcs: list, untested: 0, kwp: true };
+      }
+      return { err: k.err, dtcs: [], untested: 0 };
+    }
+    return { err: r.err, dtcs: [], untested: 0 };
+  }
+  async findUnknownBmw(onProgress) {
+    const known = new Set(BMW_MODULES.map(m => m.bmw)); const found = [];
+    await this.send('ATST32'); this.st = '32';
+    try {
+      for (let a = 0x00; a <= 0x7F; a++) {
+        if (known.has(a)) continue;
+        onProgress && onProgress(0x600 + a);
+        const mod = { addr: hex2(a), name: 'Moduł BMW 0x' + hex2(a), bmw: a };
+        if (await this.probe(mod, false)) found.push(mod);
+      }
+    } finally { this.st = '64'; await this.send('ATST64'); }
+    return found;
+  }
+  async findUnknown(onProgress, bmw) {
     const known = new Set(MODULES.map(m => m.tx)); const found = [];
+    if (bmw) return this.findUnknownBmw(onProgress);
     await this.send('ATST32'); this.st = '32';
     try {
       for (let tx = 0x700; tx < 0x775; tx++) {
@@ -707,4 +839,4 @@ class ELM {
   }
 }
 
-if (typeof module !== 'undefined') module.exports = { ELM, PIDS, DERIVED, MODULES, parseElm, saeCode, DTC_DESC, parseMode06, classifyCmd, createIsoTp, midName };
+if (typeof module !== 'undefined') module.exports = { ELM, BMW_MODULES, brandOf, PIDS, DERIVED, MODULES, parseElm, saeCode, DTC_DESC, parseMode06, classifyCmd, createIsoTp, midName };
