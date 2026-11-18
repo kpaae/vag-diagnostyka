@@ -22,7 +22,7 @@
   const framed = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
 
   let elm = null, tr = null, mode = null, sup = new Set();
-  let panels = null, tools = null, currentTab = 'live';
+  let panels = null, tools = null, bridge = null, currentTab = 'live';
   let vals = {}, seen = {}, hist = {}, mm = {}, tiles = [];
   let polling = false, pollRun = 0, cycle = 0, rec = null, wake = null, scanning = false, connecting = false;
   let view = store.get('group', 'silnik'); if (!['silnik', 'chlodzenie', 'doladowanie', 'mieszanka', 'all'].includes(view)) view = 'silnik';
@@ -364,8 +364,9 @@
   }
   const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   function friendly(e) {
+    if (e.bridge) return e.message || String(e);
     if (e.code === 'nobt') return IOS
-      ? 'Safari i Chrome na iPhonie nie obsługują Bluetooth ze stron. Otwórz ten adres w przeglądarce Bluefy (App Store). Adapter musi być Bluetooth LE 4.0+, klasyczny 3.0 nie działa na iOS. Szczegóły w zakładce Stan.'
+      ? 'Safari i Chrome na iPhonie nie obsługują Bluetooth ze stron. Możesz sterować przez most: podłącz adapter do telefonu z Androidem lub komputera, włącz tam most i tutaj naciśnij „Inne urządzenie”. Druga droga to Bluefy z adapterem Bluetooth LE.'
       : 'Ta przeglądarka nie obsługuje Bluetooth ze stron. Użyj Chrome lub Edge.';
     if (e.code === 'noserial') return 'Port COM działa w Chrome lub Edge na komputerze oraz w aktualnym Chrome na Androidzie. Na iPhonie użyj przycisku Bluetooth.';
     if (e.name === 'NotFoundError') return e.filtered ? 'filtered' : null;
@@ -375,14 +376,44 @@
     const base = e.message || String(e);
     return base + ' Zamknij całkowicie inne aplikacje OBD (adapter przyjmuje jedno połączenie), odczekaj kilka sekund i spróbuj ponownie. Szczegóły są w zakładce Komunikacja.';
   }
-  function lost() {
+  function lost(msg) {
     if (!mode) return;
+    if (mode === 'bridge') {
+      bridge.adapterLost(); bridge.stopHost(); tr = null; mode = null; setButtons();
+      logLine('— most: adapter rozłączony'); chip('Połączenie przerwane', '');
+      banner('Most: połączenie z adapterem zostało przerwane. Sprawdź adapter i włącz most ponownie.', 'warn'); return;
+    }
     panels && panels.stopAll(); tools && tools.stopAll();
-    stopPolling(); elm = null; tr = null; mode = null; setButtons();
-    logLine('— połączenie przerwane'); sessEnd();
-    chip('Połączenie przerwane', ''); banner('Połączenie z adapterem zostało przerwane. Sprawdź adapter i połącz ponownie.', 'warn');
+    stopPolling(); elm = null; mode = null;
+    const t = tr; tr = null; if (t && msg) { try { t.close(); } catch (e) {} }
+    setButtons();
+    logLine('— połączenie przerwane' + (msg ? ': ' + msg : '')); sessEnd();
+    chip('Połączenie przerwane', ''); banner(msg || 'Połączenie z adapterem zostało przerwane. Sprawdź adapter i połącz ponownie.', 'warn');
   }
+  /* ---------- most ---------- */
+  async function startBridgeHost(kind) {
+    if (connecting) return;
+    connecting = true; setButtons();
+    await disconnect();
+    try {
+      const t = kind === 'ble' ? await openBle() : await openSerial();
+      tr = t; mode = 'bridge';
+      logLine('— most: adapter ' + t.name);
+      const code = await bridge.host(t);
+      logLine('— most włączony, kod ' + code);
+      $('#banner').hidden = true;
+    } catch (err) {
+      const msg = friendly(err); logLine('! most: ' + (err.message || err));
+      bridge.stopHost(); const t = tr; tr = null; mode = null; if (t) { try { await t.close(); } catch (e) {} }
+      chip('Rozłączony', '');
+      if (msg && msg !== 'filtered') banner(msg, 'error');
+      else if (msg === 'filtered') banner('Nie widzisz adaptera? Wybierz „Inne urządzenie” i spróbuj ponownie, a na liście szukaj urządzenia, które znika po wyjęciu adaptera.', 'info');
+    }
+    connecting = false; setButtons(); buildTiles();
+  }
+  async function stopBridgeHost() { await disconnect(); banner('Most wyłączony.', 'info'); }
   async function disconnect() {
+    if (bridge && bridge.active()) bridge.stopHost();
     panels && panels.stopAll();
     if (tools) await tools.stopAll();
     stopPolling();
@@ -393,7 +424,8 @@
   }
   function setButtons() {
     const on = !!elm;
-    $('#btnDisc').hidden = !on; $('#btnPoll').disabled = !on; $('#btnRec').disabled = !on;
+    $('#btnDisc').hidden = !on && mode !== 'bridge'; $('#btnDisc').textContent = mode === 'bridge' ? 'Wyłącz most' : 'Rozłącz';
+    $('#btnBridge').disabled = connecting; $('#btnPoll').disabled = !on; $('#btnRec').disabled = !on;
     $('#btnScan').disabled = !on || scanning; $('#btnState').disabled = !on;
     $('#btnBle').disabled = $('#btnSerial').disabled = connecting;
     tools && tools.sync();
@@ -408,7 +440,7 @@
     $('#scanProgress').textContent = '';
     renderObd(); renderModules(); renderState(); updateAlerts(); buildTiles();
     try {
-      const t = kind === 'ble' ? await openBle(all) : await openSerial();
+      const t = kind === 'ble' ? await openBle(all) : kind === 'remote' ? await bridge.openRemote(all).catch(e => { e.bridge = true; throw e; }) : await openSerial();
       tr = t; chip('Inicjalizacja adaptera…', 'busy');
       const e = new ELM(t, elmLog);
       e.onWarn = msg => { banner(msg, 'warn'); logLine('! ' + msg); };
@@ -649,12 +681,23 @@
     report: () => report, pause, saveLog
   });
   tools.render();
+  bridge = createBridge({
+    esc, store, logLine, copyText, banner, chip, devName: () => journal.devName(),
+    startBridgeHost, stopBridgeHost, connectRemote: code => connect('remote', code),
+    remoteLost: msg => lost(msg)
+  });
+  $('#btnBridge').onclick = () => bridge.dialog();
   syncSeg(); setButtons();
   setInterval(() => { if (elm && !$('#tab-state').hidden) renderState(); }, 3000);
   buildTiles();
   if (!navigator.serial) $('#btnSerial').hidden = true;
-  if (IOS) {
-    if (!navigator.bluetooth) banner('Safari i Chrome na iPhonie nie obsługują Bluetooth ze stron. Otwórz ten adres w przeglądarce Bluefy (App Store).', 'warn');
-    else banner('iPhone łączy się tylko z adapterami Bluetooth LE (4.0+). Klasyczny adapter 3.0 nie jest widoczny na iOS. Jak to sprawdzić: zakładka Stan.', 'info');
+  if (!navigator.bluetooth) $('#btnBle').hidden = true;
+  const mostCode = new URLSearchParams(location.search).get('most');
+  if (mostCode) {
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    connect('remote', mostCode);
+  } else if (IOS) {
+    if (!navigator.bluetooth) banner('Na iPhonie steruj przez most: podłącz adapter do telefonu z Androidem lub komputera, włącz tam „Inne urządzenie → Most”, a tutaj naciśnij „Inne urządzenie” i wpisz kod.', 'info', { label: 'Inne urządzenie', fn: () => bridge.dialog() });
+    else banner('iPhone łączy się bezpośrednio tylko z adapterami Bluetooth LE (4.0+). Z klasycznym adapterem użyj mostu: „Inne urządzenie”.', 'info');
   }
 })();

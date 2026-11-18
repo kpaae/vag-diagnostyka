@@ -50,6 +50,8 @@ Wyniki obu testów trafiają do raportu, a dane można skopiować jako CSV.
 
 **Logi (zakładka Logi):** aplikacja sama zapisuje w przeglądarce (IndexedDB) raport po każdym skanie, nagrania, wyniki testów z paneli, testy trybu 06, wyniki skanera, podsłuch, konsolę i pełny log komunikacji z sesji, a w czasie połączenia rejestruje parametry co sekundę (rejestr jazdy, zapisywany co 5 minut i przy rozłączeniu). Opcjonalnie wysyła wszystko do prywatnego repozytorium GitHub przez API, osobno dla każdego urządzenia (`<urządzenie>/RRRR-MM-DD_GGMM/…`, np. `Samsung-SM-S911B/`; nazwę można zmienić). Potrzebny jest fine-grained token z dostępem tylko do tego repozytorium i uprawnieniem Contents: Read and write. Token zostaje w przeglądarce.
 
+**Inne urządzenie (most):** urządzenie przy aucie (np. telefon z Androidem albo laptop) łączy się z adapterem i włącza most, a inne urządzenie, także iPhone lub iPad w zwykłym Safari, steruje pełną aplikacją po wpisaniu kodu, zeskanowaniu QR albo otwarciu linku `?most=KOD`. Każde nowe sterujące urządzenie trzeba zatwierdzić na moście. Połączenie to WebRTC (PeerJS). Publiczny serwer PeerJS służy tylko do zestawienia połączenia, a dane z auta idą bezpośrednio między urządzeniami. Most przekazuje surowy strumień ELM327, więc działają wszystkie funkcje, a logi zapisują się na urządzeniu sterującym. Gdy oba urządzenia są w różnych sieciach komórkowych, połączenie może się nie zestawić (brak serwera TURN). Wtedy pomaga wspólne Wi-Fi albo hotspot.
+
 **Stan:** nazwa sterownika, numer kalibracji i CVN (tryb 09), VIN, kontrolka MIL, gotowość systemów (readiness), lista obsługiwanych PID, surowy log komunikacji.
 
 ## Wymagania

@@ -247,5 +247,5 @@ function createJournal(api) {
   function regStop(CAT) { regSave(CAT, false); reg.t0 = 0; }
 
   render();
-  return { add, startSession, render, sync, regStart, regTick, regSave, regStop, KINDS };
+  return { add, startSession, render, sync, regStart, regTick, regSave, regStop, KINDS, devName };
 }
