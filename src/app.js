@@ -452,8 +452,20 @@
       logLine('— połączenie: ' + t.name);
       const id = await e.init();
       let s = await e.op(() => e.discoverPids());
-      if (!s.size) { logLine('— brak odpowiedzi na CAN 500 kb/s, próba automatycznego wyboru protokołu'); await e.send('ATSP0'); await e.send('0100', 10000); e.cur = null; s = await e.op(() => e.discoverPids()); }
-      if (!s.size) throw new Error('Sterownik silnika nie odpowiada. Włącz zapłon i spróbuj ponownie.');
+      if (!s.size) {
+        logLine('— sterownik nie odpowiada pod 7E0, szukam przez zapytanie ogólne 7DF');
+        const f = await e.op(() => e.findObdEcu());
+        f.tried.forEach(t => logLine('— ' + t));
+        if (f.ok) { logLine(`— odpowiada ${f.rx ? '0x' + f.rx.toString(16).toUpperCase() : 'sterownik'} (${f.proto})`); s = await e.op(() => e.discoverPids()); }
+        if (!s.size) {
+          const v = await e.voltage().catch(() => null);
+          const all = f.tried.join(' ');
+          const why = /CAN ERROR|BUS ERROR|BUS INIT|UNABLE/i.test(all)
+            ? 'Adapter nie widzi magistrali auta (CAN ERROR). Sprawdź, czy adapter jest wciśnięty do końca w gniazdo OBD.'
+            : 'Adapter działa, ale auto nie odpowiada na zapytania OBD. Włącz zapłon: w BMW naciśnij Start/Stop bez wciskania hamulca, aż zapali się cały zestaw wskaźników (albo uruchom silnik), w innych autach przekręć kluczyk do drugiej pozycji.';
+          throw Object.assign(new Error(`${why}${v ? ` Napięcie w gnieździe: ${String(v).replace('.', ',')} V.` : ''} Szczegóły w zakładce Logi.`), { bridge: true });
+        }
+      }
       elm = e; sup = s; mode = kind;
       sess.ok = true; journal && journal.regStart();
       report.adapter = `${id} · ${t.name}`;

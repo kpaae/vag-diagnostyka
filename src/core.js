@@ -443,6 +443,30 @@ class ELM {
     this.ident = id.join(' ');
     return this.ident;
   }
+  selectObd() { return this.select(this.obdTx || 0x7E0, this.obdRx || 0x7E8); }
+  /* Gdy sterownik nie odpowiada pod 7E0/7E8: zapytanie ogólne 7DF z nagłówkami, żeby zobaczyć,
+     kto w ogóle odpowiada i co zwraca adapter. Próbuje CAN 500 kb/s, potem automatycznego wyboru protokołu. */
+  async findObdEcu() {
+    const tried = [];
+    try {
+      for (const sp of ['ATSP6', 'ATSP0']) {
+        if (this.rawMode) { await this.send('ATCAF1'); this.rawMode = false; }
+        for (const c of [sp, 'ATCRA', 'ATH1', 'ATSH7DF']) await this.send(c);
+        this.cur = null;
+        const lines = await this.send('0100', 12000);
+        const txt = lines.join(' | ');
+        tried.push(`${sp}: ${txt || '(brak odpowiedzi)'}`);
+        for (const l of lines) {
+          const h = l.replace(/\s/g, '').toUpperCase();
+          const m = h.match(/^(7E[89A-F])(?:0[0-9A-F])?4100/);
+          if (m) { const rx = parseInt(m[1], 16); this.obdRx = rx; this.obdTx = rx - 8; return { ok: true, rx, proto: sp, tried }; }
+        }
+        if (lines.some(l => /^(18DAF1|18DA)/i.test(l.replace(/\s/g, '')) && /4100/.test(l.replace(/\s/g, '')))) return { ok: false, ext29: true, tried };
+        if (lines.some(l => /4100/.test(l.replace(/\s/g, '')))) return { ok: true, proto: sp, tried };   // inny protokół (K-line), nagłówki nie z CAN
+      }
+      return { ok: false, tried };
+    } finally { await this.send('ATH0'); this.cur = null; }
+  }
   async voltage() {
     const r = await this.send('ATRV');
     const m = r.join(' ').match(/(\d+(?:\.\d+)?)\s*V/i);
@@ -552,7 +576,7 @@ class ELM {
 
   /* ---- OBD-II, sterownik silnika ---- */
   async discoverPids() {
-    await this.select(0x7E0, 0x7E8);
+    await this.selectObd();
     const sup = new Set(); let base = 0;
     while (base <= 0xA0) {
       const r = await this.request('01' + hex2(base), { attempts: 2 });
@@ -566,7 +590,7 @@ class ELM {
     return sup;
   }
   async readLive(defs) {
-    await this.select(0x7E0, 0x7E8);
+    await this.selectObd();
     const out = {}; let queue = [...defs];
     while (queue.length) {
       const n = this.multiPid ? Math.min(6, queue.length) : 1;
@@ -587,7 +611,7 @@ class ELM {
     return out;
   }
   async readObdDtcs() {
-    await this.select(0x7E0, 0x7E8);
+    await this.selectObd();
     const res = {};
     for (const [mode, label] of [['03', 'stored'], ['07', 'pending'], ['0A', 'permanent']]) {
       const r = await this.request(mode, { attempts: 2 });
@@ -601,14 +625,14 @@ class ELM {
     return res;
   }
   async readReadiness() {
-    await this.select(0x7E0, 0x7E8);
+    await this.selectObd();
     const r = await this.request('0101', { attempts: 2 });
     if (r.err) return null;
     const b = bytesOf(r.data).slice(2, 6);
     return b.length === 4 ? parseReadiness(b) : null;
   }
   async readVin() {
-    await this.select(0x7E0, 0x7E8);
+    await this.selectObd();
     for (const q of ['0902', '22F190']) {
       const r = await this.request(q, { attempts: 2 });
       if (!r.err) { const v = asciiOf(bytesOf(r.data).slice(3)); if (v.length >= 17) return v.slice(-17); }
@@ -616,7 +640,7 @@ class ELM {
     return null;
   }
   async readFreeze(sup) {
-    await this.select(0x7E0, 0x7E8);
+    await this.selectObd();
     const r = await this.request('020200', { attempts: 2 });
     if (r.err) return null;
     const b = bytesOf(r.data);
@@ -634,7 +658,7 @@ class ELM {
     }
     return fr;
   }
-  async clearObd() { await this.select(0x7E0, 0x7E8); return this.request('04', { attempts: 4 }); }
+  async clearObd() { await this.selectObd(); return this.request('04', { attempts: 4 }); }
 
   /* ---- UDS, moduły VAG ---- */
   async probe(mod, deep) {
@@ -666,7 +690,7 @@ class ELM {
 
   /* ---- OBD tryb 06 i 09 ---- */
   async readTests(onProgress) {
-    await this.select(0x7E0, 0x7E8);
+    await this.selectObd();
     const mids = []; let base = 0;
     while (base <= 0xE0) {
       const r = await this.request('06' + hex2(base), { attempts: 2 });
@@ -685,7 +709,7 @@ class ELM {
     return { mids, tests };
   }
   async readCalib() {
-    await this.select(0x7E0, 0x7E8);
+    await this.selectObd();
     const out = {};
     const r4 = await this.request('0904', { attempts: 2 });
     if (!r4.err) { const b = bytesOf(r4.data).slice(3); const ids = []; for (let i = 0; i < b.length; i += 16) { const s = asciiOf(b.slice(i, i + 16)); if (s) ids.push(s); } if (ids.length) out.calid = ids; }
