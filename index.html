@@ -269,6 +269,18 @@ details.tgroup .tbl { margin: 6px 0; }
 .dtcdet code.wrap { word-break: break-all; }
 .kvp { display: inline-block; margin-right: 10px; }
 
+/* Dziennik */
+.jsess { border-top: 1px solid var(--line); padding-top: 8px; }
+.jsess .sub { margin: 0 0 4px; font-family: var(--f-mono); font-size: 13px; color: var(--muted); }
+.jrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 6px 0; }
+.jmain { display: flex; flex-direction: column; min-width: 0; }
+.jmain b { font-weight: 500; font-size: 14px; overflow-wrap: anywhere; }
+.jmain span { font-size: 12px; }
+.jact { grid-column: 1 / -1; display: flex; gap: 12px; }
+.jrow .st:not(.ok):not(.no) { color: var(--muted); background: var(--surface-2); }
+details.help .frow { margin-top: 10px; }
+details.help a { color: var(--accent); }
+
 /* Log */
 .log { font: 12px/1.55 var(--f-mono); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; max-height: 65vh; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
 .copybox textarea { width: 100%; min-height: 160px; font: 12px/1.5 var(--f-mono); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
@@ -281,7 +293,7 @@ details.tgroup .tbl { margin: 6px 0; }
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-18 00:24 UTC</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-18 15:33 UTC</p>
       </div>
     </div>
     <div class="conn">
@@ -303,7 +315,7 @@ details.tgroup .tbl { margin: 6px 0; }
       <button type="button" role="tab" data-tab="errors" aria-selected="false">Błędy<span id="errBadge" class="badge" hidden></span></button>
       <button type="button" role="tab" data-tab="tools" aria-selected="false">Narzędzia</button>
       <button type="button" role="tab" data-tab="state" aria-selected="false">Stan</button>
-      <button type="button" role="tab" data-tab="log" aria-selected="false">Komunikacja</button>
+      <button type="button" role="tab" data-tab="log" aria-selected="false">Logi</button>
     </nav>
   </div>
 </div>
@@ -419,6 +431,8 @@ details.tgroup .tbl { margin: 6px 0; }
   </section>
 
   <section id="tab-log" hidden>
+    <div id="journalPanel" class="pstack"></div>
+    <h2 class="sect" style="margin-top:22px">Surowa komunikacja</h2>
     <div class="toolbar">
       <span class="muted" style="font-size:14px">Surowa wymiana z adapterem, ostatnie 1500 linii. Przydaje się, gdy coś nie działa.</span>
       <div class="actions">
@@ -431,6 +445,7 @@ details.tgroup .tbl { margin: 6px 0; }
 </main>
 
 <script>
+const APP_VERSION = '2026-11-18 15:33 UTC';
 /* ===== VAG Diagnostyka – rdzeń: ELM327 / OBD-II / UDS / symulator ===== */
 'use strict';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -1465,7 +1480,7 @@ function createPanels(api) {
   }
   function stopBoost() {
     if (!bt.running) return;
-    bt.running = false; bt.result = analyzeBoost(); syncBoost(); renderBoostResult();
+    bt.running = false; bt.result = analyzeBoost(); syncBoost(); renderBoostResult(); saveBoost();
   }
   function renderBoostResult() {
     const card = $('#bResCard'), sus = $('#bSusCard'); if (!card) return;
@@ -1620,7 +1635,7 @@ function createPanels(api) {
     Object.assign(ht, { running: true, t0: performance.now(), samples: [], n: 0 });
     api.ensurePolling(); syncHeat(); renderHeatResult();
   }
-  function stopHeat() { if (!ht.running) return; ht.running = false; syncHeat(); renderHeatResult(); }
+  function stopHeat() { if (!ht.running) return; ht.running = false; syncHeat(); renderHeatResult(); saveHeat(); }
   function renderHeatResult() {
     const card = $('#hResCard'), cc = $('#hConclCard'); if (!card) return;
     const ok = ht.samples.length >= 3; card.hidden = !ok; cc.hidden = !ok;
@@ -1672,11 +1687,11 @@ function createPanels(api) {
     return ks.length ? [...new Set(ks)] : null;
   }
   function stopAll() {
-    if (bt.running) { bt.running = false; bt.result = analyzeBoost(); }
-    ht.running = false;
+    if (bt.running) { bt.running = false; bt.result = analyzeBoost(); saveBoost(); }
+    if (ht.running) { ht.running = false; saveHeat(); }
     syncBoost(); syncHeat();
   }
-  function reportLines() {
+  function boostLines() {
     const L = [];
     const r = bt.result || (bt.sensor ? { checks: [bt.sensor], suspects: [] } : null);
     if (r) {
@@ -1684,6 +1699,10 @@ function createPanels(api) {
       r.checks.forEach(c => L.push(`[${LV[c.lvl]}] ${c.title}: ${c.text}`));
       if (r.suspects.length) L.push('Od czego zacząć: ' + r.suspects.map((s, i) => `${i + 1}. ${s[0]}`).join('; '));
     }
+    return L;
+  }
+  function heatLines() {
+    const L = [];
     if (ht.samples.length >= 3) {
       const h = analyzeHeat();
       L.push('', '== Ogrzewanie – test nagrzewania ==', 'Objaw: ' + SYMPTOMS.find(s => s[0] === ht.sym)[1]);
@@ -1692,6 +1711,9 @@ function createPanels(api) {
     }
     return L;
   }
+  function reportLines() { return boostLines().concat(heatLines()); }
+  function saveBoost() { if (bt.samples.length) api.saveLog('test-p0299', `Test doładowania, ${bt.pulls} ${bt.pulls === 1 ? 'przyspieszenie' : 'przyspieszeń'}`, boostLines().join('\n').trim() + '\n\n== Próbki (CSV) ==\n' + csvOf(bt.samples, BOOST_COLS, 'czas [s]', 1)); }
+  function saveHeat() { if (ht.samples.length >= 3) api.saveLog('test-ogrzewanie', 'Test nagrzewania', heatLines().join('\n').trim() + '\n\n== Próbki (CSV) ==\n' + csvOf(ht.samples, HEAT_COLS, 'czas [min]', 1)); }
   let rs = null;
   window.addEventListener('resize', () => { clearTimeout(rs); rs = setTimeout(() => { if (cur === 'boost') renderBoostResult(); if (cur === 'heat') drawHeat(); }, 200); });
   return { render, refresh, onTab, tick, keysFor, stopAll, reportLines, busy: () => bt.running || ht.running };
@@ -1709,7 +1731,7 @@ function createTools(api) {
 
   const st = {
     tests: null, testsBusy: false, testsMsg: '',
-    scan: { running: false, stop: false, found: [], msg: '', watch: false, base: {}, last: {}, changed: new Set(), mod: '7E0:7E8', ranges: api.store.get('didRanges', '1000-1FFF'), ext: false, onlyChg: false },
+    scan: { running: false, stop: false, found: [], msg: '', watch: false, base: {}, last: {}, hist: {}, changed: new Set(), mod: '7E0:7E8', ranges: api.store.get('didRanges', '1000-1FFF'), ext: false, onlyChg: false },
     con: { mod: '7E0:7E8', lines: [], keep: null, pending: null },
     mon: { running: false, h: null, done: null, msgs: [], raw: [], t0: 0, frames: 0, restarts: 0, hideTp: true, onlyWrite: false, resume: null }
   };
@@ -1828,6 +1850,15 @@ function createTools(api) {
       api.logLine(`— tryb 06: ${st.tests.tests.length} wyników`);
     } catch (err) { st.testsMsg = 'Nie udało się odczytać: ' + err.message; }
     st.testsBusy = false; $('#tTestsSt').textContent = ''; renderTests(); sync();
+    if (st.tests && st.tests.tests.length) api.saveLog('testy-obd', 'Testy sterownika (tryb 06)', testsText());
+  }
+  function testsText() {
+    const T = st.tests, L = [];
+    const mis = misfireRows(T.tests);
+    if (mis.length) { L.push('== Wypadanie zapłonów ==', 'cylinder;bieżący cykl;średnia 10 cykli'); mis.forEach(r => L.push(`${r.c};${r.cur ?? ''};${r.avg ?? ''}`)); L.push(''); }
+    L.push('== Wszystkie wyniki ==', 'monitor;test;wynik;min;max;jednostka;w zakresie');
+    T.tests.forEach(t => L.push(`${midName(t.mid)} (MID ${hex2(t.mid)});${t.name} (TID ${hex2(t.tid)}, UAS ${hex2(t.uas)});${t.value};${t.min};${t.max};${t.unit};${t.pass ? 'tak' : 'NIE'}`));
+    return L.join('\n');
   }
   function misfireRows(tests) {
     const rows = [];
@@ -1900,6 +1931,7 @@ function createTools(api) {
       api.logLine(`— skaner 0x22: ${S.found.length} DID`);
     } catch (err) { S.msg = 'Skanowanie przerwane: ' + err.message; }
     S.running = false; resume(); $('#tScanSt').textContent = S.msg; renderScan(); sync();
+    if (S.found.length) api.saveLog('skaner', `Skaner pomiarów, ${S.found.length} DID`, scanText());
   }
   async function toggleWatch() {
     const S = st.scan; const e = api.elm(); if (!e) return;
@@ -1907,18 +1939,27 @@ function createTools(api) {
     S.watch = true; sync();
     const resume = api.pause();
     const mod = modOf(S.mod); const list = S.found.slice(0, 120);
-    let round = 0;
+    let round = 0; const wt0 = now(); S.hist = {};
     while (S.watch && e === api.elm()) {
       for (const fd of list) {
         if (!S.watch || e !== api.elm()) break;
         const b = await e.op(() => e.readDidRaw(mod, fd.did));
-        if (b) { S.last[fd.did] = b; if (hexs(b) !== hexs(S.base[fd.did] || [])) S.changed.add(fd.did); }
+        if (b) {
+          const prev = S.last[fd.did]; S.last[fd.did] = b;
+          if (hexs(b) !== hexs(S.base[fd.did] || [])) S.changed.add(fd.did);
+          if (!prev || hexs(prev) !== hexs(b)) { const h = S.hist[fd.did] = S.hist[fd.did] || []; if (h.length < 300) h.push([(now() - wt0) / 1000, b]); }
+        }
       }
       round++;
       const el = $('#tScanSt'); if (el) el.textContent = `Obserwacja: runda ${round}, zmienia się ${S.changed.size} z ${list.length}${S.found.length > list.length ? ` (obserwuję pierwsze ${list.length})` : ''}.`;
       renderScan();
     }
     S.watch = false; resume(); sync();
+    if (round) api.saveLog('skaner', `Skaner pomiarów – obserwacja, ${round} rund, zmienne ${S.changed.size}`, scanText() + '\n\n== Historia zmiennych ==\n' + histText());
+  }
+  function histText() {
+    const S = st.scan;
+    return [...S.changed].map(did => `${hex4(did)}: ${(S.hist[did] || []).map(h => `${h[0].toFixed(1)}s=${hexs(h[1])}`).join(' | ')}`).join('\n');
   }
   function u16s(b) { return b.length === 2 ? u16(b[0], b[1]) : b.length === 1 ? b[0] : null; }
   function renderScan() {
@@ -2022,6 +2063,7 @@ function createTools(api) {
     const r = M.resume; M.resume = null; r && r();
     api.logLine(`— podsłuch: stop, ${M.frames} ramek, ${M.msgs.length} wiadomości`);
     renderMon(); sync();
+    if (M.raw.length) api.saveLog('podsluch', `Podsłuch, ${M.msgs.length} wiadomości`, monText());
   }
   let monTimer = null;
   function schedule() { if (!monTimer) monTimer = setTimeout(() => { monTimer = null; renderMon(); }, 300); }
@@ -2049,7 +2091,12 @@ function createTools(api) {
     render,
     onConnect() { st.tests = null; st.testsMsg = ''; st.scan.found = []; st.scan.changed = new Set(); render(); },
     sync,
-    async stopAll() { stopKeep(); st.scan.stop = true; st.scan.watch = false; if (st.mon.running) { st.mon.running = false; try { st.mon.h && await st.mon.h.stop(); } catch (e) {} st.mon.resume = null; } sync(); },
+    async stopAll() {
+      stopKeep(); st.scan.stop = true; st.scan.watch = false;
+      if (st.mon.running) { st.mon.running = false; try { st.mon.h && await st.mon.h.stop(); } catch (e) {} st.mon.resume = null; if (st.mon.raw.length) api.saveLog('podsluch', `Podsłuch, ${st.mon.msgs.length} wiadomości`, monText()); }
+      if (st.con.lines.length) { api.saveLog('konsola', `Konsola UDS, ${st.con.lines.length} ${plural(st.con.lines.length, 'linia', 'linie', 'linii')}`, st.con.lines.map(l => l.s).join('\n')); st.con.lines = []; renderCon(); }
+      sync();
+    },
     busy() { return st.mon.running || st.scan.running || st.scan.watch; },
     reportLines() {
       const L = [];
@@ -2064,6 +2111,226 @@ function createTools(api) {
       return L;
     }
   };
+}
+
+/* ===== Dziennik: zapis logów w telefonie (IndexedDB) i wysyłka do prywatnego repozytorium GitHub ===== */
+function createJournal(api) {
+  const $ = s => document.querySelector(s);
+  const { esc, plural } = api;
+  const KEEP = 300, CHUNK = 700 * 1024;
+  const p2 = n => String(n).padStart(2, '0');
+  const dstamp = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  const tstamp = d => `${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
+  const KINDS = {
+    raport: 'Raport', nagranie: 'Nagranie parametrów', rejestr: 'Rejestr jazdy', 'test-p0299': 'Test doładowania (P0299)', 'test-ogrzewanie': 'Test nagrzewania',
+    'testy-obd': 'Testy sterownika (tryb 06)', skaner: 'Skaner pomiarów VAG', podsluch: 'Podsłuch magistrali', konsola: 'Konsola UDS', komunikacja: 'Log komunikacji'
+  };
+
+  /* ---------- magazyn ---------- */
+  let mem = [];          // zapas, gdy IndexedDB jest niedostępne (np. tryb prywatny)
+  let dbp = null, dbOk = true;
+  function db() {
+    if (dbp) return dbp;
+    dbp = new Promise((res, rej) => {
+      try {
+        const r = indexedDB.open('vagdiag', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('logs', { keyPath: 'id' });
+        r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+      } catch (e) { rej(e); }
+    }).catch(e => { dbOk = false; throw e; });
+    return dbp;
+  }
+  async function tx(mode, fn) {
+    const d = await db();
+    return new Promise((res, rej) => { const t = d.transaction('logs', mode); const r = fn(t.objectStore('logs')); t.oncomplete = () => res(r && 'result' in r ? r.result : undefined); t.onerror = () => rej(t.error); });
+  }
+  async function put(e) { try { await tx('readwrite', s => s.put(e)); } catch (err) { const i = mem.findIndex(x => x.id === e.id); if (i >= 0) mem[i] = e; else mem.push(e); } }
+  async function del(id) { try { await tx('readwrite', s => s.delete(id)); } catch (err) {} mem = mem.filter(x => x.id !== id); }
+  async function all() { let L = []; try { L = await tx('readonly', s => s.getAll()) || []; } catch (err) {} const ids = new Set(L.map(x => x.id)); return L.concat(mem.filter(x => !ids.has(x.id))).sort((a, b) => b.ts - a.ts); }
+
+  /* ---------- sesja ---------- */
+  let session = null;
+  function startSession() { const d = new Date(); session = `${dstamp(d)}_${p2(d.getHours())}${p2(d.getMinutes())}`; return session; }
+  function header(kind, title) {
+    return [`VAG Diagnostyka · ${KINDS[kind] || kind}${title && title !== KINDS[kind] ? ' · ' + title : ''}`,
+      `Data: ${new Date().toLocaleString('pl-PL')}`, `VIN: ${api.vin() || '—'}`, `Sesja: ${session || '—'}`, `Wersja aplikacji: ${api.version}`, ''].join('\n');
+  }
+
+  /* Dodaje wpis. Z opcją id nadpisuje istniejący (np. rejestr jazdy zapisywany co kilka minut). */
+  async function add(kind, title, text, opt = {}) {
+    if (!text || !String(text).trim()) return null;
+    const d = new Date(), ext = opt.ext || 'txt';
+    const sess = session || `${dstamp(d)}_bez-polaczenia`;
+    let e = opt.id ? (await all()).find(x => x.id === opt.id) : null;
+    const body = (ext === 'csv' ? '' : header(kind, title)) + text;
+    if (e) Object.assign(e, { ts: d.getTime(), text: body, synced: false, err: null });
+    else e = { id: opt.id || `${d.getTime()}-${kind}`, ts: d.getTime(), session: sess, kind, title: title || KINDS[kind] || kind, ext, text: body, synced: false, err: null, sha: {}, path: `sesje/${sess}/${tstamp(d)}-${kind}` };
+    await put(e);
+    await trim();
+    render();
+    if (opt.quiet !== true) api.logLine(`— zapisano: ${e.title}`);
+    kick();
+    return e.id;
+  }
+  async function trim() {
+    const L = await all(); if (L.length <= KEEP) return;
+    for (const e of L.slice(KEEP)) if (e.synced || !cfg().token) await del(e.id);
+  }
+
+  /* ---------- GitHub ---------- */
+  function cfg() { return { repo: api.store.get('ghRepo', ''), token: api.store.get('ghToken', ''), auto: api.store.get('ghAuto', '1') === '1' }; }
+  const enc = new TextEncoder();
+  function b64(str) {
+    const bytes = enc.encode(str); let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+  function parts(e) {
+    if (e.text.length <= CHUNK) return [[`${e.path}.${e.ext}`, e.text]];
+    const out = []; for (let i = 0, n = 1; i < e.text.length; i += CHUNK, n++) out.push([`${e.path}.cz${n}.${e.ext}`, e.text.slice(i, i + CHUNK)]);
+    return out;
+  }
+  async function gh(method, path, body) {
+    const c = cfg();
+    const r = await fetch(`https://api.github.com/repos/${c.repo}${path}`, {
+      method, headers: { Authorization: 'Bearer ' + c.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    let j = null; try { j = await r.json(); } catch (e) {}
+    if (!r.ok) { const err = new Error(ghErr(r.status, j)); err.status = r.status; throw err; }
+    return j;
+  }
+  function ghErr(s, j) {
+    if (s === 401) return 'Klucz dostępu jest nieprawidłowy albo wygasł.';
+    if (s === 403) return 'Klucz nie ma uprawnienia do zapisu w tym repozytorium (Contents: Read and write).';
+    if (s === 404) return 'Nie widzę repozytorium. Sprawdź nazwę (właściciel/nazwa) i czy klucz ma do niego dostęp.';
+    if (s === 409 || s === 422) return 'Konflikt wersji pliku. Ponowię wysyłkę.';
+    return `GitHub odpowiedział ${s}${j && j.message ? ': ' + j.message : ''}`;
+  }
+  let syncing = false, again = false, lastErr = '';
+  async function sync(force) {
+    const c = cfg(); if (!c.repo || !c.token || (!c.auto && !force)) { render(); return; }
+    if (!navigator.onLine) { lastErr = 'Brak internetu. Wyślę, gdy wróci połączenie.'; render(); return; }
+    if (syncing) { again = true; return; }
+    syncing = true; lastErr = ''; render();
+    try {
+      const L = (await all()).filter(e => !e.synced).reverse();
+      for (const e of L) {
+        try {
+          for (const [path, text] of parts(e)) {
+            const body = { message: `${KINDS[e.kind] || e.kind}: ${e.title} (${e.session})`, content: b64(text) };
+            if (e.sha[path]) body.sha = e.sha[path];
+            let j;
+            try { j = await gh('PUT', '/contents/' + path.split('/').map(encodeURIComponent).join('/'), body); }
+            catch (err) {
+              if (err.status !== 409 && err.status !== 422) throw err;
+              const cur = await gh('GET', '/contents/' + path.split('/').map(encodeURIComponent).join('/')).catch(() => null);
+              if (cur && cur.sha) body.sha = cur.sha; else delete body.sha;
+              j = await gh('PUT', '/contents/' + path.split('/').map(encodeURIComponent).join('/'), body);
+            }
+            e.sha[path] = j && j.content && j.content.sha;
+          }
+          e.synced = true; e.err = null; await put(e);
+        } catch (err) {
+          e.err = err.message; await put(e); lastErr = err.message;
+          if (err.status === 401 || err.status === 403 || err.status === 404 || err instanceof TypeError) break;
+        }
+        render();
+      }
+    } finally { syncing = false; render(); if (again) { again = false; sync(force); } }
+  }
+  let kickT = null;
+  function kick() { clearTimeout(kickT); kickT = setTimeout(() => sync(false), 1500); }
+  window.addEventListener('online', () => sync(false));
+  setInterval(() => sync(false), 90000);
+  async function testGh() {
+    const st = $('#jGhSt'); const c = cfg();
+    if (!c.repo || !c.token) { st.textContent = 'Uzupełnij repozytorium i klucz.'; return; }
+    st.textContent = 'Sprawdzam…';
+    try {
+      const r = await gh('GET', '');
+      if (!r.permissions || !r.permissions.push) { st.textContent = 'Klucz widzi repozytorium, ale nie ma prawa zapisu.'; return; }
+      st.textContent = r.private ? `Połączono z ${r.full_name} (prywatne). Logi będą wysyłane automatycznie.` : `Uwaga: ${r.full_name} jest publiczne. Logi zawierają VIN, ustaw repozytorium jako prywatne.`;
+      sync(true);
+    } catch (err) { st.textContent = err instanceof TypeError ? 'Brak połączenia z GitHubem.' : err.message; }
+  }
+
+  /* ---------- interfejs ---------- */
+  let rT = null;
+  function render() { clearTimeout(rT); rT = setTimeout(draw, 120); }
+  const kb = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1).replace('.', ',') + ' MB';
+  async function draw() {
+    const host = $('#journalPanel'); if (!host) return;
+    if (!host.dataset.built) build(host);
+    const L = await all(), c = cfg();
+    const pend = L.filter(e => !e.synced).length;
+    $('#jSum').textContent = `${L.length} ${plural(L.length, 'wpis', 'wpisy', 'wpisów')} w telefonie${c.repo && c.token ? `, do wysłania: ${pend}` : ''}${syncing ? ' · wysyłam…' : ''}${!dbOk ? ' · pamięć przeglądarki niedostępna, logi znikną po zamknięciu strony' : ''}`;
+    $('#jErr').textContent = lastErr; $('#jErr').hidden = !lastErr;
+    $('#jSend').hidden = !(c.repo && c.token) || !pend;
+    const by = {}; L.forEach(e => { (by[e.session] = by[e.session] || []).push(e); });
+    $('#jList').innerHTML = L.length ? Object.keys(by).sort().reverse().slice(0, 40).map(s => `<div class="jsess"><h4 class="sub">${esc(s.replace('_', ' · ').replace(/(\d\d)(\d\d)$/, '$1:$2'))}</h4>
+      ${by[s].map(e => `<div class="jrow"><div class="jmain"><b>${esc(e.title)}</b><span class="muted">${new Date(e.ts).toLocaleTimeString('pl-PL')} · ${kb(e.text.length)}</span></div>
+        <span class="st ${e.synced ? 'ok' : e.err ? 'no' : ''}">${e.synced ? 'wysłane' : e.err ? 'błąd' : c.repo && c.token ? 'czeka' : 'w telefonie'}</span>
+        <div class="jact"><button class="linkbtn" type="button" data-jc="${esc(e.id)}">Kopiuj</button>${api.framed ? '' : `<button class="linkbtn" type="button" data-jd="${esc(e.id)}">Pobierz</button>`}<button class="linkbtn" type="button" data-jx="${esc(e.id)}">Usuń</button></div></div>`).join('')}</div>`).join('')
+      : '<p class="small muted">Jeszcze nic nie zapisano. Logi pojawią się po połączeniu z autem.</p>';
+  }
+  function build(host) {
+    host.dataset.built = '1'; const c = cfg();
+    host.innerHTML = `
+      <div class="card"><div class="card-h"><h3>Zapisane logi</h3><span class="n" id="jSum"></span></div>
+        <p class="small muted">Aplikacja sama zapisuje każdy raport ze skanu, nagranie, testy z paneli, odczyt testów sterownika, skaner, podsłuch, konsolę i log komunikacji, a w czasie połączenia co sekundę rejestruje parametry jazdy. Logi zostają w tym telefonie i, jeśli ustawisz GitHuba poniżej, trafiają do Twojego prywatnego repozytorium.</p>
+        <p class="small codehead crit" id="jErr" hidden></p>
+        <div class="actions"><button class="btn small primary" id="jSend" type="button" hidden>Wyślij teraz</button><button class="btn small ghost" id="jClean" type="button">Usuń wysłane z telefonu</button></div>
+        <div id="jList"></div></div>
+      <details class="help" id="jGh"${c.token ? '' : ' open'}><summary>Wysyłanie logów na GitHub ${c.token ? '· ustawione' : ''}</summary>
+        <ol>
+          <li>Utwórz <b>prywatne</b> repozytorium na logi: <a href="https://github.com/new?name=vag-logi&visibility=private&description=Logi%20z%20VAG%20Diagnostyka" target="_blank" rel="noopener">github.com/new</a> (nazwa vag-logi, Private).</li>
+          <li>Utwórz klucz dostępu: <a href="https://github.com/settings/personal-access-tokens/new?name=VAG%20Diagnostyka%20logi&expires_in=366&contents=write" target="_blank" rel="noopener">nowy fine-grained token</a>. W „Repository access” wybierz „Only select repositories” i <b>tylko vag-logi</b>. W uprawnieniach ustaw <b>Contents: Read and write</b>. Skopiuj token.</li>
+          <li>Wklej poniżej i naciśnij Zapisz. Klucz zostaje tylko w tej przeglądarce i daje dostęp wyłącznie do repozytorium z logami.</li>
+        </ol>
+        <div class="frow"><label class="fl">Repozytorium <input id="jRepo" class="inp mono" value="${esc(c.repo || 'kpaae/vag-logi')}" spellcheck="false" autocomplete="off" autocapitalize="off"></label></div>
+        <div class="frow"><label class="fl">Token <input id="jTok" class="inp mono" type="password" value="${esc(c.token)}" placeholder="github_pat_…" spellcheck="false" autocomplete="off" autocapitalize="off"></label></div>
+        <div class="frow"><label class="chk"><input type="checkbox" id="jAuto"${c.auto ? ' checked' : ''}> wysyłaj automatycznie</label>
+          <button class="btn small primary" id="jSave" type="button">Zapisz i sprawdź</button><button class="btn small ghost" id="jForget" type="button">Usuń klucz</button></div>
+        <p class="tstatus" id="jGhSt"></p></details>`;
+    $('#jSave').onclick = () => { api.store.set('ghRepo', $('#jRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '')); api.store.set('ghToken', $('#jTok').value.trim()); api.store.set('ghAuto', $('#jAuto').checked ? '1' : '0'); testGh(); };
+    $('#jForget').onclick = () => { api.store.set('ghToken', ''); $('#jTok').value = ''; $('#jGhSt').textContent = 'Klucz usunięty z tej przeglądarki.'; render(); };
+    $('#jAuto').onchange = e => { api.store.set('ghAuto', e.target.checked ? '1' : '0'); };
+    $('#jSend').onclick = () => sync(true);
+    $('#jClean').onclick = async () => { for (const e of await all()) if (e.synced) await del(e.id); render(); };
+    host.addEventListener('click', async ev => {
+      const b = ev.target.closest('button'); if (!b) return;
+      const id = b.dataset.jc || b.dataset.jd || b.dataset.jx; if (!id) return;
+      const e = (await all()).find(x => x.id === id); if (!e) return;
+      if (b.dataset.jc) api.copyText(e.text, b);
+      if (b.dataset.jd) api.download(`${e.session}-${e.path.split('/').pop()}.${e.ext}`, e.text, e.ext === 'csv' ? 'text/csv' : 'text/plain');
+      if (b.dataset.jx) { await del(e.id); render(); }
+    });
+  }
+
+  /* ---------- rejestr jazdy (automatyczny) ---------- */
+  const reg = { id: null, keys: [], rows: [], t0: 0, last: 0, saved: 0 };
+  function regStart() { Object.assign(reg, { id: null, keys: [], rows: [], t0: Date.now(), last: 0, saved: Date.now() }); }
+  function regTick(vals, CAT) {
+    if (!reg.t0) return;
+    const now = Date.now(); if (now - reg.last < 1000) return; reg.last = now;
+    const row = { t: (now - reg.t0) / 1000 };
+    for (const k in vals) if (CAT[k] && !CAT[k].text && isFinite(vals[k])) { row[k] = vals[k]; if (!reg.keys.includes(k)) reg.keys.push(k); }
+    reg.rows.push(row); if (reg.rows.length > 4 * 3600) reg.rows.shift();
+    if (now - reg.saved > 5 * 60000) regSave(CAT, true);
+  }
+  function regSave(CAT, quiet) {
+    if (reg.rows.length < 10) return;
+    reg.saved = Date.now();
+    if (!reg.id) reg.id = `${reg.t0}-rejestr`;
+    const head = ['czas [s]', ...reg.keys.map(k => `${CAT[k].name}${CAT[k].unit ? ' [' + CAT[k].unit + ']' : ''}`)].join(';');
+    const lines = reg.rows.map(r => [r.t.toFixed(1).replace('.', ','), ...reg.keys.map(k => r[k] == null ? '' : String(+r[k].toFixed(3)).replace('.', ','))].join(';'));
+    add('rejestr', `Rejestr jazdy, ${Math.round(reg.rows[reg.rows.length - 1].t / 60)} min`, [head, ...lines].join('\r\n'), { id: reg.id, ext: 'csv', quiet });
+  }
+  function regStop(CAT) { regSave(CAT, false); reg.t0 = 0; }
+
+  render();
+  return { add, startSession, render, sync, regStart, regTick, regSave, regStop, KINDS };
 }
 
 /* ===== VAG Diagnostyka – interfejs ===== */
@@ -2096,6 +2363,19 @@ function createTools(api) {
   let view = store.get('group', 'silnik'); if (!['silnik', 'chlodzenie', 'doladowanie', 'mieszanka', 'all'].includes(view)) view = 'silnik';
   let report = blankReport();
   const logBuf = []; let logTimer = null;
+  const sess = { on: false, log: [], id: null, ok: false };
+  let journal = null;
+  function sessStart() { sess.on = true; sess.log = []; sess.id = Date.now() + '-komunikacja'; sess.ok = false; }
+  function sessSave(final) {
+    if (!journal || !sess.log.length) return;
+    journal.add('komunikacja', sess.ok ? 'Log komunikacji' : 'Log nieudanego połączenia', sess.log.join('\n'), { id: sess.id, quiet: !final });
+  }
+  function sessEnd() {
+    if (!sess.on) return;
+    if (journal && sess.ok) journal.regStop(CAT);
+    sessSave(true); sess.on = false;
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden && sess.on && journal) { if (sess.ok) journal.regSave(CAT, true); sessSave(false); } });
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
   function blankReport() { return { vin: null, calib: null, readiness: null, obd: null, freeze: null, modules: [], absent: [], adapter: null, at: null }; }
@@ -2121,6 +2401,7 @@ function createTools(api) {
   function logLine(s) {
     const t = new Date(); const ts = t.toTimeString().slice(0, 8) + '.' + String(t.getMilliseconds()).padStart(3, '0');
     logBuf.push(ts + '  ' + s); if (logBuf.length > 1500) logBuf.splice(0, logBuf.length - 1500);
+    if (sess.on) { sess.log.push(ts + '  ' + s); if (sess.log.length > 40000) sess.log.splice(0, 5000); }
     if (!$('#tab-log').hidden && !logTimer) logTimer = setTimeout(renderLog, 400);
   }
   function renderLog() { logTimer = null; const p = $('#log'); const atBottom = p.scrollTop + p.clientHeight >= p.scrollHeight - 30; p.textContent = logBuf.join('\n'); if (atBottom) p.scrollTop = p.scrollHeight; }
@@ -2131,7 +2412,7 @@ function createTools(api) {
     $$('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b ? 'true' : 'false'));
     ['live', 'boost', 'heat', 'errors', 'tools', 'state', 'log'].forEach(t => { $('#tab-' + t).hidden = t !== b.dataset.tab; });
     currentTab = b.dataset.tab;
-    if (b.dataset.tab === 'log') renderLog();
+    if (b.dataset.tab === 'log') { renderLog(); journal && journal.render(); }
     if (b.dataset.tab === 'live') { sizeSparks(); updateTiles(); }
     panels && panels.onTab(currentTab);
   }));
@@ -2253,6 +2534,7 @@ function createTools(api) {
         Object.assign(vals, res);
         for (const d of DERIVED) { const v = d.calc(vals); if (v != null && isFinite(v)) { vals[d.key] = v; res[d.key] = v; } }
         take(res);
+        journal && journal.regTick(vals, CAT);
         if (rec) { const row = { t: (Date.now() - rec.t0) / 1000 }; for (const k of wanted) if (vals[k] != null && seen[k] === cycle) { row[k] = vals[k]; rec.keys.add(k); } rec.rows.push(row); $('#btnRec').textContent = `Zatrzymaj · ${rec.rows.length}`; }
         if (!$('#tab-live').hidden) updateTiles();
         panels && panels.tick();
@@ -2283,6 +2565,7 @@ function createTools(api) {
     if (!rec) { rec = { t0: Date.now(), rows: [], keys: new Set() }; b.classList.add('rec-on'); b.textContent = 'Zatrzymaj · 0'; $('#recBox').hidden = true; if (!polling) startPolling(); return; }
     b.classList.remove('rec-on'); b.textContent = 'Nagrywaj';
     const r = rec; rec = null; lastRec = r;
+    if (journal && r.rows.length) journal.add('nagranie', `Nagranie, ${Math.round(r.rows[r.rows.length - 1].t)} s`, csv(r), { ext: 'csv' });
     $('#recInfo').textContent = `Nagranie: ${r.rows.length} ${plural(r.rows.length, 'próbka', 'próbki', 'próbek')}, ${fmtNum(r.rows.length ? r.rows[r.rows.length - 1].t : 0, 0)} s, ${r.keys.size} ${plural(r.keys.size, 'parametr', 'parametry', 'parametrów')}`;
     $('#recBox').hidden = false;
   };
@@ -2431,6 +2714,7 @@ function createTools(api) {
     if (!mode) return;
     panels && panels.stopAll(); tools && tools.stopAll();
     stopPolling(); elm = null; tr = null; mode = null; setButtons();
+    logLine('— połączenie przerwane'); sessEnd();
     chip('Połączenie przerwane', ''); banner('Połączenie z adapterem zostało przerwane. Sprawdź adapter i połącz ponownie.', 'warn');
   }
   async function disconnect() {
@@ -2438,7 +2722,8 @@ function createTools(api) {
     if (tools) await tools.stopAll();
     stopPolling();
     const t = tr; tr = null; elm = null; mode = null;
-    if (t) { try { await t.close(); } catch (e) {} }
+    if (t) { try { await t.close(); } catch (e) {} logLine('— rozłączono'); }
+    sessEnd();
     chip('Rozłączony', ''); setButtons();
   }
   function setButtons() {
@@ -2454,6 +2739,7 @@ function createTools(api) {
     if (rec) $('#btnRec').click();
     await disconnect();
     vals = {}; seen = {}; hist = {}; mm = {}; report = blankReport(); cycle = 0;
+    sessStart(); journal && journal.startSession();
     $('#scanProgress').textContent = '';
     renderObd(); renderModules(); renderState(); updateAlerts(); buildTiles();
     try {
@@ -2467,6 +2753,7 @@ function createTools(api) {
       if (!s.size) { logLine('— brak odpowiedzi na CAN 500 kb/s, próba automatycznego wyboru protokołu'); await e.send('ATSP0'); await e.send('0100', 10000); e.cur = null; s = await e.op(() => e.discoverPids()); }
       if (!s.size) throw new Error('Sterownik silnika nie odpowiada. Włącz zapłon i spróbuj ponownie.');
       elm = e; sup = s; mode = kind;
+      sess.ok = true; journal && journal.regStart();
       report.adapter = `${id} · ${t.name}`;
       chip(`${t.name} · ${id}`, 'on');
       $('#banner').hidden = true;
@@ -2477,6 +2764,7 @@ function createTools(api) {
       const msg = friendly(err);
       logLine('! ' + (err.message || err));
       const t = tr; tr = null; elm = null; mode = null; if (t) { try { await t.close(); } catch (e) {} }
+      if (msg !== 'filtered' && msg !== null) sessEnd(); else sess.on = false;
       chip('Rozłączony', ''); setButtons(); buildTiles();
       if (msg === 'filtered') banner('Nie widzisz swojego adaptera na liście? Niektóre adaptery nie podają nazwy. Pokaż wszystkie urządzenia i wybierz to, które znika z listy po wyjęciu adaptera z gniazda.', 'info', { label: 'Pokaż wszystkie urządzenia', fn: () => connect('ble', true) });
       else if (msg) { banner(msg, 'error'); $('#errBadge').hidden = true; }
@@ -2597,6 +2885,7 @@ function createTools(api) {
       report.at = new Date();
       const n = report.modules.reduce((a, m) => a + m.dtcs.length, 0);
       prog(`Gotowe ${report.at.toLocaleTimeString('pl-PL')}: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}.`);
+      journal && journal.add('raport', `Raport po skanie: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}`, buildReport());
     } catch (err) { prog('Skanowanie przerwane: ' + err.message); logLine('! ' + err.message); }
     finally { scanning = false; renderModules(); setButtons(); }
   }
@@ -2677,7 +2966,13 @@ function createTools(api) {
   $('#btnLogClear').onclick = () => { logBuf.length = 0; renderLog(); };
 
   /* ---------- start ---------- */
+  journal = createJournal({
+    esc, plural, copyText, download, framed, logLine, store, vin: () => report.vin,
+    version: typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'dev'
+  });
+  const saveLog = (kind, title, text, opt) => journal.add(kind, title, text, opt);
   panels = createPanels({
+    saveLog,
     vals: () => vals, avail, stateOf, tokens, store, CAT, DTC_DESC, MODULES,
     esc, fmtNum, fmtVal, plural, copyText, logLine,
     elm: () => elm, mode: () => mode, sup: () => sup, report: () => report,
@@ -2686,7 +2981,7 @@ function createTools(api) {
   });
   tools = createTools({
     elm: () => elm, esc, fmtNum, plural, copyText, download, stamp, framed, logLine, store, MODULES,
-    report: () => report, pause
+    report: () => report, pause, saveLog
   });
   tools.render();
   syncSeg(); setButtons();

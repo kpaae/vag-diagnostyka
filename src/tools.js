@@ -10,7 +10,7 @@ function createTools(api) {
 
   const st = {
     tests: null, testsBusy: false, testsMsg: '',
-    scan: { running: false, stop: false, found: [], msg: '', watch: false, base: {}, last: {}, changed: new Set(), mod: '7E0:7E8', ranges: api.store.get('didRanges', '1000-1FFF'), ext: false, onlyChg: false },
+    scan: { running: false, stop: false, found: [], msg: '', watch: false, base: {}, last: {}, hist: {}, changed: new Set(), mod: '7E0:7E8', ranges: api.store.get('didRanges', '1000-1FFF'), ext: false, onlyChg: false },
     con: { mod: '7E0:7E8', lines: [], keep: null, pending: null },
     mon: { running: false, h: null, done: null, msgs: [], raw: [], t0: 0, frames: 0, restarts: 0, hideTp: true, onlyWrite: false, resume: null }
   };
@@ -129,6 +129,15 @@ function createTools(api) {
       api.logLine(`— tryb 06: ${st.tests.tests.length} wyników`);
     } catch (err) { st.testsMsg = 'Nie udało się odczytać: ' + err.message; }
     st.testsBusy = false; $('#tTestsSt').textContent = ''; renderTests(); sync();
+    if (st.tests && st.tests.tests.length) api.saveLog('testy-obd', 'Testy sterownika (tryb 06)', testsText());
+  }
+  function testsText() {
+    const T = st.tests, L = [];
+    const mis = misfireRows(T.tests);
+    if (mis.length) { L.push('== Wypadanie zapłonów ==', 'cylinder;bieżący cykl;średnia 10 cykli'); mis.forEach(r => L.push(`${r.c};${r.cur ?? ''};${r.avg ?? ''}`)); L.push(''); }
+    L.push('== Wszystkie wyniki ==', 'monitor;test;wynik;min;max;jednostka;w zakresie');
+    T.tests.forEach(t => L.push(`${midName(t.mid)} (MID ${hex2(t.mid)});${t.name} (TID ${hex2(t.tid)}, UAS ${hex2(t.uas)});${t.value};${t.min};${t.max};${t.unit};${t.pass ? 'tak' : 'NIE'}`));
+    return L.join('\n');
   }
   function misfireRows(tests) {
     const rows = [];
@@ -201,6 +210,7 @@ function createTools(api) {
       api.logLine(`— skaner 0x22: ${S.found.length} DID`);
     } catch (err) { S.msg = 'Skanowanie przerwane: ' + err.message; }
     S.running = false; resume(); $('#tScanSt').textContent = S.msg; renderScan(); sync();
+    if (S.found.length) api.saveLog('skaner', `Skaner pomiarów, ${S.found.length} DID`, scanText());
   }
   async function toggleWatch() {
     const S = st.scan; const e = api.elm(); if (!e) return;
@@ -208,18 +218,27 @@ function createTools(api) {
     S.watch = true; sync();
     const resume = api.pause();
     const mod = modOf(S.mod); const list = S.found.slice(0, 120);
-    let round = 0;
+    let round = 0; const wt0 = now(); S.hist = {};
     while (S.watch && e === api.elm()) {
       for (const fd of list) {
         if (!S.watch || e !== api.elm()) break;
         const b = await e.op(() => e.readDidRaw(mod, fd.did));
-        if (b) { S.last[fd.did] = b; if (hexs(b) !== hexs(S.base[fd.did] || [])) S.changed.add(fd.did); }
+        if (b) {
+          const prev = S.last[fd.did]; S.last[fd.did] = b;
+          if (hexs(b) !== hexs(S.base[fd.did] || [])) S.changed.add(fd.did);
+          if (!prev || hexs(prev) !== hexs(b)) { const h = S.hist[fd.did] = S.hist[fd.did] || []; if (h.length < 300) h.push([(now() - wt0) / 1000, b]); }
+        }
       }
       round++;
       const el = $('#tScanSt'); if (el) el.textContent = `Obserwacja: runda ${round}, zmienia się ${S.changed.size} z ${list.length}${S.found.length > list.length ? ` (obserwuję pierwsze ${list.length})` : ''}.`;
       renderScan();
     }
     S.watch = false; resume(); sync();
+    if (round) api.saveLog('skaner', `Skaner pomiarów – obserwacja, ${round} rund, zmienne ${S.changed.size}`, scanText() + '\n\n== Historia zmiennych ==\n' + histText());
+  }
+  function histText() {
+    const S = st.scan;
+    return [...S.changed].map(did => `${hex4(did)}: ${(S.hist[did] || []).map(h => `${h[0].toFixed(1)}s=${hexs(h[1])}`).join(' | ')}`).join('\n');
   }
   function u16s(b) { return b.length === 2 ? u16(b[0], b[1]) : b.length === 1 ? b[0] : null; }
   function renderScan() {
@@ -323,6 +342,7 @@ function createTools(api) {
     const r = M.resume; M.resume = null; r && r();
     api.logLine(`— podsłuch: stop, ${M.frames} ramek, ${M.msgs.length} wiadomości`);
     renderMon(); sync();
+    if (M.raw.length) api.saveLog('podsluch', `Podsłuch, ${M.msgs.length} wiadomości`, monText());
   }
   let monTimer = null;
   function schedule() { if (!monTimer) monTimer = setTimeout(() => { monTimer = null; renderMon(); }, 300); }
@@ -350,7 +370,12 @@ function createTools(api) {
     render,
     onConnect() { st.tests = null; st.testsMsg = ''; st.scan.found = []; st.scan.changed = new Set(); render(); },
     sync,
-    async stopAll() { stopKeep(); st.scan.stop = true; st.scan.watch = false; if (st.mon.running) { st.mon.running = false; try { st.mon.h && await st.mon.h.stop(); } catch (e) {} st.mon.resume = null; } sync(); },
+    async stopAll() {
+      stopKeep(); st.scan.stop = true; st.scan.watch = false;
+      if (st.mon.running) { st.mon.running = false; try { st.mon.h && await st.mon.h.stop(); } catch (e) {} st.mon.resume = null; if (st.mon.raw.length) api.saveLog('podsluch', `Podsłuch, ${st.mon.msgs.length} wiadomości`, monText()); }
+      if (st.con.lines.length) { api.saveLog('konsola', `Konsola UDS, ${st.con.lines.length} ${plural(st.con.lines.length, 'linia', 'linie', 'linii')}`, st.con.lines.map(l => l.s).join('\n')); st.con.lines = []; renderCon(); }
+      sync();
+    },
     busy() { return st.mon.running || st.scan.running || st.scan.watch; },
     reportLines() {
       const L = [];

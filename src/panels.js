@@ -322,7 +322,7 @@ function createPanels(api) {
   }
   function stopBoost() {
     if (!bt.running) return;
-    bt.running = false; bt.result = analyzeBoost(); syncBoost(); renderBoostResult();
+    bt.running = false; bt.result = analyzeBoost(); syncBoost(); renderBoostResult(); saveBoost();
   }
   function renderBoostResult() {
     const card = $('#bResCard'), sus = $('#bSusCard'); if (!card) return;
@@ -477,7 +477,7 @@ function createPanels(api) {
     Object.assign(ht, { running: true, t0: performance.now(), samples: [], n: 0 });
     api.ensurePolling(); syncHeat(); renderHeatResult();
   }
-  function stopHeat() { if (!ht.running) return; ht.running = false; syncHeat(); renderHeatResult(); }
+  function stopHeat() { if (!ht.running) return; ht.running = false; syncHeat(); renderHeatResult(); saveHeat(); }
   function renderHeatResult() {
     const card = $('#hResCard'), cc = $('#hConclCard'); if (!card) return;
     const ok = ht.samples.length >= 3; card.hidden = !ok; cc.hidden = !ok;
@@ -529,11 +529,11 @@ function createPanels(api) {
     return ks.length ? [...new Set(ks)] : null;
   }
   function stopAll() {
-    if (bt.running) { bt.running = false; bt.result = analyzeBoost(); }
-    ht.running = false;
+    if (bt.running) { bt.running = false; bt.result = analyzeBoost(); saveBoost(); }
+    if (ht.running) { ht.running = false; saveHeat(); }
     syncBoost(); syncHeat();
   }
-  function reportLines() {
+  function boostLines() {
     const L = [];
     const r = bt.result || (bt.sensor ? { checks: [bt.sensor], suspects: [] } : null);
     if (r) {
@@ -541,6 +541,10 @@ function createPanels(api) {
       r.checks.forEach(c => L.push(`[${LV[c.lvl]}] ${c.title}: ${c.text}`));
       if (r.suspects.length) L.push('Od czego zacząć: ' + r.suspects.map((s, i) => `${i + 1}. ${s[0]}`).join('; '));
     }
+    return L;
+  }
+  function heatLines() {
+    const L = [];
     if (ht.samples.length >= 3) {
       const h = analyzeHeat();
       L.push('', '== Ogrzewanie – test nagrzewania ==', 'Objaw: ' + SYMPTOMS.find(s => s[0] === ht.sym)[1]);
@@ -549,6 +553,9 @@ function createPanels(api) {
     }
     return L;
   }
+  function reportLines() { return boostLines().concat(heatLines()); }
+  function saveBoost() { if (bt.samples.length) api.saveLog('test-p0299', `Test doładowania, ${bt.pulls} ${bt.pulls === 1 ? 'przyspieszenie' : 'przyspieszeń'}`, boostLines().join('\n').trim() + '\n\n== Próbki (CSV) ==\n' + csvOf(bt.samples, BOOST_COLS, 'czas [s]', 1)); }
+  function saveHeat() { if (ht.samples.length >= 3) api.saveLog('test-ogrzewanie', 'Test nagrzewania', heatLines().join('\n').trim() + '\n\n== Próbki (CSV) ==\n' + csvOf(ht.samples, HEAT_COLS, 'czas [min]', 1)); }
   let rs = null;
   window.addEventListener('resize', () => { clearTimeout(rs); rs = setTimeout(() => { if (cur === 'boost') renderBoostResult(); if (cur === 'heat') drawHeat(); }, 200); });
   return { render, refresh, onTab, tick, keysFor, stopAll, reportLines, busy: () => bt.running || ht.running };

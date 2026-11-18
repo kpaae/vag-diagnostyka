@@ -28,6 +28,19 @@
   let view = store.get('group', 'silnik'); if (!['silnik', 'chlodzenie', 'doladowanie', 'mieszanka', 'all'].includes(view)) view = 'silnik';
   let report = blankReport();
   const logBuf = []; let logTimer = null;
+  const sess = { on: false, log: [], id: null, ok: false };
+  let journal = null;
+  function sessStart() { sess.on = true; sess.log = []; sess.id = Date.now() + '-komunikacja'; sess.ok = false; }
+  function sessSave(final) {
+    if (!journal || !sess.log.length) return;
+    journal.add('komunikacja', sess.ok ? 'Log komunikacji' : 'Log nieudanego połączenia', sess.log.join('\n'), { id: sess.id, quiet: !final });
+  }
+  function sessEnd() {
+    if (!sess.on) return;
+    if (journal && sess.ok) journal.regStop(CAT);
+    sessSave(true); sess.on = false;
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden && sess.on && journal) { if (sess.ok) journal.regSave(CAT, true); sessSave(false); } });
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
   function blankReport() { return { vin: null, calib: null, readiness: null, obd: null, freeze: null, modules: [], absent: [], adapter: null, at: null }; }
@@ -53,6 +66,7 @@
   function logLine(s) {
     const t = new Date(); const ts = t.toTimeString().slice(0, 8) + '.' + String(t.getMilliseconds()).padStart(3, '0');
     logBuf.push(ts + '  ' + s); if (logBuf.length > 1500) logBuf.splice(0, logBuf.length - 1500);
+    if (sess.on) { sess.log.push(ts + '  ' + s); if (sess.log.length > 40000) sess.log.splice(0, 5000); }
     if (!$('#tab-log').hidden && !logTimer) logTimer = setTimeout(renderLog, 400);
   }
   function renderLog() { logTimer = null; const p = $('#log'); const atBottom = p.scrollTop + p.clientHeight >= p.scrollHeight - 30; p.textContent = logBuf.join('\n'); if (atBottom) p.scrollTop = p.scrollHeight; }
@@ -63,7 +77,7 @@
     $$('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b ? 'true' : 'false'));
     ['live', 'boost', 'heat', 'errors', 'tools', 'state', 'log'].forEach(t => { $('#tab-' + t).hidden = t !== b.dataset.tab; });
     currentTab = b.dataset.tab;
-    if (b.dataset.tab === 'log') renderLog();
+    if (b.dataset.tab === 'log') { renderLog(); journal && journal.render(); }
     if (b.dataset.tab === 'live') { sizeSparks(); updateTiles(); }
     panels && panels.onTab(currentTab);
   }));
@@ -185,6 +199,7 @@
         Object.assign(vals, res);
         for (const d of DERIVED) { const v = d.calc(vals); if (v != null && isFinite(v)) { vals[d.key] = v; res[d.key] = v; } }
         take(res);
+        journal && journal.regTick(vals, CAT);
         if (rec) { const row = { t: (Date.now() - rec.t0) / 1000 }; for (const k of wanted) if (vals[k] != null && seen[k] === cycle) { row[k] = vals[k]; rec.keys.add(k); } rec.rows.push(row); $('#btnRec').textContent = `Zatrzymaj · ${rec.rows.length}`; }
         if (!$('#tab-live').hidden) updateTiles();
         panels && panels.tick();
@@ -215,6 +230,7 @@
     if (!rec) { rec = { t0: Date.now(), rows: [], keys: new Set() }; b.classList.add('rec-on'); b.textContent = 'Zatrzymaj · 0'; $('#recBox').hidden = true; if (!polling) startPolling(); return; }
     b.classList.remove('rec-on'); b.textContent = 'Nagrywaj';
     const r = rec; rec = null; lastRec = r;
+    if (journal && r.rows.length) journal.add('nagranie', `Nagranie, ${Math.round(r.rows[r.rows.length - 1].t)} s`, csv(r), { ext: 'csv' });
     $('#recInfo').textContent = `Nagranie: ${r.rows.length} ${plural(r.rows.length, 'próbka', 'próbki', 'próbek')}, ${fmtNum(r.rows.length ? r.rows[r.rows.length - 1].t : 0, 0)} s, ${r.keys.size} ${plural(r.keys.size, 'parametr', 'parametry', 'parametrów')}`;
     $('#recBox').hidden = false;
   };
@@ -363,6 +379,7 @@
     if (!mode) return;
     panels && panels.stopAll(); tools && tools.stopAll();
     stopPolling(); elm = null; tr = null; mode = null; setButtons();
+    logLine('— połączenie przerwane'); sessEnd();
     chip('Połączenie przerwane', ''); banner('Połączenie z adapterem zostało przerwane. Sprawdź adapter i połącz ponownie.', 'warn');
   }
   async function disconnect() {
@@ -370,7 +387,8 @@
     if (tools) await tools.stopAll();
     stopPolling();
     const t = tr; tr = null; elm = null; mode = null;
-    if (t) { try { await t.close(); } catch (e) {} }
+    if (t) { try { await t.close(); } catch (e) {} logLine('— rozłączono'); }
+    sessEnd();
     chip('Rozłączony', ''); setButtons();
   }
   function setButtons() {
@@ -386,6 +404,7 @@
     if (rec) $('#btnRec').click();
     await disconnect();
     vals = {}; seen = {}; hist = {}; mm = {}; report = blankReport(); cycle = 0;
+    sessStart(); journal && journal.startSession();
     $('#scanProgress').textContent = '';
     renderObd(); renderModules(); renderState(); updateAlerts(); buildTiles();
     try {
@@ -399,6 +418,7 @@
       if (!s.size) { logLine('— brak odpowiedzi na CAN 500 kb/s, próba automatycznego wyboru protokołu'); await e.send('ATSP0'); await e.send('0100', 10000); e.cur = null; s = await e.op(() => e.discoverPids()); }
       if (!s.size) throw new Error('Sterownik silnika nie odpowiada. Włącz zapłon i spróbuj ponownie.');
       elm = e; sup = s; mode = kind;
+      sess.ok = true; journal && journal.regStart();
       report.adapter = `${id} · ${t.name}`;
       chip(`${t.name} · ${id}`, 'on');
       $('#banner').hidden = true;
@@ -409,6 +429,7 @@
       const msg = friendly(err);
       logLine('! ' + (err.message || err));
       const t = tr; tr = null; elm = null; mode = null; if (t) { try { await t.close(); } catch (e) {} }
+      if (msg !== 'filtered' && msg !== null) sessEnd(); else sess.on = false;
       chip('Rozłączony', ''); setButtons(); buildTiles();
       if (msg === 'filtered') banner('Nie widzisz swojego adaptera na liście? Niektóre adaptery nie podają nazwy. Pokaż wszystkie urządzenia i wybierz to, które znika z listy po wyjęciu adaptera z gniazda.', 'info', { label: 'Pokaż wszystkie urządzenia', fn: () => connect('ble', true) });
       else if (msg) { banner(msg, 'error'); $('#errBadge').hidden = true; }
@@ -529,6 +550,7 @@
       report.at = new Date();
       const n = report.modules.reduce((a, m) => a + m.dtcs.length, 0);
       prog(`Gotowe ${report.at.toLocaleTimeString('pl-PL')}: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}.`);
+      journal && journal.add('raport', `Raport po skanie: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}`, buildReport());
     } catch (err) { prog('Skanowanie przerwane: ' + err.message); logLine('! ' + err.message); }
     finally { scanning = false; renderModules(); setButtons(); }
   }
@@ -609,7 +631,13 @@
   $('#btnLogClear').onclick = () => { logBuf.length = 0; renderLog(); };
 
   /* ---------- start ---------- */
+  journal = createJournal({
+    esc, plural, copyText, download, framed, logLine, store, vin: () => report.vin,
+    version: typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'dev'
+  });
+  const saveLog = (kind, title, text, opt) => journal.add(kind, title, text, opt);
   panels = createPanels({
+    saveLog,
     vals: () => vals, avail, stateOf, tokens, store, CAT, DTC_DESC, MODULES,
     esc, fmtNum, fmtVal, plural, copyText, logLine,
     elm: () => elm, mode: () => mode, sup: () => sup, report: () => report,
@@ -618,7 +646,7 @@
   });
   tools = createTools({
     elm: () => elm, esc, fmtNum, plural, copyText, download, stamp, framed, logLine, store, MODULES,
-    report: () => report, pause
+    report: () => report, pause, saveLog
   });
   tools.render();
   syncSeg(); setButtons();

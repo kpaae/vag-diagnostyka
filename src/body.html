@@ -26,7 +26,7 @@
       <button type="button" role="tab" data-tab="errors" aria-selected="false">Błędy<span id="errBadge" class="badge" hidden></span></button>
       <button type="button" role="tab" data-tab="tools" aria-selected="false">Narzędzia</button>
       <button type="button" role="tab" data-tab="state" aria-selected="false">Stan</button>
-      <button type="button" role="tab" data-tab="log" aria-selected="false">Komunikacja</button>
+      <button type="button" role="tab" data-tab="log" aria-selected="false">Logi</button>
     </nav>
   </div>
 </div>
@@ -142,6 +142,8 @@
   </section>
 
   <section id="tab-log" hidden>
+    <div id="journalPanel" class="pstack"></div>
+    <h2 class="sect" style="margin-top:22px">Surowa komunikacja</h2>
     <div class="toolbar">
       <span class="muted" style="font-size:14px">Surowa wymiana z adapterem, ostatnie 1500 linii. Przydaje się, gdy coś nie działa.</span>
       <div class="actions">
