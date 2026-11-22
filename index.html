@@ -137,7 +137,7 @@ main { padding-block: 16px 56px; }
 .card-h .n { margin-left: auto; font: 500 12px var(--f-mono); color: var(--muted); }
 .ident { font: 12px/1.55 var(--f-mono); color: var(--muted); word-break: break-word; }
 .dtc { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; padding: 9px 0 2px; border-top: 1px solid var(--line); }
-.dtc code { font: 600 14px/1.3 var(--f-mono); }
+.dtc > code { font: 600 14px/1.3 var(--f-mono); max-width: 9.5em; }
 .dtc .d { font-size: 14px; line-height: 1.35; }
 .flags { grid-column: 2; display: flex; gap: 4px; flex-wrap: wrap; }
 .flag { font: 500 11px/1 var(--f-mono); padding: 4px 6px; border-radius: 4px; background: var(--surface-2); color: var(--muted); }
@@ -310,6 +310,14 @@ details.help a { color: var(--accent); }
 .cz .small { font-size: 12px; margin: 4px 0; }
 .cz .warnp { margin: 6px 0; padding: 6px 8px; border-left: 3px solid #e0a030; background: rgba(224,160,48,.1); }
 .cz a { color: inherit; text-decoration: underline; }
+
+/* Błędy VAG: numer producenta i kontekst z danych rozszerzonych */
+.dtc .vagmeta, .dtc .vagctx, .dtc .cz { grid-column: 2; }
+.dtc .vagmeta { display: block; font-size: 12px; color: var(--muted, #8a949e); margin-top: 3px; }
+.dtc .vagmeta code { font: 500 12px/1.3 var(--f-mono); }
+.dtc .vagctx { display: block; font-size: 13px; margin-top: 3px; }
+.simtbl td.sp { color: var(--muted, #8a949e); }
+.simtbl tr.off td { opacity: .45; }
 </style>
 <div class="wrap">
   <header class="top">
@@ -317,7 +325,7 @@ details.help a { color: var(--accent); }
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-18 19:28 UTC</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-22 10:32 UTC</p>
       </div>
     </div>
     <div class="conn">
@@ -416,6 +424,7 @@ details.help a { color: var(--accent); }
           <dt>Sterownik</dt><dd id="sEcu">—</dd>
           <dt>Kalibracja</dt><dd id="sCal">—</dd>
           <dt>CVN</dt><dd id="sCvn">—</dd>
+          <dt>Przebieg</dt><dd id="sKm">—</dd>
         </dl>
       </div>
       <div class="card">
@@ -472,7 +481,7 @@ details.help a { color: var(--accent); }
 </main>
 
 <script>
-const APP_VERSION = '2026-11-18 19:28 UTC';
+const APP_VERSION = '2026-11-22 10:32 UTC';
 /* ===== VAG Diagnostyka – rdzeń: ELM327 / OBD-II / UDS / symulator ===== */
 'use strict';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -521,7 +530,7 @@ const MODULES = [
   { addr: '17', name: 'Zestaw wskaźników', tx: 0x714, rx: 0x77E },
   { addr: '19', name: 'Gateway', tx: 0x710, rx: 0x77A },
   { addr: '44', name: 'Wspomaganie kierownicy', tx: 0x712, rx: 0x77C },
-  { addr: '56', name: 'Radio', tx: 0x773, rx: 0x7DD }
+  { addr: '5F', name: 'Elektronika informacyjna (radio, MIB)', tx: 0x773, rx: 0x7DD }
 ];
 /* BMW (D-CAN, adresowanie rozszerzone: tester 0x6F1, odpowiedź 0x600 + adres). Seria F/G – UDS, seria E od ok. 2007 – KWP2000. */
 const BMW_MODULES = [
@@ -840,6 +849,7 @@ function decodeUdsDtc(b0, b1, b2, st, bmw) {
   if (st & 0x08) flags.push('potwierdzony');
   if (st & 0x04) flags.push('oczekujący');
   if (st & 0x80) flags.push('kontrolka');
+  if (st & 0x02) flags.push('w tym cyklu jazdy');
   flags.push('status 0x' + hex2(st));
   return { code, ftb: hex2(b2), raw: hex2(b0) + hex2(b1) + hex2(b2), full: bmw ? code : `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: (bmw ? bmwDesc(code) : DTC_DESC[code]) || '' };
 }
@@ -1167,6 +1177,12 @@ class ELM {
       const b = bytesOf(r.data).slice(6);
       if (b.length > 1 && b[0] === rec) ext.push({ rec, bytes: b.slice(1) });
     }
+    if (mod.bmw == null) for (const rec of [0x70, 0x71]) {   // VAG: rekord silnika/skrzyni i dynamiczna ramka zamrożona
+      const r = await this.ureq(mod, '1906' + raw + hex2(rec), { attempts: 1 });
+      if (r.err) continue;
+      const b = bytesOf(r.data).slice(6);
+      if (b.length > 1 && b[0] === rec) ext.push({ rec, bytes: b.slice(1) });
+    }
     let snap = null;
     const s = await this.ureq(mod, '1904' + raw + 'FF', { attempts: 2 });
     if (!s.err) { const b = bytesOf(s.data).slice(6); if (b.length) snap = b; }
@@ -1264,6 +1280,15 @@ class ELM {
       }
     };
   }
+  /* VAG: przebieg i zegar auta teraz (0x02BD), z gatewaya, a gdy nie odpowie – z silnika. */
+  async readVagStamp() {
+    for (const mod of [{ tx: 0x710, rx: 0x77A }, { tx: 0x7E0, rx: 0x7E8 }]) {
+      const b = await this.readDidRaw(mod, 0x02BD);
+      const st = parseVagStamp(b);
+      if (st) return { ...st, src: hex3(mod.tx) };
+    }
+    return null;
+  }
   async readModuleDtcs(mod) {
     if (mod.bmw != null) return this.readBmwDtcs(mod);
     await this.select(mod.tx, mod.rx);
@@ -1291,6 +1316,14 @@ class ELM {
     }
     const d = await this.readModuleDtcs(mod);
     info.dtcs = d.dtcs; info.untested = d.untested || 0; if (d.err) info.err = d.err;
+    if (mod.bmw == null) {
+      /* VAG: numer błędu to własny numer producenta, nie kod SAE. Kod P i opis tylko z bazy znanego sterownika. */
+      const engine = mod.tx === 0x7E0;
+      if (engine) { const fam = vagEcuFamily(info.ident['Nr części']); if (fam) { info.family = fam; info.ident['Rodzina sterownika'] = fam; } }
+      info.dtcs = info.dtcs.map(x => resolveVagDtc(x, info.family, engine));
+      /* Kontekst każdego błędu (ile razy, przy jakim przebiegu, kiedy): VAG trzyma go w danych rozszerzonych. */
+      for (const x of info.dtcs.slice(0, 12)) { try { x.details = await this.readDtcDetails(mod, x.raw); } catch (e) { x.details = { err: e.message, ext: [], snap: null }; } }
+    }
     return info;
   }
   async clearModule(mod) {
@@ -1340,7 +1373,8 @@ class ELM {
       for (let tx = 0x700; tx < 0x775; tx++) {
         if (known.has(tx)) continue;
         onProgress && onProgress(tx);
-        const mod = { addr: '??', name: 'Moduł 0x' + hex3(tx), tx, rx: tx + 0x6A };
+        const nm = VAG_MOD_NAMES[tx];
+        const mod = { addr: nm ? nm[0] : '??', name: nm ? nm[1] : 'Moduł 0x' + hex3(tx), tx, rx: tx + 0x6A };
         if (await this.probe(mod, false)) found.push(mod);
       }
     } finally { this.st = '64'; await this.send('ATST64'); }
@@ -1348,6 +1382,207 @@ class ELM {
   }
 }
 
+
+/* Dane wygenerowane z bri3d/VW_Flash (https://github.com/bri3d/VW_Flash): data/box_codes.csv, data/dtcs.csv.
+   Przeliczniki pomiarów Simos18 w src/vagdb.js pochodzą z logs/csv/parameters_22.csv tego projektu.
+
+BSD 2-Clause License
+
+Copyright (c) 2022-2024, Brian Ledbetter and contributors
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+const VAG_ECU_FAMILY = {"Simos10":["03F906070A","03F906070AA","03F906070AB","03F906070AJ","03F906070AK","03F906070B","03F906070BC","03F906070BD","03F906070BG","03F906070BJ","03F906070BM","03F906070BP","03F906070BQ","03F906070CM","03F906070CN","03F906070D","03F906070E","03F906070ET","03F906070FD","03F906070FJ","03F906070FR","03F906070FS","03F906070FT","03F906070GA","03F906070GB","03F906070GC","03F906070GD","03F906070GE","03F906070GF","03F906070GG","03F906070HE","03F906070HF","03F906070HG","03F906070J","03F906070JD","03F906070JF","03F906070JG","03F906070JK","03F906070JR","03F906070JS","03F906070JT","03F906070KA","03F906070KC","03F906070KJ","03F906070KK","03F906070KL","03F906070KM","03F906070KS","03F906070KT","03F906070LA","03F906070LG"],"Simos12":["06K906070AA","06K906070AB","06K906070AC","06K906070D","06K906070F","06K906070H","06K906070J","06K906070K","06K906070L","06K906070M","06K906070N","06K906070P","06K906070R","06K906070T"],"Simos18.1/18.6":["06K906071AA","06K906071AB","06K906071AC","06K906071AD","06K906071AE","06K906071AF","06K906071AG","06K906071AH","06K906071AJ","06K906071AK","06K906071AL","06K906071AS","06K906071AT","06K906071B","06K906071BA","06K906071BB","06K906071BC","06K906071BE","06K906071BG","06K906071BJ","06K906071BL","06K906071BN","06K906071BQ","06K906071C","06K906071CB","06K906071D","06K906071E","06K906071J","06K906071K","06K906071L","06K906071M","06K906071N","06K906071P","06K906071Q","06K906071R","06K906071S","06K906071T","06K907425B","06K997071B","06K997071C","06K997071D","06K997071E","06K997071F","06K997071G","06K997071H","06K997071J","06K997071K","06K997071L","06K997071M","06K997071N","06K997071P","06K997071Q","06K997071R","06K997071S","06K997071T","06K997072","06K997072A","06K997072B","06K997072C","06K997072D","06K997072E","06K997072F","06K997072G","06K997072H","1K8906259","3CG906259","3ED907115","3G0906259","3G0906259B","3G0906264","3G0906264A","3VD906264","3VD906264A","4G0906264","4G5907115A","5G0906259","5G0906259A","5G0906259B","5G0906259C","5G0906259D","5G0906259E","5G0906259F","5G0906259G","5G0906259H","5G0906259J","5G0906259K","5G0906259L","5GM906264","5N0906259","5NG906264","5TD906264","6C0906264","8S0906259","8S0906259B","8S0906259C","8T2907115","8U0906259","8U0906259A","8V0906259A","8V0906259E","8V0906259H","8V0906259J","8V0906259K","8V0906264D","8V0906264F","8V0906264H","8V0906264J","8V0906264K","8V0906264M","8VD906264","8VD906264A","8X0906259"],"Simos18.10":["3CN906259","3CN906259B","3CN906259C","3CN906259E","3CN906259F","3ED907115B","3G0906259F","3G0906259G","3G0906259J","3GD906259B","5G0906259N","5G0906259Q","5G0906259S","5G0906259T","5NA906259A","81A906259","81A906259A","83A906259","83A906259C","8S0906259J","8S0906259R","8V0906259N","8V0906259R"]};
+/* Simos18: numer błędu VAG (3 bajty z UDS 0x19, dziesiętnie jak w VCDS) → [kod P/U z bajtem typu usterki, opis ze sterownika (ang.)] */
+const SIMOS18_DTC = {"14823":["P060600","ECM/PCM Processor"],"14824":["P157500","Right Electro-Hydraulic Engine Mount Solenoid Valve Short circuit to B+"],"14825":["P157600","Right Electro-Hydraulic Engine Mount Solenoid Valve Short circuit to ground"],"14826":["P157700","Right Electro-Hydraulic Engine Mount Solenoid Valve Open circuit"],"14827":["P157100","Left Electro-Hydraulic Engine Mount Solenoid Valve Short circuit to B+"],"14828":["P157200","Left Electro-Hydraulic Engine Mount Solenoid Valve Short circuit to ground"],"14829":["P157300","Left Electro-Hydraulic Engine Mount Solenoid Valve Open circuit"],"14830":["P241400","02 Sensor Exhaust Sample Error, Bank 1 Sensor 1"],"14831":["P138700","Ctrl. module faulty"],"14832":["P138700","Ctrl. module faulty"],"14842":["P032700","Knock Sensor 1 Circ. Low Input"],"14844":["P057200","Brake Switch \"A\" Circuit Low"],"14846":["P256300","Turbocharger Boost Control Position Sensor Circuit Range/Performance"],"14847":["P226300","Turbocharger/Supercharger Boost System Performance"],"14849":["P004500","Turbocharger/Supercharger Boost Control Solenoid \"A\" Circuit/Open"],"14851":["P334A00","Charge pressure actuator Electrical error"],"14863":["P036600","Camshaft Pos.Sensor \"B\" Circ. (Bank 1) Range/Performance"],"14864":["P034100","Camshaft Pos.Sensor Circ. Range/Performance"],"14865":["P036500","Camshaft Position Sensor \"B\" Circuit (Bank 1)"],"14866":["P034000","Camshaft Position Sensor Circuit"],"14867":["P001700","Crankshaft Position-Camshaft Position Correlation Bank 1 Sensor B"],"14868":["P001600","Crankshaft Position-Camshaft Position Correlation Bank 1 Sensor A"],"14869":["P001400","B Camshaft Position (Bank1) Timing over-advanced or System Performance"],"14870":["P001100","A Camshaft Position (Bank1) Timing over-advanced or System Performance"],"14871":["P036600","Camshaft Pos.Sensor \"B\" Circ. (Bank 1) Range/Performance"],"14872":["P034100","Camshaft Pos.Sensor Circ. Range/Performance"],"14873":["P036600","Camshaft Pos.Sensor \"B\" Circ. (Bank 1) Range/Performance"],"14874":["P034100","Camshaft Pos.Sensor Circ. Range/Performance"],"14913":["P023400","Turbo/Super Charger Overboost Condition"],"14914":["P029900","Turbo/Super Charger Underboost"],"14916":["P042000","Catalyst System,Bank1 Efficiency Below Threshold"],"14920":["P172400","Signal for starter lock Short circuit to ground"],"14922":["P060600","ECM/PCM Processor"],"14923":["P160900","Crash shut-off was triggered"],"14925":["P033500","Crankshaft Position Sensor A Circuit"],"14926":["P033500","Crankshaft Position Sensor A Circuit"],"14927":["P033600","Crankshaft Position Sensor A Circuit Range/Performance"],"14928":["P033900","Crankshaft Position Sensor \"A\" Circuit Intermittent"],"14929":["P033600","Crankshaft Position Sensor A Circuit Range/Performance"],"14930":["P033600","Crankshaft Position Sensor A Circuit Range/Performance"],"14931":["P033600","Crankshaft Position Sensor A Circuit Range/Performance"],"14939":["P308200","Clutch position sensor Implausible signal"],"14955":["P209700","Post Catalyst Fuel Trim System Bank 1 Too Rich"],"14956":["P209600","Post Catalyst Fuel Trim System Bank1 Too Lean"],"14961":["P013300","O2 Sensor Circ.,Bank1-Sensor1 Slow Response"],"14982":["P060600","ECM/PCM Processor"],"14983":["P060100","Internal Contr.Module Memory Check Sum Error"],"14984":["P060100","Internal Contr.Module Memory Check Sum Error"],"14985":["P060100","Internal Contr.Module Memory Check Sum Error"],"14989":["P164000","Ctrl. module faulty"],"14990":["P157000","Engine Control Module (ECM) disabled"],"14993":["P025D00","Fuel Pump Module Control Circuit High"],"14994":["P025C00","Fuel Pump Module Control Circuit Low"],"14995":["P025A00","Fuel Pump Module Control Circuit/Open"],"14996":["P304500","Fuel pump electronics Faulty"],"14997":["P308E00","Fuel pump electronics Excess temp."],"14998":["P308D00","Fuel pump Engine speed too low"],"14999":["P304300","Fuel pump mechanical malfunction"],"15000":["P304400","Fuel pump Short circuit"],"15001":["P307300","Fuel pump Electrical error in circuit"],"15002":["P307700","Fuel Pump Electronics, voltage supply Electrical error"],"15005":["P008900","Fuel Pressure Regulator 1 Performance"],"15007":["P008900","Fuel Pressure Regulator 1 Performance"],"15008":["P044500","Evaporativ Emiss.System Purge Control Valve Circ. Shorted"],"15009":["P044500","Evaporativ Emiss.System Purge Control Valve Circ. Shorted"],"15010":["P044400","Evaporativ Emiss.System Purge Control Valve Circ. Open"],"15013":["P003300","Turbo Charger Bypass Valve Control Circuit"],"15014":["P003400","Turbo Charger Bypass Valve Control Circuit Low"],"15015":["P003300","Turbo Charger Bypass Valve Control Circuit"],"15025":["P181C00","Gear recognition sensor Implausible signal"],"15026":["P181C00","Gear recognition sensor Implausible signal"],"15027":["P125000","Fuel level too low"],"15028":["P017100","Fuel Trim,Bank1 System too Lean"],"15029":["P017200","Fuel Trim,Bank1 System too Rich"],"15030":["P218700","System too lean at idle, Bank 1"],"15031":["P218800","System too rich at idle, Bank 1"],"15032":["P21F800","Fuel Control System \"B\" Too Lean at Idle Bank 1"],"15033":["P21F900","Fuel Control System \"B\" Too Rich at Idle Bank 1"],"15034":["P019000","Fuel Rail Pressure Sensor \"A\" Circuit"],"15035":["P019200","Fuel Rail Pressure Sensor \"A\" Circuit Low Input"],"15038":["P253900","Low Pressure Fuel System Sensor Circuit"],"15039":["P254100","Low Pressure Fuel System Sensor Circuit Low Input"],"15041":["P119A00","Fuel pressure sensor Malfunction"],"15042":["P119A00","Fuel pressure sensor Malfunction"],"15044":["P019100","Fuel Rail Pressure Sensor \"A\" Circuit Range/Performance"],"15048":["P048000","Cooling Fan 1 Control Circuit"],"15053":["U100800","Diagnostic interface for data bus Read out DTC"],"15057":["P008800","Fuel Rail/System Pressure - Too High"],"15058":["P008700","Fuel Rail/System Pressure - Too Low"],"15059":["P008700","Fuel Rail/System Pressure - Too Low"],"15060":["P230200","Ignition Coil \"A\" Secondary Circuit"],"15061":["P230500","Ignition Coil \"B\" Secondary Circuit"],"15062":["P230800","Ignition Coil \"C\" Secondary Circuit"],"15063":["P231100","Ignition Coil \"D\" Secondary Circuit"],"15064":["P230000","Ignition Coil \"A\" Primary Control Circuit Low"],"15065":["P230300","Ignition Coil \"B\" Primary Control Circuit Low"],"15066":["P230600","Ignition Coil \"C\" Primary Control Circuit Low"],"15067":["P230900","Ignition Coil \"D\" Primary Control Circuit Low"],"15068":["P230100","Ignition Coil \"A\" Primary Control Circuit High"],"15069":["P230400","Ignition Coil \"B\" Primary Control Circuit High"],"15070":["P230700","Ignition Coil \"C\" Primary Control Circuit High"],"15071":["P231000","Ignition Coil \"D\" Primary Control Circuit High"],"15072":["P157000","Engine Control Module (ECM) disabled"],"15073":["P157000","Engine Control Module (ECM) disabled"],"15074":["P130A00","Hide cylinder"],"15077":["P050700","Idle Control System RPM Higher than Expected"],"15078":["P050600","Idle Control System RPM Lower than Expected"],"15082":["P233600","Cylinder #1 Above Knock Threshold"],"15083":["P233700","Cylinder #2 Above Knock Threshold"],"15084":["P233800","Cylinder #3 Above Knock Threshold"],"15085":["P233900","Cylinder #4 Above Knock Threshold"],"15087":["P008B00","Low Pressure Fuel System Pressure - Too High"],"15088":["P008A00","Low Pressure Fuel System Pressure - Too Low"],"15090":["P069100","Cooling Fan 1 Control Circuit Low"],"15099":["P006800","MAP/MAF - Throttle Position Correlation"],"15100":["P006800","MAP/MAF - Throttle Position Correlation"],"15101":["P006800","MAP/MAF - Throttle Position Correlation"],"15120":["P010800","Manifold Abs.Pressure or Bar.Pressure High Input"],"15121":["P010700","Manifold Abs.Pressure or Bar.Pressure Low Input"],"15125":["P030100","Cyl.1 Misfire Detected"],"15126":["P069200","Cooling Fan 1 Control Circuit High"],"15128":["P030200","Cyl.2 Misfire Detected"],"15129":["P194400","Coolant fan control module 1 Excess temp."],"15130":["P195000","Coolant fan for coolant difficulty of movement/blocked"],"15131":["P030300","Cyl.3 Misfire Detected"],"15132":["P194500","Coolant Fan Control (FC) Control Module 1, fan activation Short circuit"],"15133":["P194600","Coolant fan control module 1 Faulty/open circuit in voltage supply"],"15134":["P030400","Cyl.4 Misfire Detected"],"15137":["P030000","Random/Multiple Cylinder Misfire Detected"],"15139":["P060600","ECM/PCM Processor"],"15145":["P154500","Throttle valve control system Malfunction"],"15146":["P154500","Throttle valve control system Malfunction"],"15148":["P021900","Engine Overspeed Condition"],"15149":["P021900","Engine Overspeed Condition"],"15152":["P150C00","RPM request from transmission cannot be performed"],"15154":["P15A100","Neutral position sensor Implausible signal"],"15155":["P15A100","Neutral position sensor Implausible signal"],"15157":["P160A00","Ctrl. module faulty"],"15158":["P160A00","Ctrl. module faulty"],"15159":["P160A00","Ctrl. module faulty"],"15170":["P019800","Engine Oil Temperature Sensor Circuit high"],"15171":["P019600","Engine Oil Temperature Sensor Circuit range/performance"],"15177":["P039B00","Cylinder 1 Pressure Too High"],"15178":["P03A500","Cylinder 2 Pressure Too High"],"15179":["P03AF00","Cylinder 3 Pressure Too High"],"15180":["P03B900","Cylinder 4 Pressure Too High"],"15181":["P226100","Turbo Boost Pressure Not Detected Mechanical"],"15182":["P15A100","Neutral position sensor Implausible signal"],"15183":["P15A100","Neutral position sensor Implausible signal"],"15184":["P15A100","Neutral position sensor Implausible signal"],"15186":["P085100","Park/Neutral Switch Input Circuit Low"],"15187":["P085000","Park/Neutral Switch Input Circuit"],"15188":["P164B00","Oil pressure switch Malfunction"],"15189":["P164D00","Reduced oil pressure switch Malfunction"],"15190":["P164A00","Oil pressure switch Implausible signal"],"15191":["P164C00","Reduced oil pressure switch Implausible signal"],"15192":["P201000","Intake Manifold Runner Bank 1 Control Circuit High"],"15193":["P200900","Intake Manifold Runner Bank 1 Control Circuit Low"],"15194":["P200800","Intake Manifold Runner Bank 1 Control Circuit/Open"],"15195":["P201500","Intake Manifold Runner Position Sensor/Switch Circuit Range/Performance"],"15196":["P201700","Intake Manifold Runner Position Sensor/Switch Circuit High"],"15197":["P201400","Intake Manifold Runner Position Sensor/Switch Circuit"],"15198":["P200400","Intake Manifold Runner Control Bank 1 Stuck Open"],"15200":["P200600","Intake Manifold Runner Control Bank 1 Stuck Closed"],"15209":["P164E00","Oil pressure regulation valve Electrical error"],"15210":["P164E00","Oil pressure regulation valve Electrical error"],"15211":["P164E00","Oil pressure regulation valve Electrical error"],"15212":["P023800","Turbocharger Boost Sensor (A) Circ. High Input"],"15213":["P023700","Turbocharger Boost Sensor (A) Circ. Low Input"],"15217":["U101000","Electrical Parking Brake Control Module Read out DTC"],"15218":["P212300","Throttle/Pedal Pos. Sens./Switch D Circuit High Input"],"15219":["P212200","Throttle/Pedal Pos. Sens./Switch D Circuit Low Input"],"15220":["P212800","Throttle/Pedal Pos. Sens./Switch E Circuit High Input"],"15221":["P212700","Throttle/Pedal Pos. Sens./Switch E Circuit Low Input"],"15222":["P213800","Throttle/Pedal Position Sensor/Switch D/E Voltage Correlation"],"15224":["P213800","Throttle/Pedal Position Sensor/Switch D/E Voltage Correlation"],"15226":["P00AF00","Turbocharger/Supercharger Boost Control \"A\" Module Performance"],"15227":["P00AF00","Turbocharger/Supercharger Boost Control \"A\" Module Performance"],"15230":["P032600","Knock Sensor 1 Circuit Range/Performance"],"15236":["U102100","Body computer 1/ veh. elec sys CM / cent elec. Read out DTC"],"15237":["P056200","System Voltage Low Voltage"],"15239":["P068600","EMC/PCM Power Relay Control Circuit Low"],"15240":["P068700","EMC/PCM Power Relay Control Circuit High"],"15242":["P068700","EMC/PCM Power Relay Control Circuit High"],"15243":["P065900","Actuator Supply Voltage \"A\" Circuit High"],"15244":["P065800","Actuator Supply Voltage \"A\" Circuit Low"],"15245":["P065700","Actuator Supply Voltage \"A\" Circuit/Open"],"15259":["P139700","Sensor Wheel for Engine Speed adaptation limit reached"],"15261":["P219500","O2 Sensor Signal Stuck Lean Bank 1 Sensor 1"],"15262":["P219600","O2 Sensor Signal Stuck Rich Bank 1 Sensor 1"],"15263":["P15A000","Neutral position sensor Electrical error"],"15264":["P15A000","Neutral position sensor Electrical error"],"15265":["P209100","B Camshaft Position Actuator Control Circuit(Bank1) High"],"15266":["P104900","Bank1, camshaft adjustment valve (exhaust) Short circuit to ground"],"15267":["P105000","Bank1, camshaft adjustment valve (exhaust) Open circuit"],"15268":["P152600","Bank1, camshaft adjustment Short circuit to B+"],"15269":["P152700","Bank1, camshaft adjustment Short circuit to ground"],"15270":["P152800","Bank1, camshaft adjustment Open circuit"],"15277":["P060300","Internal Contr.Module (KAM) Error"],"15281":["P308800","Starter relay Electrical error in circuit"],"15282":["P305400","Starter does not turn Mechanically blocked or electrical malfunction"],"15283":["P167E00","Start/stop restart Maximum start time exceeded"],"15284":["P253500","Ignition Switch Run/ Start Position Curciut High"],"15288":["P304600","Starter relay 1 Electrical malfunction in circuit (relay stuck/does not switch)"],"15289":["P061500","Starter Relay Circuit"],"15290":["P061600","Starter Relay Circuit Low"],"15291":["P061700","Starter Relay Circuit High"],"15292":["P305000","Starter relay 2 Electrical malfunction in circuit (relay stuck/does not switch)"],"15293":["P304900","Activation starter relay 2 Open circuit"],"15294":["P304800","Activation starter relay 2 Short circuit to ground"],"15295":["P304700","Activation starter relay 2 Short circuit to B+"],"15296":["P305200","Starter activation, return message terminal 50 Short circuit to B+"],"15297":["P305300","Starter activation, return message terminal 50 Short circuit to ground/open circuit"],"15306":["P139700","Sensor Wheel for Engine Speed adaptation limit reached"],"15313":["P011800","Engine Coolant Temperature Sensor 1 Circuit High"],"15314":["P011700","Engine Coolant Temperature Sensor 1 Circuit Low"],"15315":["U042500","Invalid Data Received From Auxiliary Heater Control Module"],"15318":["P011600","Engine Coolant Temperature Sensor 1 Circuit Range/Performance"],"15319":["P011600","Engine Coolant Temperature Sensor 1 Circuit Range/Performance"],"15320":["P181E00","Gear recognition sensor Gear position implausible"],"15321":["P181D00","Gear recognition sensor Error"],"15323":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"15324":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"15326":["P168200","Databus drivetrain Implausible message from ABS control module"],"15327":["P254500","Torque Management Request Input Signal \"A\" Range/Performance"],"15328":["P254500","Torque Management Request Input Signal \"A\" Range/Performance"],"15329":["P162400","Requirement - malfunction lamp on active"],"15332":["P218100","Cooling System Performance"],"15336":["P181B00","Gear recognition sensor Electrical error"],"15337":["P012300","Throttle/Pedal Pos.Sensor A Circ. High Input"],"15338":["P012200","Throttle/Pedal Pos.Sensor A Circ. Low Input"],"15339":["P022300","Throttle/Pedal Position Sensor/Switch B High Input"],"15340":["P022200","Throttle/Pedal Position Sensor/Switch B Low Input"],"15341":["P063800","Throttle Actuator Control (Bank1) Range/Performance"],"15342":["P063800","Throttle Actuator Control (Bank1) Range/Performance"],"15343":["P029900","Turbo/Super Charger Underboost"],"15344":["P063800","Throttle Actuator Control (Bank1) Range/Performance"],"15345":["P063800","Throttle Actuator Control (Bank1) Range/Performance"],"15346":["P063800","Throttle Actuator Control (Bank1) Range/Performance"],"15347":["P063800","Throttle Actuator Control (Bank1) Range/Performance"],"15348":["P063800","Throttle Actuator Control (Bank1) Range/Performance"],"15349":["P063800","Throttle Actuator Control (Bank1) Range/Performance"],"15350":["P012100","Throttle/Pedal Pos.Sensor A Circ. Range/Performance"],"15351":["P022100","Throttle/Pedal Position Sensor/Switch B Range/Performance"],"15353":["P063800","Throttle Actuator Control (Bank1) Range/Performance"],"15355":["P063800","Throttle Actuator Control (Bank1) Range/Performance"],"15364":["P161200","Engine control module (ECM) Incorrect coding"],"15365":["U030000","Internal Control Module Software Incompatibility"],"15366":["U030200","Software Incompatibility with Transmission Control Module"],"15367":["P056300","System Voltage High Voltage"],"15368":["P056200","System Voltage Low Voltage"],"15369":["P217700","System too lean off idle, Bank 1"],"15370":["P217800","System too rich off idle, Bank 1"],"15371":["P21F400","Fuel Control System \"B\" Too Lean Off Idle Bank 1"],"15372":["P064300","Sensor Reference Voltage \"A\" Circuit High"],"15373":["P064200","Sensor Reference Voltage \"A\" Circuit Low"],"15374":["P065300","Sensor Reference Voltage \"B\" Circuit High"],"15375":["P065200","Sensor Reference Voltage \"B\" Circuit Low"],"15376":["P229400","Fuel Pressure Regulator 2 Control Circuit"],"15377":["P229500","Fuel Pressure Regulator 2 Control Circuit Low"],"15378":["P009200","Fuel Pressure Regulator 1 Control Circuit High"],"15379":["P21F500","Fuel Control System \"B\" Too Rich Off Idle Bank 1"],"15381":["P11A100","Cam Shift Actuator \"A\" Cylinder 1 Circuit/Open"],"15382":["P11A500","Cam Shift Actuator \"A\" Cylinder 2 Circuit/Open"],"15383":["P11A900","Cam Shift Actuator \"A\" Cylinder 3 Circuit/Open"],"15384":["P11AD00","Cam Shift Actuator \"A\" Cylinder 4 Circuit/Open"],"15385":["P11A100","Cam Shift Actuator \"A\" Cylinder 1 Circuit/Open"],"15386":["P11A500","Cam Shift Actuator \"A\" Cylinder 2 Circuit/Open"],"15387":["P11A900","Cam Shift Actuator \"A\" Cylinder 3 Circuit/Open"],"15388":["P11AD00","Cam Shift Actuator \"A\" Cylinder 4 Circuit/Open"],"15389":["P11BF00","Cam Shift Actuator Outlet \"A\" Cylinder 1 Range/Performance"],"15390":["P11C100","Cam Shift Actuator Outlet \"A\" Cylinder 2 Range/Performance"],"15391":["P11C300","Cam Shift Actuator Outlet \"A\" Cylinder 3 Range/Performance"],"15392":["P11C500","Cam Shift Actuator Outlet \"A\" Cylinder 4 Range/Performance"],"15394":["P11A200","Cam Shift Actuator \"A\" Cylinder 1 Range/Performance"],"15396":["P11A600","Cam Shift Actuator \"A\" Cylinder 2 Range/Performance"],"15398":["P11AA00","Cam Shift Actuator \"A\" Cylinder 3 Range/Performance"],"15400":["P11AE00","Cam Shift Actuator \"A\" Cylinder 4 Range/Performance"],"15401":["P11A300","Cam Shift Actuator \"B\" Cylinder 1 Circuit/Open"],"15402":["P11A700","Cam Shift Actuator \"B\" Cylinder 2 Circuit/Open"],"15403":["P11AB00","Cam Shift Actuator \"B\" Cylinder 3 Circuit/Open"],"15404":["P11AF00","Cam Shift Actuator \"B\" Cylinder 4 Circuit/Open"],"15405":["P11A300","Cam Shift Actuator \"B\" Cylinder 1 Circuit/Open"],"15406":["P11A700","Cam Shift Actuator \"B\" Cylinder 2 Circuit/Open"],"15407":["P11AB00","Cam Shift Actuator \"B\" Cylinder 3 Circuit/Open"],"15408":["P11AF00","Cam Shift Actuator \"B\" Cylinder 4 Circuit/Open"],"15409":["P11C000","Cam Shift Actuator Outlet \"B\" Cylinder 1 Circuit/Open"],"15410":["P11C200","Cam Shift Actuator Outlet \"B\" Cylinder 2 Circuit/Open"],"15411":["P11C400","Cam Shift Actuator Outlet \"B\" Cylinder 3 Circuit/Open"],"15412":["P11C600","Cam Shift Actuator Outlet \"B\" Cylinder 4 Circuit/Open"],"15414":["P11A400","Cam Shift Actuator \"B\" Cylinder 1 Range/Performance"],"15416":["P11A800","Cam Shift Actuator \"B\" Cylinder 2 Range/Performance"],"15418":["P11AC00","Cam Shift Actuator \"B\" Cylinder 3 Range/Performance"],"15420":["P11B000","Cam Shift Actuator \"B\" Cylinder 4 Range/Performance"],"15423":["P256500","Turbocharger Boost Control Position Sensor Circuit High"],"15424":["P256400","Turbocharger Boost Control Position Sensor Circuit Low"],"15431":["P25A900","Piston Cooling Oil Control Circuit/Open"],"15432":["P25AA00","Piston Cooling Oil Control Circuit Low"],"15433":["P25AB00","Piston Cooling Oil Control Circuit High"],"15434":["P21CF00","Cylinder 1 Injector \"B\" Circuit/Open"],"15435":["P21D000","Cylinder 2 Injector \"B\" Circuit/Open"],"15436":["P21D100","Cylinder 3 Injector \"B\" Circuit/Open"],"15437":["P21D200","Cylinder 4 Injector \"B\" Circuit/Open"],"15438":["P21DB00","Cylinder 1 Injector \"B\" Circuit Low"],"15439":["P21DE00","Cylinder 2 Injector \"B\" Circuit Low"],"15440":["P21E000","Cylinder 3 Injector \"B\" Circuit Low"],"15441":["P21E200","Cylinder 4 Injector \"B\" Circuit Low"],"15442":["P21DC00","Cylinder 1 Injector \"B\" Circuit High"],"15443":["P21DF00","Cylinder 2 Injector \"B\" Circuit High"],"15444":["P21E100","Cylinder 3 Injector \"B\" Circuit High"],"15445":["P21E300","Cylinder 4 Injector \"B\" Circuit High"],"15446":["P188900","Coolant shut-off valve Short circuit to ground/open circuit"],"15447":["P19A200","Transmission coolant valve Open circuit"],"15448":["P275300","Transmission Fluid Cooler Control Circuit/Open"],"15450":["P188900","Coolant shut-off valve Short circuit to ground/open circuit"],"15451":["P19A100","Transmission coolant valve Short circuit to ground"],"15452":["P275400","Transmission Fluid Cooler Control Circuit Low"],"15454":["P188800","Coolant shut-off valve Short circuit to B+"],"15455":["P19A000","Transmission coolant valve Short circuit to B+"],"15456":["P275500","Transmission Fluid Cooler Control Circuit High"],"15462":["P268100","Engine Coolant Bypass Valve Control Circuit/Open"],"15463":["P268200","Engine Coolant Bypass Valve Control Circuit Low"],"15464":["P268200","Engine Coolant Bypass Valve Control Circuit Low"],"15465":["P268300","Engine Coolant Bypass Valve Control Circuit High"],"15466":["P268300","Engine Coolant Bypass Valve Control Circuit High"],"15470":["P00B700","Engine Coolant Flow Low/Performance"],"15471":["P255700","Engine Coolant Level Sensor/Switch Circuit Range/Performance"],"15472":["P255600","Engine Coolant Level Sensor/Switch Circuit"],"15473":["P255600","Engine Coolant Level Sensor/Switch Circuit"],"15492":["P056300","System Voltage High Voltage"],"15493":["P056200","System Voltage Low Voltage"],"16447":["P000B00","\"B\" Camshaft Position Slow Response (Bank 1)"],"16448":["P000A00","\"A\" Camshaft Position Slow Response (Bank 1)"],"16452":["U041600","Invalid Data Received From Vehicle Dynamics Control Module"],"16453":["U041600","Invalid Data Received From Vehicle Dynamics Control Module"],"16464":["P00B700","Engine Coolant Flow Low/Performance"],"16465":["P00B700","Engine Coolant Flow Low/Performance"],"16466":["P00B700","Engine Coolant Flow Low/Performance"],"16467":["P210100","Throttle Actuator Control Motor Circuit Range/performance"],"16468":["P210300","Throttle Actuator \"A\" Control Motor Circuit High"],"16469":["P210000","Throttle Actuator Control Motor Circuit/Open"],"16470":["P012100","Throttle/Pedal Pos.Sensor A Circ. Range/Performance"],"16479":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"16483":["P050200","Vehicle Speed Sensor \"A\" Circuit Low Input"],"16484":["P050200","Vehicle Speed Sensor \"A\" Circuit Low Input"],"16485":["P050200","Vehicle Speed Sensor \"A\" Circuit Low Input"],"16486":["P050100","Vehicle Speed Sensor \"A\" Range/Performance"],"16487":["P050100","Vehicle Speed Sensor \"A\" Range/Performance"],"16488":["P050100","Vehicle Speed Sensor \"A\" Range/Performance"],"16489":["P050100","Vehicle Speed Sensor \"A\" Range/Performance"],"16490":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"16491":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"16492":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"16503":["P33B700","Cylinder 1 Combustion misfire during direct injection detected"],"16504":["P33B800","Cylinder 2 Combustion misfire during direct injection detected"],"16505":["P33B900","Cylinder 3 Combustion misfire during direct injection detected"],"16506":["P33BA00","Cylinder 4 Combustion misfire during direct injection detected"],"16507":["P33BF00","Cylinder 1 Combustion misfire during combined operation detected"],"16508":["P33C000","Cylinder 2 Combustion misfire during combined operation detected"],"16509":["P33C100","Cylinder 3 Combustion misfire during combined operation detected"],"16510":["P33C200","Cylinder 4 Combustion misfire during combined operation detected"],"16511":["P33AF00","Cylinder 1 Combustion misfire during intake manifold injection detected"],"16512":["P33B000","Cylinder 2 Combustion misfire during intake manifold injection detected"],"16513":["P33B100","Cylinder 3 Combustion misfire during intake manifold injection detected"],"16514":["P33B200","Cylinder 4 Combustion misfire during intake manifold injection detected"],"16782":["U044700","Invalid Data Received From Gateway \"A\""],"16784":["U044700","Invalid Data Received From Gateway \"A\""],"16785":["U044700","Invalid Data Received From Gateway \"A\""],"16786":["U044700","Invalid Data Received From Gateway \"A\""],"16796":["U040200","Invalid Data Received From Transmission Control Module"],"16797":["U040200","Invalid Data Received From Transmission Control Module"],"16801":["U040200","Invalid Data Received From Transmission Control Module"],"16803":["U042300","Invalid Data Received From Instrument Panel Cluster Control Module"],"16807":["U040200","Invalid Data Received From Transmission Control Module"],"16810":["U040200","Invalid Data Received From Transmission Control Module"],"16812":["U040200","Invalid Data Received From Transmission Control Module"],"16819":["P172300","Signal for starter lock Open circuit"],"16821":["P060300","Internal Contr.Module (KAM) Error"],"16822":["P060300","Internal Contr.Module (KAM) Error"],"16823":["P060300","Internal Contr.Module (KAM) Error"],"16824":["P060300","Internal Contr.Module (KAM) Error"],"16825":["P060300","Internal Contr.Module (KAM) Error"],"16826":["P060300","Internal Contr.Module (KAM) Error"],"16827":["P060300","Internal Contr.Module (KAM) Error"],"16828":["P060300","Internal Contr.Module (KAM) Error"],"16829":["P060300","Internal Contr.Module (KAM) Error"],"16830":["P060300","Internal Contr.Module (KAM) Error"],"16831":["P060300","Internal Contr.Module (KAM) Error"],"16832":["P060300","Internal Contr.Module (KAM) Error"],"16837":["P218500","Engine Coolant Temperature Sensor 2 Circuit High"],"16838":["P218400","Engine Coolant Temperature Sensor 2 Circuit Low"],"16845":["P060300","Internal Contr.Module (KAM) Error"],"16846":["P060300","Internal Contr.Module (KAM) Error"],"16847":["P060300","Internal Contr.Module (KAM) Error"],"16853":["P014900","Fuel Timing Error"],"16854":["P014900","Fuel Timing Error"],"16855":["P014900","Fuel Timing Error"],"16986":["P00B700","Engine Coolant Flow Low/Performance"],"16987":["P00B700","Engine Coolant Flow Low/Performance"],"16988":["P00B700","Engine Coolant Flow Low/Performance"],"16992":["U110300","Production mode active"],"16993":["P169A00","Loading mode active"],"17002":["P168D00","Oil pressure switch 3 Malfunction"],"17003":["P168C00","Oil pressure switch 3 Implausible signal during engine operation"],"17004":["P168B00","Oil pressure switch 3 Implausible signal during engine stand still"],"17169":["P164700","Checking coding/versions of control modules in drivetrain"],"17170":["U112200","Databus implausible message"],"17171":["U112200","Databus implausible message"],"17172":["P150B00","Acceleration monitoring Control limit exceeded"],"17173":["P150B00","Acceleration monitoring Control limit exceeded"],"17174":["P150B00","Acceleration monitoring Control limit exceeded"],"17175":["U112200","Databus implausible message"],"17176":["U112300","Databus error value received"],"17177":["P150B00","Acceleration monitoring Control limit exceeded"],"17178":["U112300","Databus error value received"],"17179":["U112300","Databus error value received"],"17180":["U112200","Databus implausible message"],"17181":["U112300","Databus error value received"],"17182":["U112200","Databus implausible message"],"17183":["P133600","Engine torque monitoring Control limit exceeded"],"17184":["P15A400","Vehicle shutdown active"],"17185":["U112200","Databus implausible message"],"17186":["U112300","Databus error value received"],"17187":["P056800","Cruise Control Set Signal"],"17188":["U112300","Databus error value received"],"17189":["U112200","Databus implausible message"],"17355":["P020100","Cylinder 1- Injector Circuit"],"17356":["P020200","Cylinder 2- Injector Circuit"],"17357":["P020300","Cylinder 3- Injector Circuit"],"17358":["P020400","Cylinder 4- Injector Circuit"],"17359":["P026100","Cylinder 1- Injector Circuit Low"],"17360":["P026400","Cylinder 2- Injector Circuit Low"],"17361":["P026700","Cylinder 3- Injector Circuit Low"],"17362":["P027000","Cylinder 4- Injector Circuit Low"],"17363":["P026200","Cylinder 1- Injector Circuit High"],"17364":["P026500","Cylinder 2- Injector Circuit High"],"17365":["P026800","Cylinder 3- Injector Circuit High"],"17366":["P027100","Cylinder 4- Injector Circuit High"],"17367":["P10B100","Monitoring of injector cylinder 1 Malfunction detected"],"17368":["P10B200","Monitoring of injector cylinder 2 Malfunction detected"],"17369":["P10B300","Monitoring of injector cylinder 3 Malfunction detected"],"17370":["P10B400","Monitoring of injector cylinder 4 Malfunction detected"],"17371":["P026200","Cylinder 1- Injector Circuit High"],"17372":["P026500","Cylinder 2- Injector Circuit High"],"17373":["P026800","Cylinder 3- Injector Circuit High"],"17374":["P027100","Cylinder 4- Injector Circuit High"],"17375":["P026200","Cylinder 1- Injector Circuit High"],"17376":["P026500","Cylinder 2- Injector Circuit High"],"17377":["P026800","Cylinder 3- Injector Circuit High"],"17378":["P027100","Cylinder 4- Injector Circuit High"],"17379":["P026100","Cylinder 1- Injector Circuit Low"],"17380":["P026400","Cylinder 2- Injector Circuit Low"],"17381":["P026700","Cylinder 3- Injector Circuit Low"],"17382":["P027000","Cylinder 4- Injector Circuit Low"],"17383":["P026100","Cylinder 1- Injector Circuit Low"],"17384":["P026400","Cylinder 2- Injector Circuit Low"],"17385":["P026700","Cylinder 3- Injector Circuit Low"],"17386":["P027000","Cylinder 4- Injector Circuit Low"],"17387":["P10B100","Monitoring of injector cylinder 1 Malfunction detected"],"17388":["P10B200","Monitoring of injector cylinder 2 Malfunction detected"],"17389":["P10B300","Monitoring of injector cylinder 3 Malfunction detected"],"17390":["P10B400","Monitoring of injector cylinder 4 Malfunction detected"],"17521":["P150D00","Chain elongation"],"17789":["P00B700","Engine Coolant Flow Low/Performance"],"17918":["P198700","Function restriction due to brake temperature"],"17920":["P056800","Cruise Control Set Signal"],"17922":["U112200","Databus implausible message"],"17924":["U112200","Databus implausible message"],"18191":["P167D00","Button for start/stop operation Electrical error"],"18876":["P056800","Cruise Control Set Signal"],"18929":["P013A00","O2 Sensor Bank 1 Sensor 2 Slow Response - Rich to Lean"],"18933":["P227000","O2 Sensor Signal Stuck Lean; Bank 1 Sensor 2"],"18934":["P227100","O2 Sensor Signal Stuck Rich; Bank 1 Sensor 2"],"19308":["U042100","Invalid Data Received From Suspension Control Module"],"19309":["U013200","Lost Communication With Suspension Control Module \"A\""],"19311":["U019900","Lost Communication With “Door Control Module A”"],"19395":["C10A700","Rolling Mode recognized"],"19845":["U045200","Invalid Data Received From Restraints Control Module"],"19846":["U015100","Lost Communication With Restraints Control Module"],"19853":["U042900","Invalid Data Received From Steering Column Control Module"],"19854":["U021200","Lost Communication With Steering Column Control Module"],"19859":["U049A00","Invalid Data Received From “Door Control Module A”"],"19861":["U043100","Invalid Data Received From Body Control Module \"A\""],"19862":["U014100","Lost Communication With Body Control Module \"A\""],"19867":["U042300","Invalid Data Received From Instrument Panel Cluster Control Module"],"19868":["U015500","Lost Communication With Instrument Panel Cluster (IPC) Control Module"],"19869":["U044700","Invalid Data Received From Gateway \"A\""],"19870":["U014600","Lost Communication With Gateway \"A\""],"19874":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"19875":["U012100","Lost Communication With Anti-Lock Brake System (ABS) Control Module"],"19878":["U042200","Invalid Data Received From Body Control Module"],"19879":["U014000","Lost Communication With Body Control Module"],"20250":["U032200","Software Incompatibility With Body Control Module"],"20251":["U042200","Invalid Data Received From Body Control Module"],"20269":["P070400","Clutch Switch Input Circuit"],"20270":["P070400","Clutch Switch Input Circuit"],"20276":["P151B00","Voltage terminal 15 Implausible"],"20316":["P30C000","Fuel quality poor"],"20577":["P060600","ECM/PCM Processor"],"20578":["P060600","ECM/PCM Processor"],"20590":["P115800","Manifold abs. press. sens. Implausible signal"],"20593":["P115800","Manifold abs. press. sens. Implausible signal"],"20614":["P069900","Sensor Reference Voltage \"C\" Circuit High"],"20615":["P069800","Sensor Reference Voltage \"C\" Circuit Low"],"20628":["P060600","ECM/PCM Processor"],"20630":["P060600","ECM/PCM Processor"],"20632":["P014000","O2 Sensor Circ.,Bank1-Sensor2 No Activity Detected"],"20634":["P013700","O2 Sensor Circ.,Bank1-Sensor2 Low Voltage"],"20636":["P013800","O2 Sensor Circ.,Bank1-Sensor2 High Voltage"],"20638":["P003600","O2 Sensor Heater Contr. Circ.(Bank1(1)Sensor 2)"],"20640":["P014100","O2 Sensor Heater Circ.,Bank1-Sensor2 Malfunction"],"20642":["P003700","O2 Sensor Heater Contr. Circ.(Bank1(1)Sensor 2) Low"],"20644":["P003800","O2 Sensor Heater Contr. Circ.(Bank1(1)Sensor 2) High"],"20646":["P003000","O2 Sensor Heater Contr. Circ.(Bank1(1)Sensor 1)"],"20648":["P013500","O2 Sensor Heater Circ.,Bank1-Sensor1 Malfunction"],"20650":["P003100","O2 Sensor Heater Contr. Circ.(Bank1(1)Sensor 1) Low"],"20652":["P003200","O2 Sensor Heater Contr. Circ.(Bank1(1)Sensor 1) High"],"20654":["P225100","O2 Sensor Negative Current Control Circuit Bank 1 Sensor 1 open"],"20656":["P223700","O2 Sensor Positive Current Control Circuit Bank 1 Sensor 1 Open"],"20658":["P224300","O2 Sensor Reference Voltage Circuit Bank 1 Sensor 1 Open"],"20662":["P013100","O2 Sensor Circ.,Bank1-Sensor1 Low Voltage"],"20664":["P013200","O2 Sensor Circ.,Bank1-Sensor1 High Voltage"],"21266":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"21297":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"21302":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"21312":["U042800","Invalid Data Received From Steering Angle Sensor Module"],"21319":["U044700","Invalid Data Received From Gateway \"A\""],"21320":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"21321":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"21322":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"21323":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"21329":["U045600","Invalid Data Received From Coolant Temperature Control Module"],"21388":["P301900","Exhaust door valve 1 Open circuit"],"21389":["P301800","Exhaust door valve 1 Short circuit to ground"],"21390":["P301700","Exhaust door valve 1 Short circuit to B+"],"21391":["P14AB00","Exhaust door control unit mechanical malfunction"],"21392":["P14AB00","Exhaust door control unit mechanical malfunction"],"21393":["P14AB00","Exhaust door control unit mechanical malfunction"],"21399":["P302300","Exhaust door valve 2 Open circuit"],"21400":["P302200","Exhaust door valve 2 Short circuit to ground"],"21401":["P302100","Exhaust door valve 2 Short circuit to B+"],"21402":["P14AC00","Exhaust door control unit 2 mechanical malfunction"],"21403":["P14AC00","Exhaust door control unit 2 mechanical malfunction"],"21404":["P14AC00","Exhaust door control unit 2 mechanical malfunction"],"21406":["P044100","EVAP Emission Contr.Sys.Incorrect Purge Flow"],"21417":["P261000","ECM/PCM Internal Engine Off Timer Performance"],"21419":["P261000","ECM/PCM Internal Engine Off Timer Performance"],"21471":["U112200","Databus implausible message"],"21564":["P151E00","Reduced speed threshold for oil pressure switching"],"21624":["U000100","High Speed CAN Communication Bus"],"21625":["U041400","Invalid Data Received From Four-Wheel Drive Clutch Control Module"],"21626":["U011400","Lost Communication With Four-Wheel Drive Clutch Control Module"],"21629":["U042400","Invalid Data Received From HVAC Control Module"],"21630":["U016400","Lost Communication With HVAC Control Module"],"21635":["U041700","Invalid Data Received From Park Brake Control Module"],"21636":["U012800","Lost Communication With Brake System Control Module"],"21637":["U042500","Invalid Data Received From Auxiliary Heater Control Module"],"21638":["U016600","Lost Communication With Auxiliary Heater Control Module"],"21639":["U100B00","Access and start authorization Implausible signal"],"21640":["U100A00","Access and start authorization No communication"],"21644":["U109500","Electronic steering column lock control module No communication"],"21645":["U041900","Invalid Data Received From Steering Effort Control Module"],"21646":["U013000","Lost Communication With Steering Effort Control Module"],"21651":["U112200","Databus implausible message"],"21652":["U112100","Databus missing message"],"21653":["U040200","Invalid Data Received From Transmission Control Module"],"21654":["U010100","Lost Communication with TCM"],"21655":["U100400","Towing recognition control module Implausible signal"],"21656":["U100300","Towing recognition control module No Communication"],"21657":["U044700","Invalid Data Received From Gateway \"A\""],"21658":["U040200","Invalid Data Received From Transmission Control Module"],"21659":["U042400","Invalid Data Received From HVAC Control Module"],"21660":["U040200","Invalid Data Received From Transmission Control Module"],"21661":["U040200","Invalid Data Received From Transmission Control Module"],"22007":["U043300","Invalid Data Received From Cruise Control Front Distance Range Sensor"],"22008":["U023500","Lost Communication With Cruise Control Front Distance Range Sensor"],"22043":["P060300","Internal Contr.Module (KAM) Error"],"22045":["P060300","Internal Contr.Module (KAM) Error"],"22046":["P060300","Internal Contr.Module (KAM) Error"],"22049":["U042400","Invalid Data Received From HVAC Control Module"],"22050":["U041900","Invalid Data Received From Steering Effort Control Module"],"22052":["U000200","High Speed CAN Communication Bus Performance"],"22054":["U10BB00","Power steering control module Implausible signal"],"22055":["U013100","Lost Communication With Power Steering Control Module"],"22056":["U045A00","Invalid Data Received From Parking Assist Control Module “A”"],"22057":["U015900","Lost Communication With Parking Assist Control Module “A”"],"22058":["U042800","Invalid Data Received From Steering Angle Sensor Module"],"22059":["U012600","Lost Communication With Steering Angle Sensor Module"],"22062":["U040200","Invalid Data Received From Transmission Control Module"],"22063":["U042300","Invalid Data Received From Instrument Panel Cluster Control Module"],"22064":["U040200","Invalid Data Received From Transmission Control Module"],"22065":["U040200","Invalid Data Received From Transmission Control Module"],"22073":["U042400","Invalid Data Received From HVAC Control Module"],"22076":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"22092":["U042300","Invalid Data Received From Instrument Panel Cluster Control Module"],"22096":["U040200","Invalid Data Received From Transmission Control Module"],"22097":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"22099":["P060300","Internal Contr.Module (KAM) Error"],"22100":["P060300","Internal Contr.Module (KAM) Error"],"22136":["P011600","Engine Coolant Temperature Sensor 1 Circuit Range/Performance"],"22260":["P011100","Intake Air Temperature Sensor 1 Bank 1 Circuit Range/Performance"],"22261":["P007100","Ambient Air Temperature Sensor Circuit Range/Performance"],"22262":["P218300","Engine Coolant Temperature Sensor 2 Circuit Range/Performance"],"23079":["U105400","Information electronics control module 1 No Communication"],"23096":["P011300","Intake Air Temperature Sensor 1 Bank 1 Circuit High"],"23097":["P011200","Intake Air Temperature Sensor 1 Bank 1 Circuit Low"],"23128":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"23129":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"23130":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"23131":["U041500","Invalid Data Received From Anti-Lock Brake System Control Module"],"23142":["U042300","Invalid Data Received From Instrument Panel Cluster Control Module"],"23143":["U042300","Invalid Data Received From Instrument Panel Cluster Control Module"],"23175":["P007200","Ambient Air Temperature Sensor Circuit Low"],"23176":["P007000","Ambient Air Temperature Sensor Circuit"],"23648":["P16C100","Heater support pump Open circuit"],"23649":["P16BF00","Heater support pump Short circuit to ground"],"23650":["P16C000","Heater support pump Short circuit to B+"],"23651":["P16C600","Heater support pump Dry running"],"23652":["P16C700","Heater support pump locked"],"23653":["P16C800","Heater support pump Overheated"],"24576":["U041400","Invalid Data Received From Four-Wheel Drive Clutch Control Module"],"25214":["P218100","Cooling System Performance"],"25279":["U040200","Invalid Data Received From Transmission Control Module"],"25574":["U043300","Invalid Data Received From Cruise Control Front Distance Range Sensor"],"26279":["P010600","Manifold Abs.Pressure or Bar.Pressure Range/Performance"],"26363":["P023600","Turbocharger Boost Sensor (A) Circ. Range/Performance"],"26370":["P006800","MAP/MAF - Throttle Position Correlation"],"26372":["P227900","Intake Air System Leak"],"26374":["P307A00","Intake system Air flow too low"],"26376":["P227900","Intake Air System Leak"],"27740":["P060600","ECM/PCM Processor"],"28511":["U043300","Invalid Data Received From Cruise Control Front Distance Range Sensor"],"28541":["U042400","Invalid Data Received From HVAC Control Module"],"29095":["P211200","Throttle Actuator Control System - Stuck closed"],"29376":["P138800","Ctrl. module faulty"],"29377":["P138800","Ctrl. module faulty"],"29381":["P060C00","Internal Control Module Main Processor Performance"],"29382":["P060C00","Internal Control Module Main Processor Performance"],"29383":["P060C00","Internal Control Module Main Processor Performance"],"29384":["P060C00","Internal Control Module Main Processor Performance"],"29385":["P060C00","Internal Control Module Main Processor Performance"],"29386":["P168000","Reset-resistant limp-home"],"29387":["P060C00","Internal Control Module Main Processor Performance"],"29388":["P060C00","Internal Control Module Main Processor Performance"],"29389":["P060C00","Internal Control Module Main Processor Performance"],"29391":["P060C00","Internal Control Module Main Processor Performance"],"30705":["P00AF00","Turbocharger/Supercharger Boost Control \"A\" Module Performance"],"30706":["P00AF00","Turbocharger/Supercharger Boost Control \"A\" Module Performance"],"30787":["P060C00","Internal Control Module Main Processor Performance"],"30788":["P060C00","Internal Control Module Main Processor Performance"],"30789":["P060C00","Internal Control Module Main Processor Performance"],"30790":["P060C00","Internal Control Module Main Processor Performance"],"30791":["P060C00","Internal Control Module Main Processor Performance"],"30792":["P060C00","Internal Control Module Main Processor Performance"],"30794":["P060C00","Internal Control Module Main Processor Performance"],"31537":["P060C00","Internal Control Module Main Processor Performance"],"31538":["P138800","Ctrl. module faulty"]};
+
+/* VAG: dane, które precyzują skan i raport.
+   - Adresy CAN modułów: zestawienie ConnorHowell/vag-uds-ids (identyfikatory żądania i odpowiedzi).
+   - Rekordy 0x01 i 0x02 danych rozszerzonych (0x19 06) i znacznik 0x02BD: układ opisany w pashokitsme/vagcan
+     (research/odis-dtc/freeze-frames.md, crates/uds/vag-uds-client/src/dtc.rs) i zgodny z wydrukami VCDS
+     (priorytet, częstość, licznik zapomnienia, przebieg, data i godzina).
+   - Numery błędów Simos18, rodziny sterowników i pomiary 0x22 Simos18: bri3d/VW_Flash (BSD 2-Clause).
+   Moduły VAG po UDS zgłaszają błąd jako własny 3-bajtowy numer (VCDS pokazuje go dziesiętnie, np. 19225),
+   a nie jako kod SAE. Kod P/U/B/C i opis bierze się z bazy danego sterownika. */
+
+/* Nazwy modułów po identyfikatorze żądania (TX). Odpowiedź = TX + 0x6A. Adres VAG podany tam, gdzie jest pewny. */
+const VAG_MOD_NAMES = {
+  0x70A: ['10', 'Asystent parkowania'], 0x70B: ['65', 'Kontrola ciśnienia w oponach'], 0x70C: ['16', 'Kolumna kierownicy'],
+  0x70D: ['46', 'Moduł komfortu'], 0x70E: ['09', 'Elektronika centralna'], 0x70F: ['22', 'Napęd na cztery koła'],
+  0x710: ['19', 'Gateway'], 0x711: ['25', 'Immobilizer'], 0x712: ['44', 'Wspomaganie kierownicy'], 0x713: ['03', 'ABS / ESP'],
+  0x714: ['17', 'Zestaw wskaźników'], 0x715: ['15', 'Poduszki powietrzne'], 0x716: ['??', 'Aktywny układ kierowniczy / wyświetlacz'],
+  0x718: ['56', 'Radio'], 0x719: ['??', 'Sprężarka klimatyzacji'], 0x71A: ['??', 'Klimatyzacja tylna'], 0x71B: ['??', 'Wyświetlacz head-up'],
+  0x71C: ['??', 'Generator dźwięku (aktor)'], 0x71E: ['??', 'Elektronika zamka'], 0x71F: ['??', 'Hamulec koła tylnego lewego'],
+  0x720: ['??', 'Hamulec koła tylnego prawego'], 0x721: ['??', 'Elektronika czujników'], 0x723: ['6D', 'Klapa bagażnika'],
+  0x726: ['??', 'Kamera pokładowa'], 0x727: ['??', 'Noktowizor'], 0x728: ['61', 'Regulacja akumulatora'], 0x72A: ['??', 'Moduł AdBlue (reduktor)'],
+  0x72B: ['??', 'Funkcje specjalne 2'], 0x72C: ['??', 'Funkcje specjalne'], 0x72D: ['??', 'Dach elektryczny'], 0x72E: ['??', 'Mocowanie zespołu'],
+  0x730: ['??', 'Asystent świateł drogowych'], 0x731: ['2B', 'Blokada kolumny kierownicy'], 0x732: ['05', 'Dostęp i start (Kessy)'],
+  0x733: ['??', 'Drzwi przesuwne lewe'], 0x734: ['??', 'Drzwi przesuwne prawe'], 0x735: ['??', 'Fotel wielokonturowy kierowcy'],
+  0x736: ['??', 'Fotel wielokonturowy pasażera'], 0x737: ['??', 'Fotel wielokonturowy tylny lewy'], 0x738: ['??', 'Fotel wielokonturowy tylny prawy'],
+  0x739: ['??', 'Podłokietnik'], 0x73C: ['??', 'Wyświetlacz dodatkowy'], 0x73D: ['??', 'Dach elektryczny 2'],
+  0x73E: ['62', 'Drzwi tylne lewe'], 0x73F: ['72', 'Drzwi tylne prawe'], 0x745: ['??', 'Moduł komfortu 2'], 0x746: ['08', 'Klimatyzacja'],
+  0x747: ['69', 'Hak / przyczepa'], 0x748: ['??', 'Asystent świateł drogowych'], 0x749: ['??', 'Interfejs multimediów'],
+  0x74A: ['42', 'Drzwi kierowcy'], 0x74B: ['52', 'Drzwi pasażera'], 0x74C: ['36', 'Fotel kierowcy'], 0x74D: ['06', 'Fotel pasażera'],
+  0x74E: ['3C', 'Asystent zmiany pasa'], 0x74F: ['A5', 'Czujniki przednie asystentów (kamera, radar)'], 0x750: ['??', 'Wykrywanie położenia auta'],
+  0x751: ['??', 'Czujnik kąta skrętu'], 0x752: ['53', 'Hamulec postojowy'], 0x753: ['??', 'Wybierak biegów'],
+  0x754: ['55', 'Regulacja zasięgu świateł'], 0x755: ['34', 'Regulacja poziomu zawieszenia'], 0x756: ['??', 'Tempomat adaptacyjny 2'],
+  0x757: ['13', 'Tempomat adaptacyjny (ACC)'], 0x758: ['??', 'Przetwarzanie obrazu'], 0x75E: ['??', 'Napinacz pasa przedni lewy'],
+  0x75F: ['??', 'Napinacz pasa przedni prawy'], 0x762: ['??', 'Czujniki układu hamulcowego'], 0x763: ['??', 'Mikrokontroler'],
+  0x765: ['??', 'Ładowarka akumulatora'], 0x767: ['75', 'Telematyka'], 0x769: ['6C', 'Kamera cofania'], 0x76A: ['18', 'Ogrzewanie postojowe'],
+  0x76B: ['77', 'Telefon / komunikacja zewnętrzna'], 0x76C: ['37', 'Nawigacja'], 0x76D: ['57', 'Tuner TV'], 0x76E: ['??', 'Odtwarzacz 3'],
+  0x76F: ['47', 'System audio'], 0x770: ['??', 'Odtwarzacz 1'], 0x771: ['??', 'Tachograf'], 0x772: ['14', 'Elektronika amortyzatorów'],
+  0x773: ['5F', 'Elektronika informacyjna (radio, MIB)']
+};
+/* Moduły sprawdzane w zwykłym skanie oprócz podstawowej listy. */
+const VAG_EXTRA_MODULES = [0x752, 0x70A, 0x757, 0x74F, 0x74A, 0x74B, 0x70B, 0x732, 0x711, 0x718]
+  .map(tx => ({ addr: VAG_MOD_NAMES[tx][0], name: VAG_MOD_NAMES[tx][1], tx, rx: tx + 0x6A }));
+
+function vagEcuFamily(part) {
+  const p = String(part || '').replace(/[\s.-]/g, '').toUpperCase();
+  if (!p) return null;
+  for (const [f, list] of Object.entries(VAG_ECU_FAMILY)) if (list.includes(p)) return f;
+  return null;
+}
+const isSimos18 = f => /^Simos18/.test(f || '');
+
+/* Błąd z modułu VAG: numer VAG + ewentualnie kod z bazy sterownika. Surowe bajty zostają w d.raw. */
+function resolveVagDtc(d, family, isEngine) {
+  const n = parseInt(d.raw, 16);
+  const o = { ...d, vagNo: n, saeGuess: d.full };
+  const hit = isEngine && isSimos18(family) ? SIMOS18_DTC[n] : null;
+  if (hit) {
+    const code = hit[0].slice(0, 5), ftb = hit[0].slice(5);
+    Object.assign(o, { code, ftb, full: `${n} · ${code} ${ftb}`, desc: DTC_DESC[code] && ftb === '00' ? DTC_DESC[code] : hit[1], descEn: hit[1], dbSrc: 'Simos18' });
+  } else Object.assign(o, { code: String(n), full: String(n), desc: '', vagOnly: true });
+  return o;
+}
+
+/* Data i godzina z 4 bajtów (6 b rok od 2000, 4 miesiąc, 5 dzień, 5 godzina, 6 minuta, 6 sekunda). */
+function vagClock(b) {
+  if (!b || b.length !== 4) return null;
+  const c = ((b[0] << 24) >>> 0) + (b[1] << 16) + (b[2] << 8) + b[3];
+  const t = { y: 2000 + (c >>> 26), mo: (c >>> 22) & 15, d: (c >>> 17) & 31, h: (c >>> 12) & 31, mi: (c >>> 6) & 63, s: c & 63 };
+  if (t.mo < 1 || t.mo > 12 || t.d < 1 || t.d > 31 || t.h > 23 || t.mi > 59 || t.s > 59) return null;
+  const p = n => String(n).padStart(2, '0');
+  return `${t.y}-${p(t.mo)}-${p(t.d)} ${p(t.h)}:${p(t.mi)}:${p(t.s)}`;
+}
+const u24 = b => (b[0] << 16) + (b[1] << 8) + b[2];
+
+/* Znacznik 0x02BD (stan teraz): dokładnie 10 bajtów, inaczej odrzucamy (inne układy dają fałszywy przebieg). */
+function parseVagStamp(b) {
+  if (!b || b.length !== 10) return null;
+  const km = u24(b.slice(1, 4)), time = vagClock(b.slice(6, 10));
+  return time ? { km, time } : null;
+}
+
+/* Kontekst błędu z rekordów 0x01 (priorytet, częstość) i 0x02 (licznik zapomnienia, przebieg, czas). */
+function vagFaultContext(ext, stamp) {
+  if (!ext || !ext.length) return null;
+  const r1 = ext.find(r => r.rec === 1 && r.bytes.length === 2), r2 = ext.find(r => r.rec === 2 && r.bytes.length === 10);
+  if (!r1 && !r2) return null;
+  const o = {};
+  if (r1) { o.priority = r1.bytes[0]; o.freq = r1.bytes[1]; }
+  if (r2) {
+    const b = r2.bytes, km = u24(b.slice(1, 4)), time = vagClock(b.slice(6, 10));
+    o.aging = b[0];
+    if (time && (!stamp || km <= stamp.km)) { o.km = km; o.time = time; if (stamp) o.kmAgo = stamp.km - km; }
+  }
+  return o;
+}
+function vagContextText(c) {
+  if (!c) return '';
+  const nf = n => n.toLocaleString('pl-PL');
+  const L = [];
+  if (c.freq != null) L.push(`wystąpień: ${c.freq === 255 ? '255 lub więcej' : c.freq}`);
+  if (c.priority != null) L.push(`priorytet: ${c.priority}`);
+  if (c.km != null) L.push(`przebieg: ${nf(c.km)} km${c.kmAgo != null ? ` (${c.kmAgo === 0 ? 'teraz' : nf(c.kmAgo) + ' km temu'})` : ''}`);
+  if (c.time) L.push(`czas: ${c.time} (zegar auta)`);
+  if (c.aging != null) L.push(`licznik zapomnienia: ${c.aging}`);
+  return L.join(' · ');
+}
+
+/* Pomiary Simos18 (EA888 gen. 3, MQB) przez UDS 0x22 na 0x7E0. Lista i przeliczniki: VW_Flash logs/csv/parameters_22.csv.
+   [DID, nazwa, jednostka, bajty, ze znakiem, przelicznik, para (DID wartości zadanej)] */
+const SIMOS18_DIDS = [
+  [0xF40C, 'Obroty silnika', 'obr/min', 2, 0, x => x / 4],
+  [0x2033, 'Prędkość', 'km/h', 2, 0, x => x / 100],
+  [0x210F, 'Bieg', '', 2, 0, x => x],
+  [0x1070, 'Pedał gazu', '%', 2, 0, x => x / 10.24],
+  [0x20BA, 'Przepustnica', '%', 2, 1, x => x / 10],
+  [0x437C, 'Moment obrotowy', 'Nm', 2, 1, x => x / 10, 0x4380],
+  [0x4380, 'Moment żądany', 'Nm', 2, 1, x => x / 10],
+  [0x202A, 'Ciśnienie przed przepustnicą (doładowanie)', 'kPa', 2, 0, x => x / 10, 0x2029],
+  [0x2029, 'Ciśnienie przed przepustnicą zadane', 'kPa', 2, 0, x => x / 10],
+  [0x39C0, 'Ciśnienie w kolektorze (MAP)', 'kPa', 2, 0, x => x / 10, 0x39C1],
+  [0x39C1, 'Ciśnienie w kolektorze zadane', 'kPa', 2, 0, x => x / 10],
+  [0x13CA, 'Ciśnienie atmosferyczne', 'kPa', 2, 0, x => x / 120.60176665439],
+  [0x39A2, 'Wastegate', '%', 2, 0, x => 100 - x / 100, 0x39A3],
+  [0x39A3, 'Wastegate zadany', '%', 2, 0, x => 100 - x / 100],
+  [0x1040, 'Obroty turbosprężarki', 'tys. obr/min', 2, 0, x => x / 163.84],
+  [0x2032, 'Przepływ powietrza', 'kg/h', 2, 0, x => x],
+  [0x1001, 'Temperatura dolotu', '°C', 1, 0, x => x * 0.75 - 48],
+  [0x1041, 'Temperatura powietrza przy turbosprężarce', '°C', 2, 1, x => x * 0.005859375 + 144],
+  [0x1004, 'Temperatura otoczenia', '°C', 2, 1, x => x / 128],
+  [0x11CD, 'Temperatura płynu chłodzącego', '°C', 1, 0, x => x - 40],
+  [0x202F, 'Temperatura oleju', '°C', 2, 0, x => (x - 2731.4) / 10],
+  [0x101E, 'Wentylator chłodnicy', '%', 1, 0, x => x * 0.390625],
+  [0x2004, 'Wyprzedzenie zapłonu (średnie)', '°', 2, 1, x => x / 100],
+  [0x200A, 'Korekta spalania stukowego cyl. 1', '°', 2, 1, x => x / 100],
+  [0x200B, 'Korekta spalania stukowego cyl. 2', '°', 2, 1, x => x / 100],
+  [0x200C, 'Korekta spalania stukowego cyl. 3', '°', 2, 1, x => x / 100],
+  [0x200D, 'Korekta spalania stukowego cyl. 4', '°', 2, 1, x => x / 100],
+  [0x2904, 'Licznik wypadania zapłonów', '', 2, 0, x => x],
+  [0x201E, 'Wałek dolotowy (pozycja)', '°', 2, 1, x => 30 - x / 10],
+  [0x201A, 'Wałek wydechowy (pozycja)', '°', 2, 1, x => x / 10 - 24],
+  [0x167C, 'Wznios zaworów (AVS)', '', 1, 0, x => x],
+  [0x295C, 'Klapy kolektora dolotowego', '', 1, 0, x => x],
+  [0x10C0, 'Lambda', 'λ', 2, 0, x => x / 1024, 0xF444],
+  [0xF444, 'Lambda zadana', 'λ', 2, 0, x => x / 32768],
+  [0xF406, 'Korekta krótkoterminowa (STFT)', '%', 1, 0, x => x / 1.28 - 100],
+  [0xF407, 'Korekta długoterminowa (LTFT)', '%', 1, 0, x => x / 1.28 - 100],
+  [0x2027, 'Ciśnienie paliwa – wtrysk bezpośredni', 'bar', 2, 0, x => x / 10, 0x293B],
+  [0x293B, 'Ciśnienie paliwa DI zadane', 'bar', 2, 0, x => x / 10],
+  [0x2025, 'Ciśnienie paliwa – wtrysk pośredni (MPI)', 'bar', 2, 0, x => x / 1000, 0x2932],
+  [0x2932, 'Ciśnienie paliwa MPI zadane', 'bar', 2, 0, x => x / 1000],
+  [0x209A, 'Wydajność pompy wysokiego ciśnienia', '%', 2, 0, x => x / 100],
+  [0x2028, 'Wysterowanie pompy niskiego ciśnienia', '%', 2, 0, x => x / 100],
+  [0x13A0, 'Czas wtrysku DI', 'ms', 2, 0, x => x / 250],
+  [0x13AC, 'Czas wtrysku MPI', 'ms', 2, 0, x => x / 250],
+  [0xF452, 'Zawartość etanolu', '%', 1, 0, x => x / 2.55],
+  [0x14A6, 'Napięcie zasilania', 'V', 1, 0, x => x * 0.1015625],
+  [0x14EC, 'Obciążenie procesora sterownika', '%', 2, 0, x => x * 0.09765625],
+  [0x203C, 'Tempomat', '', 2, 0, x => x]
+].map(([did, name, unit, len, signed, fn, sp]) => ({ did, name, unit, len, signed: !!signed, fn, sp }));
+const SIMOS18_SP = new Set(SIMOS18_DIDS.filter(d => d.sp).map(d => d.sp));
+function decodeSimosDid(def, b) {
+  if (!b || b.length !== def.len) return null;
+  let x = def.len === 2 ? (b[0] << 8) + b[1] : b[0];
+  if (def.signed) x = def.len === 2 ? (x << 16) >> 16 : (x << 24) >> 24;
+  const v = def.fn(x);
+  return isFinite(v) ? v : null;
+}
+/* Dodatkowe moduły do zwykłego skanu (pełne przeszukanie i tak sprawdza 0x700–0x774). */
+for (const m of VAG_EXTRA_MODULES) if (!MODULES.some(x => x.tx === m.tx)) MODULES.push(m);
 
 /* Baza kodów błędów: opisy i typowe przyczyny (VAG i BMW).
    Zawiera tylko wpisy, które mają źródło (pole s). To podpowiedź, a nie diagnoza:
@@ -2035,6 +2270,7 @@ function createTools(api) {
     tests: null, testsBusy: false, testsMsg: '',
     scan: { running: false, stop: false, found: [], msg: '', watch: false, base: {}, last: {}, hist: {}, changed: new Set(), mod: '7E0:7E8', ranges: api.store.get('didRanges', '1000-1FFF'), ext: false, onlyChg: false },
     con: { mod: '7E0:7E8', lines: [], keep: null, pending: null },
+    sim: { busy: false, live: false, vals: {}, raw: {}, ok: null, msg: '', rounds: 0, at: null },
     mon: { running: false, h: null, done: null, msgs: [], raw: [], t0: 0, frames: 0, restarts: 0, hideTp: true, onlyWrite: false, resume: null }
   };
 
@@ -2091,6 +2327,14 @@ function createTools(api) {
         <p class="tstatus" id="tScanSt"></p>
         <div id="tScanRes" class="tblwrap"></div></div>
 
+      ${api.brand() === 'bmw' ? '' : `<div class="card"><div class="card-h"><h3>Pomiary silnika Simos18</h3><span class="n">EA888 gen. 3 · 0x22</span></div>
+        <p class="small muted">Gotowe pomiary sterowników Simos18 (auta MQB z silnikiem EA888 gen. 3, 1.8 i 2.0 TSI/TFSI): doładowanie rzeczywiste i zadane, wastegate, obroty turbosprężarki, korekty spalania stukowego na każdy cylinder, pozycje wałków, ciśnienia paliwa, temperatura oleju. Lista i przeliczniki pochodzą z projektu VW_Flash. <span id="tSimNote">${simNote()}</span></p>
+        <div class="actions"><button class="btn small primary" id="tSimGo" type="button" ${on ? '' : 'disabled'}>Odczytaj</button>
+          <button class="btn small" id="tSimLive" type="button" ${on ? '' : 'disabled'}>Odczyt ciągły</button>
+          <button class="btn small ghost" id="tSimCopy" type="button" hidden>Kopiuj</button></div>
+        <p class="tstatus" id="tSimSt"></p>
+        <div id="tSimRes" class="tblwrap"></div></div>`}
+
       <div class="card"><div class="card-h"><h3>Konsola UDS</h3><span class="n">dla zaawansowanych</span></div>
         <p class="small muted">Wysyła pojedyncze polecenie do wybranego modułu, np. odczytane z podsłuchu. Odczyty idą od razu. Zapis, procedury i testy elementów wymagają potwierdzenia. Programowanie jest zablokowane.</p>
         <div class="frow">${modSelect('tConMod', st.con.mod)}
@@ -2113,7 +2357,7 @@ function createTools(api) {
           <button class="btn small ghost" id="tMonDl" type="button" hidden>Pobierz log</button></div>
         <p class="tstatus" id="tMonSt"></p>
         <div id="tMonOut" class="msgs"></div></div>`;
-    bind(); renderTests(); renderScan(); renderCon(); renderMon(); sync();
+    bind(); renderTests(); renderScan(); renderSim(); renderCon(); renderMon(); sync();
   }
 
   function bind() {
@@ -2126,6 +2370,7 @@ function createTools(api) {
     $('#tWatch').onclick = toggleWatch;
     $('#tOnlyChg').onchange = e => { st.scan.onlyChg = e.target.checked; renderScan(); };
     $('#tScanCopy').onclick = e => api.copyText(scanText(), e.currentTarget);
+    if ($('#tSimGo')) { $('#tSimGo').onclick = () => readSim(false); $('#tSimLive').onclick = () => st.sim.live ? (st.sim.live = false) : readSim(true); $('#tSimCopy').onclick = e => api.copyText(simText(), e.currentTarget); }
     $('#tConMod').onchange = e => { stopKeep(); st.con.mod = e.target.value; $('#tConCustom').hidden = e.target.value !== 'custom'; };
     $('#tConSend').onclick = () => conSend($('#tConIn').value);
     $('#tConIn').onkeydown = e => { if (e.key === 'Enter') conSend(e.target.value); };
@@ -2147,6 +2392,7 @@ function createTools(api) {
     $('#tWatch').disabled = !on || st.mon.running;
     $('#tOnlyChgL').hidden = !st.scan.found.length; $('#tScanCopy').hidden = !st.scan.found.length;
     $('#tConSend').disabled = !on || st.mon.running;
+    if ($('#tSimGo')) { $('#tSimGo').disabled = !on || busyBus || st.sim.busy; $('#tSimLive').disabled = !on || busyBus || (st.sim.busy && !st.sim.live); $('#tSimLive').textContent = st.sim.live ? 'Zatrzymaj' : 'Odczyt ciągły'; $('#tSimCopy').hidden = !Object.keys(st.sim.vals).length || st.sim.busy; }
     $('#tMonGo').hidden = st.mon.running; $('#tMonGo').disabled = !on || st.scan.running || st.scan.watch; $('#tMonStop').hidden = !st.mon.running;
     $('#tMonCopy').hidden = $('#tMonDl').hidden = !st.mon.raw.length || st.mon.running;
     if (api.framed) $('#tMonDl').hidden = true;
@@ -2289,6 +2535,55 @@ function createTools(api) {
       ...S.found.map(fd => `${hex4(fd.did)}  ${S.changed.has(fd.did) ? 'ZMIENNY' : '       '}  start: ${hexs(S.base[fd.did] || fd.bytes)}${S.changed.has(fd.did) ? '  teraz: ' + hexs(S.last[fd.did]) : ''}`)].join('\n');
   }
 
+  /* ---------- pomiary Simos18 ---------- */
+  function engineInfo() { return api.report().modules.find(m => m.tx === 0x7E0) || null; }
+  function simNote() {
+    const m = engineInfo(); if (!m) return 'Po skanie modułów aplikacja sprawdzi po numerze części, czy sterownik to Simos18.';
+    const part = m.ident && m.ident['Nr części'];
+    if (isSimos18(m.family)) return `Twój sterownik: <b>${esc(m.family)}</b> (rozpoznany po numerze części ${esc(part || '')}).`;
+    if (m.family) return `Twój sterownik to ${esc(m.family)}, a nie Simos18. Te identyfikatory raczej nie odpowiedzą, a jeśli odpowiedzą, mogą znaczyć co innego.`;
+    return part ? `Numeru części ${esc(part)} nie ma na liście Simos18. Możesz spróbować: pomiary, których sterownik nie zna, po prostu nie odpowiedzą, ale te, które odpowiedzą, mogą znaczyć co innego.` : '';
+  }
+  async function readSim(live) {
+    const e = api.elm(); if (!e || st.sim.busy) return;
+    const S = st.sim; S.busy = true; S.live = live; S.rounds = 0; sync();
+    const resume = api.pause(); const mod = { tx: 0x7E0, rx: 0x7E8 }; const t0 = now();
+    try {
+      let list = S.ok ? SIMOS18_DIDS.filter(d => S.ok.has(d.did)) : SIMOS18_DIDS;
+      do {
+        const ok = new Set();
+        for (const def of list) {
+          if (e !== api.elm()) break;
+          if (!S.ok) { const el = $('#tSimSt'); if (el) el.textContent = `Sprawdzam 0x${hex4(def.did)} · ${def.name}…`; }
+          const b = await e.op(() => e.readDidRaw(mod, def.did));
+          if (b) { ok.add(def.did); S.raw[def.did] = b; S.vals[def.did] = decodeSimosDid(def, b); }
+        }
+        if (!S.ok) { S.ok = ok; list = SIMOS18_DIDS.filter(d => ok.has(d.did)); }
+        S.rounds++; S.at = new Date();
+        S.msg = S.ok.size ? `${S.ok.size} z ${SIMOS18_DIDS.length} pomiarów odpowiada${S.live ? ` · runda ${S.rounds}, ${(S.rounds / ((now() - t0) / 1000)).toFixed(2)} rund/s` : ''}.` : 'Sterownik nie odpowiedział na żaden z tych identyfikatorów. To raczej nie jest Simos18.';
+        const el = $('#tSimSt'); if (el) el.textContent = S.msg;
+        renderSim();
+      } while (S.live && S.ok.size && e === api.elm());
+    } catch (err) { S.msg = 'Odczyt przerwany: ' + err.message; }
+    S.busy = false; S.live = false; resume(); const el = $('#tSimSt'); if (el) el.textContent = S.msg; renderSim(); sync();
+    if (S.ok && S.ok.size) api.saveLog('pomiary', `Pomiary Simos18, ${S.ok.size} wartości, ${S.rounds} ${plural(S.rounds, 'runda', 'rundy', 'rund')}`, simText());
+  }
+  function simFmt(def, v) { return v == null ? '?' : f(v, def.unit === 'λ' ? 3 : dec(v)); }
+  function renderSim() {
+    const el = $('#tSimRes'); if (!el) return;
+    const S = st.sim; if (!S.ok || !S.ok.size) { el.innerHTML = ''; return; }
+    const rows = SIMOS18_DIDS.filter(d => !SIMOS18_SP.has(d.did) || !SIMOS18_DIDS.some(x => x.sp === d.did && S.ok.has(x.did)));
+    el.innerHTML = `<table class="tbl simtbl"><thead><tr><th>Pomiar</th><th class="num">Rzeczywiste</th><th class="num">Zadane</th><th class="num">Różnica</th><th>Jedn.</th><th>DID</th></tr></thead><tbody>
+      ${rows.map(d => { const ok = S.ok.has(d.did), v = S.vals[d.did], spd = d.sp && SIMOS18_DIDS.find(x => x.did === d.sp), sv = spd && S.ok.has(spd.did) ? S.vals[spd.did] : null;
+        return `<tr class="${ok ? '' : 'off'}"><td>${esc(d.name)}</td><td class="num">${ok ? simFmt(d, v) : '—'}</td><td class="num sp">${sv != null ? simFmt(spd, sv) : ''}</td><td class="num">${sv != null && v != null ? f(v - sv, dec(v - sv)) : ''}</td><td>${esc(d.unit)}</td><td class="mono">${hex4(d.did)}</td></tr>`; }).join('')}
+      </tbody></table><p class="small muted">Wyszarzone: sterownik nie odpowiada na ten identyfikator.</p>`;
+  }
+  function simText() {
+    const S = st.sim;
+    return [`Pomiary Simos18 (UDS 0x22, 0x7E0) · ${S.at ? S.at.toLocaleString('pl-PL') : ''} · rund: ${S.rounds}`,
+      ...SIMOS18_DIDS.filter(d => S.ok && S.ok.has(d.did)).map(d => `${hex4(d.did)}  ${d.name}: ${simFmt(d, S.vals[d.did])} ${d.unit}  [${hexs(S.raw[d.did] || [])}]`)].join('\n');
+  }
+
   /* ---------- konsola ---------- */
   function conMod() {
     const v = $('#tConMod').value;
@@ -2402,15 +2697,16 @@ function createTools(api) {
   /* ---------- API ---------- */
   return {
     render,
-    onConnect() { st.tests = null; st.testsMsg = ''; st.scan.found = []; st.scan.changed = new Set(); render(); },
+    onConnect() { st.sim = { busy: false, live: false, vals: {}, raw: {}, ok: null, msg: '', rounds: 0, at: null }; st.tests = null; st.testsMsg = ''; st.scan.found = []; st.scan.changed = new Set(); render(); },
     sync,
     async stopAll() {
-      stopKeep(); st.scan.stop = true; st.scan.watch = false;
+      stopKeep(); st.scan.stop = true; st.scan.watch = false; st.sim.live = false;
       if (st.mon.running) { st.mon.running = false; try { st.mon.h && await st.mon.h.stop(); } catch (e) {} st.mon.resume = null; if (st.mon.raw.length) api.saveLog('podsluch', `Podsłuch, ${st.mon.msgs.length} wiadomości`, monText()); }
       if (st.con.lines.length) { api.saveLog('konsola', `Konsola UDS, ${st.con.lines.length} ${plural(st.con.lines.length, 'linia', 'linie', 'linii')}`, st.con.lines.map(l => l.s).join('\n')); st.con.lines = []; renderCon(); }
       sync();
     },
-    busy() { return st.mon.running || st.scan.running || st.scan.watch; },
+    onScan() { const n = $('#tSimNote'); if (n) n.innerHTML = simNote(); },
+    busy() { return st.mon.running || st.scan.running || st.scan.watch || st.sim.busy; },
     reportLines() {
       const L = [];
       if (st.tests && st.tests.tests.length) {
@@ -2420,6 +2716,7 @@ function createTools(api) {
         const fails = st.tests.tests.filter(t => !t.pass);
         L.push(fails.length ? 'Poza zakresem: ' + fails.map(t => `${midName(t.mid)} – ${t.name}: ${f(t.value, dec(t.value))} ${t.unit} (min ${f(t.min, dec(t.min))}, max ${f(t.max, dec(t.max))})`).join('; ') : `Wszystkie ${st.tests.tests.length} wyniki w zakresie.`);
       }
+      if (st.sim.ok && st.sim.ok.size) L.push('', '== Pomiary Simos18 (ostatni odczyt) ==', ...SIMOS18_DIDS.filter(d => st.sim.ok.has(d.did)).map(d => `${d.name}: ${simFmt(d, st.sim.vals[d.did])} ${d.unit}`.trim()));
       if (st.scan.found.length) L.push('', `Skaner 0x22: ${st.scan.found.length} DID, zmiennych ${st.scan.changed.size}`);
       return L;
     }
@@ -3403,14 +3700,17 @@ function createBridge(api) {
     const i = dtcInfo(code, bmw); if (!i || (!i.causes.length && !i.warn && !i.note)) return '';
     return `<details class="cz"><summary>Możliwe przyczyny</summary>${i.uncertain ? '<p class="muted small">Źródła nie są zgodne co do tego kodu. Traktuj opis orientacyjnie.</p>' : ''}${i.warn ? `<p class="warnp">${esc(i.warn)}</p>` : ''}${i.causes.length ? `<ul>${i.causes.map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}${i.note ? `<p class="muted small">${esc(i.note)}</p>` : ''}<p class="muted small">To podpowiedź z poradników, nie diagnoza. Źródła: ${i.src.map(x => `<a href="${esc(x[1])}" target="_blank" rel="noopener">${esc(x[0])}</a>`).join(', ')}</p></details>`;
   }
+  const VAG_REC = { 1: 'priorytet, częstość', 2: 'licznik zapomnienia, przebieg, czas', 0x70: 'warunki pracy modułu, bez opisu skali', 0x71: 'ramka dynamiczna' };
   function dtcRow(code, desc, flags, m, d) {
     const det = d && d.details;
     const detHtml = det ? `<div class="dtcdet">${det.err ? `<span class="muted">${esc(det.err)}</span>`
-      : `${det.ext.length ? `<div><b>Dane rozszerzone</b> ${det.ext.map(x => `<span class="kvp">rekord ${hex2(x.rec)}: <code>${x.bytes.map(hex2).join(' ')}</code>${x.bytes.length <= 3 ? ` = ${x.bytes.reduce((a, b) => a * 256 + b, 0)}` : ''}</span>`).join('')}</div>` : ''}
+      : `${det.ext.length ? `<div><b>Dane rozszerzone</b> ${det.ext.map(x => `<span class="kvp">rekord ${hex2(x.rec)}${d.vagNo != null && VAG_REC[x.rec] ? ' (' + VAG_REC[x.rec] + ')' : ''}: <code>${x.bytes.map(hex2).join(' ')}</code>${x.bytes.length <= 3 && !(d.vagNo != null && VAG_REC[x.rec]) ? ` = ${x.bytes.reduce((a, b) => a * 256 + b, 0)}` : ''}</span>`).join('')}</div>` : ''}
          ${det.snap ? `<div><b>Dane środowiskowe</b> <code class="wrap">${det.snap.map(hex2).join(' ')}</code></div>` : ''}
          ${!det.ext.length && !det.snap ? '<span class="muted">Moduł nie zwrócił szczegółów dla tego kodu.</span>' : '<span class="muted">Surowe dane. Bez opisu producenta nie da się nazwać każdego pola. Licznik wystąpień i przebieg zwykle są w danych rozszerzonych.</span>'}`}</div>` : '';
     const btn = m && d ? `<button class="linkbtn" type="button" data-det="${modKey(m)}|${d.raw}">${det ? 'Odśwież szczegóły' : 'Szczegóły'}</button>` : '';
-    return `<div class="dtc"><code>${esc(code)}</code><span class="d">${desc ? esc(desc) : '<span class="muted">Kod producenta, brak opisu w bazie</span>'}</span>${causesHtml(d ? d.code : code, brand() === 'bmw' && !!m)}${flags && flags.length ? `<div class="flags">${flags.map(f => `<span class="flag${f === 'aktywny' ? ' act' : f === 'kontrolka' ? ' mil' : ''}">${esc(f)}</span>`).join('')}${btn}</div>` : ''}${detHtml}</div>`;
+    const ctx = d && d.vagNo != null && det && !det.err ? vagContextText(vagFaultContext(det.ext, report.stamp)) : '';
+    const extra = d && d.vagNo != null ? `<span class="vagmeta">${d.vagOnly ? 'Numer błędu VAG (tak pokazuje go VCDS). Kod P i opis są w bazie producenta dla tego sterownika, której aplikacja nie ma. ' : d.dbSrc ? `Opis z bazy sterownika ${esc(d.dbSrc)}${d.descEn && d.descEn !== desc ? `: <i>${esc(d.descEn)}</i>` : ''}. ` : ''}Surowo: <code>${esc(d.raw)}</code></span>${ctx ? `<span class="vagctx">${esc(ctx)}</span>` : ''}` : '';
+    return `<div class="dtc"><code>${esc(code)}</code><span class="d">${desc ? esc(desc) : d && d.vagOnly ? '<span class="muted">Opis tylko w bazie producenta</span>' : '<span class="muted">Kod producenta, brak opisu w bazie</span>'}</span>${extra}${causesHtml(d ? d.code : code, brand() === 'bmw' && !!m)}${flags && flags.length ? `<div class="flags">${flags.map(f => `<span class="flag${f === 'aktywny' ? ' act' : f === 'kontrolka' ? ' mil' : ''}">${esc(f)}</span>`).join('')}${btn}</div>` : ''}${detHtml}</div>`;
   }
   function clearFoot(id, label) { return `<div class="cardfoot" data-foot="${id}"><button class="btn small" type="button" data-clear="${id}">${label}</button></div>`; }
   function renderObd() {
@@ -3437,7 +3737,8 @@ function createBridge(api) {
     $('#modTitle').firstChild.textContent = `Moduły ${BRAND_NAMES[brand()]} `;
     const host = $('#modules');
     if (!report.modules.length) { host.innerHTML = `<p class="muted">${scanning ? 'Skanowanie…' : 'Jeszcze nie skanowano.'}</p>`; updateBadge(); return; }
-    host.innerHTML = '<div class="cols">' + report.modules.map(m => {
+    const stampHtml = report.stamp ? `<p class="small muted" style="margin:0 0 10px">Przebieg auta: <b>${report.stamp.km.toLocaleString('pl-PL')} km</b> · zegar auta: ${esc(report.stamp.time)} (odczyt 0x02BD z modułu 0x${esc(report.stamp.src)}). Przy błędach liczę, ile km temu wystąpiły.</p>` : '';
+    host.innerHTML = stampHtml + '<div class="cols">' + report.modules.map(m => {
       const n = m.dtcs.length;
       const ident = Object.entries(m.ident).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join('<br>');
       return `<div class="card${n ? ' has-err' : ''}"><div class="card-h"><span class="addr">${esc(m.addr)}</span><h3>${esc(m.name)}</h3><span class="n">${n} ${plural(n, 'błąd', 'błędy', 'błędów')}</span></div>
@@ -3462,6 +3763,8 @@ function createBridge(api) {
     try {
       prog('Odczyt kodów OBD silnika…');
       report.obd = await e.op(() => e.readObdDtcs());
+      report.stamp = null;
+      if (brand() === 'vag') { prog('Przebieg i zegar auta…'); report.stamp = await e.op(() => e.readVagStamp()).catch(() => null); $('#sKm').textContent = report.stamp ? `${report.stamp.km.toLocaleString('pl-PL')} km · zegar auta ${report.stamp.time}` : '—'; }
       report.freeze = await e.op(() => e.readFreeze(sup));
       renderObd();
       $('#modTitle').firstChild.textContent = `Moduły ${BRAND_NAMES[brand()]} `;
@@ -3480,7 +3783,7 @@ function createBridge(api) {
       prog(`Gotowe ${report.at.toLocaleTimeString('pl-PL')}: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}.`);
       journal && journal.add('raport', `Raport po skanie: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}`, buildReport());
     } catch (err) { prog('Skanowanie przerwane: ' + err.message); logLine('! ' + err.message); }
-    finally { scanning = false; renderModules(); setButtons(); }
+    finally { scanning = false; renderModules(); setButtons(); tools && tools.onScan && tools.onScan(); }
   }
   $('#btnScan').onclick = () => runScan($('#fullScan').checked);
   $('#brandSel').value = store.get('brand', 'auto');
@@ -3528,6 +3831,7 @@ function createBridge(api) {
     L.push('VAG Diagnostyka – raport', 'Data: ' + new Date().toLocaleString('pl-PL'));
     L.push('Adapter: ' + (report.adapter || '—'), 'VIN: ' + (report.vin || '—'), 'Marka: ' + BRAND_NAMES[brand()] + (store.get('brand', 'auto') === 'auto' ? ' (z VIN)' : ' (wybrana ręcznie)'));
     const cal = report.calib || {};
+    if (report.stamp) L.push(`Przebieg (0x02BD): ${report.stamp.km} km, zegar auta: ${report.stamp.time}`);
     if (cal.ecuName || cal.calid) L.push(`Sterownik: ${cal.ecuName || '—'} · kalibracja: ${(cal.calid || []).join(', ') || '—'} · CVN: ${(cal.cvn || []).join(', ') || '—'}`);
     const r = report.readiness;
     if (r) { L.push(`Kontrolka MIL: ${r.mil ? 'włączona' : 'wyłączona'}, kody emisyjne: ${r.count}`); L.push('Gotowość: ' + r.monitors.map(m => `${m.name} ${m.complete ? 'gotowy' : 'NIEGOTOWY'}`).join('; ')); }
@@ -3543,6 +3847,7 @@ function createBridge(api) {
       else if (!m.dtcs.length) L.push('   brak błędów');
       else m.dtcs.forEach(d => {
         L.push(`   ${d.full} [${d.flags.join(', ')}] ${d.desc}`.trimEnd());
+        if (d.vagNo != null) { L.push(`      surowo: ${d.raw}${d.vagOnly ? ' (numer VAG, opis tylko w bazie producenta)' : d.dbSrc ? ` (baza ${d.dbSrc}${d.descEn && d.descEn !== d.desc ? ': ' + d.descEn : ''})` : ''}`); const cx = d.details && !d.details.err ? vagContextText(vagFaultContext(d.details.ext, report.stamp)) : ''; if (cx) L.push('      ' + cx); }
         const inf = dtcInfo(d.code, brand() === 'bmw'); if (inf && inf.causes.length) L.push('      możliwe przyczyny: ' + inf.causes.join('; '));
         const x = d.details; if (x && !x.err) { x.ext.forEach(r => L.push(`      rekord ${hex2(r.rec)}: ${r.bytes.map(hex2).join(' ')}`)); if (x.snap) L.push('      środowisko: ' + x.snap.map(hex2).join(' ')); }
       });

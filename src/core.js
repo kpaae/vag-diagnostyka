@@ -46,7 +46,7 @@ const MODULES = [
   { addr: '17', name: 'Zestaw wskaźników', tx: 0x714, rx: 0x77E },
   { addr: '19', name: 'Gateway', tx: 0x710, rx: 0x77A },
   { addr: '44', name: 'Wspomaganie kierownicy', tx: 0x712, rx: 0x77C },
-  { addr: '56', name: 'Radio', tx: 0x773, rx: 0x7DD }
+  { addr: '5F', name: 'Elektronika informacyjna (radio, MIB)', tx: 0x773, rx: 0x7DD }
 ];
 /* BMW (D-CAN, adresowanie rozszerzone: tester 0x6F1, odpowiedź 0x600 + adres). Seria F/G – UDS, seria E od ok. 2007 – KWP2000. */
 const BMW_MODULES = [
@@ -365,6 +365,7 @@ function decodeUdsDtc(b0, b1, b2, st, bmw) {
   if (st & 0x08) flags.push('potwierdzony');
   if (st & 0x04) flags.push('oczekujący');
   if (st & 0x80) flags.push('kontrolka');
+  if (st & 0x02) flags.push('w tym cyklu jazdy');
   flags.push('status 0x' + hex2(st));
   return { code, ftb: hex2(b2), raw: hex2(b0) + hex2(b1) + hex2(b2), full: bmw ? code : `${code}-${hex2(b2)}`, status: st, real: (st & 0xAF) !== 0, flags, active: !!(st & 1), mil: !!(st & 0x80), desc: (bmw ? bmwDesc(code) : DTC_DESC[code]) || '' };
 }
@@ -692,6 +693,12 @@ class ELM {
       const b = bytesOf(r.data).slice(6);
       if (b.length > 1 && b[0] === rec) ext.push({ rec, bytes: b.slice(1) });
     }
+    if (mod.bmw == null) for (const rec of [0x70, 0x71]) {   // VAG: rekord silnika/skrzyni i dynamiczna ramka zamrożona
+      const r = await this.ureq(mod, '1906' + raw + hex2(rec), { attempts: 1 });
+      if (r.err) continue;
+      const b = bytesOf(r.data).slice(6);
+      if (b.length > 1 && b[0] === rec) ext.push({ rec, bytes: b.slice(1) });
+    }
     let snap = null;
     const s = await this.ureq(mod, '1904' + raw + 'FF', { attempts: 2 });
     if (!s.err) { const b = bytesOf(s.data).slice(6); if (b.length) snap = b; }
@@ -789,6 +796,15 @@ class ELM {
       }
     };
   }
+  /* VAG: przebieg i zegar auta teraz (0x02BD), z gatewaya, a gdy nie odpowie – z silnika. */
+  async readVagStamp() {
+    for (const mod of [{ tx: 0x710, rx: 0x77A }, { tx: 0x7E0, rx: 0x7E8 }]) {
+      const b = await this.readDidRaw(mod, 0x02BD);
+      const st = parseVagStamp(b);
+      if (st) return { ...st, src: hex3(mod.tx) };
+    }
+    return null;
+  }
   async readModuleDtcs(mod) {
     if (mod.bmw != null) return this.readBmwDtcs(mod);
     await this.select(mod.tx, mod.rx);
@@ -816,6 +832,14 @@ class ELM {
     }
     const d = await this.readModuleDtcs(mod);
     info.dtcs = d.dtcs; info.untested = d.untested || 0; if (d.err) info.err = d.err;
+    if (mod.bmw == null) {
+      /* VAG: numer błędu to własny numer producenta, nie kod SAE. Kod P i opis tylko z bazy znanego sterownika. */
+      const engine = mod.tx === 0x7E0;
+      if (engine) { const fam = vagEcuFamily(info.ident['Nr części']); if (fam) { info.family = fam; info.ident['Rodzina sterownika'] = fam; } }
+      info.dtcs = info.dtcs.map(x => resolveVagDtc(x, info.family, engine));
+      /* Kontekst każdego błędu (ile razy, przy jakim przebiegu, kiedy): VAG trzyma go w danych rozszerzonych. */
+      for (const x of info.dtcs.slice(0, 12)) { try { x.details = await this.readDtcDetails(mod, x.raw); } catch (e) { x.details = { err: e.message, ext: [], snap: null }; } }
+    }
     return info;
   }
   async clearModule(mod) {
@@ -865,7 +889,8 @@ class ELM {
       for (let tx = 0x700; tx < 0x775; tx++) {
         if (known.has(tx)) continue;
         onProgress && onProgress(tx);
-        const mod = { addr: '??', name: 'Moduł 0x' + hex3(tx), tx, rx: tx + 0x6A };
+        const nm = VAG_MOD_NAMES[tx];
+        const mod = { addr: nm ? nm[0] : '??', name: nm ? nm[1] : 'Moduł 0x' + hex3(tx), tx, rx: tx + 0x6A };
         if (await this.probe(mod, false)) found.push(mod);
       }
     } finally { this.st = '64'; await this.send('ATST64'); }

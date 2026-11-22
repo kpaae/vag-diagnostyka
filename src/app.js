@@ -530,14 +530,17 @@
     const i = dtcInfo(code, bmw); if (!i || (!i.causes.length && !i.warn && !i.note)) return '';
     return `<details class="cz"><summary>Możliwe przyczyny</summary>${i.uncertain ? '<p class="muted small">Źródła nie są zgodne co do tego kodu. Traktuj opis orientacyjnie.</p>' : ''}${i.warn ? `<p class="warnp">${esc(i.warn)}</p>` : ''}${i.causes.length ? `<ul>${i.causes.map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}${i.note ? `<p class="muted small">${esc(i.note)}</p>` : ''}<p class="muted small">To podpowiedź z poradników, nie diagnoza. Źródła: ${i.src.map(x => `<a href="${esc(x[1])}" target="_blank" rel="noopener">${esc(x[0])}</a>`).join(', ')}</p></details>`;
   }
+  const VAG_REC = { 1: 'priorytet, częstość', 2: 'licznik zapomnienia, przebieg, czas', 0x70: 'warunki pracy modułu, bez opisu skali', 0x71: 'ramka dynamiczna' };
   function dtcRow(code, desc, flags, m, d) {
     const det = d && d.details;
     const detHtml = det ? `<div class="dtcdet">${det.err ? `<span class="muted">${esc(det.err)}</span>`
-      : `${det.ext.length ? `<div><b>Dane rozszerzone</b> ${det.ext.map(x => `<span class="kvp">rekord ${hex2(x.rec)}: <code>${x.bytes.map(hex2).join(' ')}</code>${x.bytes.length <= 3 ? ` = ${x.bytes.reduce((a, b) => a * 256 + b, 0)}` : ''}</span>`).join('')}</div>` : ''}
+      : `${det.ext.length ? `<div><b>Dane rozszerzone</b> ${det.ext.map(x => `<span class="kvp">rekord ${hex2(x.rec)}${d.vagNo != null && VAG_REC[x.rec] ? ' (' + VAG_REC[x.rec] + ')' : ''}: <code>${x.bytes.map(hex2).join(' ')}</code>${x.bytes.length <= 3 && !(d.vagNo != null && VAG_REC[x.rec]) ? ` = ${x.bytes.reduce((a, b) => a * 256 + b, 0)}` : ''}</span>`).join('')}</div>` : ''}
          ${det.snap ? `<div><b>Dane środowiskowe</b> <code class="wrap">${det.snap.map(hex2).join(' ')}</code></div>` : ''}
          ${!det.ext.length && !det.snap ? '<span class="muted">Moduł nie zwrócił szczegółów dla tego kodu.</span>' : '<span class="muted">Surowe dane. Bez opisu producenta nie da się nazwać każdego pola. Licznik wystąpień i przebieg zwykle są w danych rozszerzonych.</span>'}`}</div>` : '';
     const btn = m && d ? `<button class="linkbtn" type="button" data-det="${modKey(m)}|${d.raw}">${det ? 'Odśwież szczegóły' : 'Szczegóły'}</button>` : '';
-    return `<div class="dtc"><code>${esc(code)}</code><span class="d">${desc ? esc(desc) : '<span class="muted">Kod producenta, brak opisu w bazie</span>'}</span>${causesHtml(d ? d.code : code, brand() === 'bmw' && !!m)}${flags && flags.length ? `<div class="flags">${flags.map(f => `<span class="flag${f === 'aktywny' ? ' act' : f === 'kontrolka' ? ' mil' : ''}">${esc(f)}</span>`).join('')}${btn}</div>` : ''}${detHtml}</div>`;
+    const ctx = d && d.vagNo != null && det && !det.err ? vagContextText(vagFaultContext(det.ext, report.stamp)) : '';
+    const extra = d && d.vagNo != null ? `<span class="vagmeta">${d.vagOnly ? 'Numer błędu VAG (tak pokazuje go VCDS). Kod P i opis są w bazie producenta dla tego sterownika, której aplikacja nie ma. ' : d.dbSrc ? `Opis z bazy sterownika ${esc(d.dbSrc)}${d.descEn && d.descEn !== desc ? `: <i>${esc(d.descEn)}</i>` : ''}. ` : ''}Surowo: <code>${esc(d.raw)}</code></span>${ctx ? `<span class="vagctx">${esc(ctx)}</span>` : ''}` : '';
+    return `<div class="dtc"><code>${esc(code)}</code><span class="d">${desc ? esc(desc) : d && d.vagOnly ? '<span class="muted">Opis tylko w bazie producenta</span>' : '<span class="muted">Kod producenta, brak opisu w bazie</span>'}</span>${extra}${causesHtml(d ? d.code : code, brand() === 'bmw' && !!m)}${flags && flags.length ? `<div class="flags">${flags.map(f => `<span class="flag${f === 'aktywny' ? ' act' : f === 'kontrolka' ? ' mil' : ''}">${esc(f)}</span>`).join('')}${btn}</div>` : ''}${detHtml}</div>`;
   }
   function clearFoot(id, label) { return `<div class="cardfoot" data-foot="${id}"><button class="btn small" type="button" data-clear="${id}">${label}</button></div>`; }
   function renderObd() {
@@ -564,7 +567,8 @@
     $('#modTitle').firstChild.textContent = `Moduły ${BRAND_NAMES[brand()]} `;
     const host = $('#modules');
     if (!report.modules.length) { host.innerHTML = `<p class="muted">${scanning ? 'Skanowanie…' : 'Jeszcze nie skanowano.'}</p>`; updateBadge(); return; }
-    host.innerHTML = '<div class="cols">' + report.modules.map(m => {
+    const stampHtml = report.stamp ? `<p class="small muted" style="margin:0 0 10px">Przebieg auta: <b>${report.stamp.km.toLocaleString('pl-PL')} km</b> · zegar auta: ${esc(report.stamp.time)} (odczyt 0x02BD z modułu 0x${esc(report.stamp.src)}). Przy błędach liczę, ile km temu wystąpiły.</p>` : '';
+    host.innerHTML = stampHtml + '<div class="cols">' + report.modules.map(m => {
       const n = m.dtcs.length;
       const ident = Object.entries(m.ident).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join('<br>');
       return `<div class="card${n ? ' has-err' : ''}"><div class="card-h"><span class="addr">${esc(m.addr)}</span><h3>${esc(m.name)}</h3><span class="n">${n} ${plural(n, 'błąd', 'błędy', 'błędów')}</span></div>
@@ -589,6 +593,8 @@
     try {
       prog('Odczyt kodów OBD silnika…');
       report.obd = await e.op(() => e.readObdDtcs());
+      report.stamp = null;
+      if (brand() === 'vag') { prog('Przebieg i zegar auta…'); report.stamp = await e.op(() => e.readVagStamp()).catch(() => null); $('#sKm').textContent = report.stamp ? `${report.stamp.km.toLocaleString('pl-PL')} km · zegar auta ${report.stamp.time}` : '—'; }
       report.freeze = await e.op(() => e.readFreeze(sup));
       renderObd();
       $('#modTitle').firstChild.textContent = `Moduły ${BRAND_NAMES[brand()]} `;
@@ -607,7 +613,7 @@
       prog(`Gotowe ${report.at.toLocaleTimeString('pl-PL')}: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}.`);
       journal && journal.add('raport', `Raport po skanie: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}`, buildReport());
     } catch (err) { prog('Skanowanie przerwane: ' + err.message); logLine('! ' + err.message); }
-    finally { scanning = false; renderModules(); setButtons(); }
+    finally { scanning = false; renderModules(); setButtons(); tools && tools.onScan && tools.onScan(); }
   }
   $('#btnScan').onclick = () => runScan($('#fullScan').checked);
   $('#brandSel').value = store.get('brand', 'auto');
@@ -655,6 +661,7 @@
     L.push('VAG Diagnostyka – raport', 'Data: ' + new Date().toLocaleString('pl-PL'));
     L.push('Adapter: ' + (report.adapter || '—'), 'VIN: ' + (report.vin || '—'), 'Marka: ' + BRAND_NAMES[brand()] + (store.get('brand', 'auto') === 'auto' ? ' (z VIN)' : ' (wybrana ręcznie)'));
     const cal = report.calib || {};
+    if (report.stamp) L.push(`Przebieg (0x02BD): ${report.stamp.km} km, zegar auta: ${report.stamp.time}`);
     if (cal.ecuName || cal.calid) L.push(`Sterownik: ${cal.ecuName || '—'} · kalibracja: ${(cal.calid || []).join(', ') || '—'} · CVN: ${(cal.cvn || []).join(', ') || '—'}`);
     const r = report.readiness;
     if (r) { L.push(`Kontrolka MIL: ${r.mil ? 'włączona' : 'wyłączona'}, kody emisyjne: ${r.count}`); L.push('Gotowość: ' + r.monitors.map(m => `${m.name} ${m.complete ? 'gotowy' : 'NIEGOTOWY'}`).join('; ')); }
@@ -670,6 +677,7 @@
       else if (!m.dtcs.length) L.push('   brak błędów');
       else m.dtcs.forEach(d => {
         L.push(`   ${d.full} [${d.flags.join(', ')}] ${d.desc}`.trimEnd());
+        if (d.vagNo != null) { L.push(`      surowo: ${d.raw}${d.vagOnly ? ' (numer VAG, opis tylko w bazie producenta)' : d.dbSrc ? ` (baza ${d.dbSrc}${d.descEn && d.descEn !== d.desc ? ': ' + d.descEn : ''})` : ''}`); const cx = d.details && !d.details.err ? vagContextText(vagFaultContext(d.details.ext, report.stamp)) : ''; if (cx) L.push('      ' + cx); }
         const inf = dtcInfo(d.code, brand() === 'bmw'); if (inf && inf.causes.length) L.push('      możliwe przyczyny: ' + inf.causes.join('; '));
         const x = d.details; if (x && !x.err) { x.ext.forEach(r => L.push(`      rekord ${hex2(r.rec)}: ${r.bytes.map(hex2).join(' ')}`)); if (x.snap) L.push('      środowisko: ' + x.snap.map(hex2).join(' ')); }
       });

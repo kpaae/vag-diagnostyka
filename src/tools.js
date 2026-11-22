@@ -12,6 +12,7 @@ function createTools(api) {
     tests: null, testsBusy: false, testsMsg: '',
     scan: { running: false, stop: false, found: [], msg: '', watch: false, base: {}, last: {}, hist: {}, changed: new Set(), mod: '7E0:7E8', ranges: api.store.get('didRanges', '1000-1FFF'), ext: false, onlyChg: false },
     con: { mod: '7E0:7E8', lines: [], keep: null, pending: null },
+    sim: { busy: false, live: false, vals: {}, raw: {}, ok: null, msg: '', rounds: 0, at: null },
     mon: { running: false, h: null, done: null, msgs: [], raw: [], t0: 0, frames: 0, restarts: 0, hideTp: true, onlyWrite: false, resume: null }
   };
 
@@ -68,6 +69,14 @@ function createTools(api) {
         <p class="tstatus" id="tScanSt"></p>
         <div id="tScanRes" class="tblwrap"></div></div>
 
+      ${api.brand() === 'bmw' ? '' : `<div class="card"><div class="card-h"><h3>Pomiary silnika Simos18</h3><span class="n">EA888 gen. 3 · 0x22</span></div>
+        <p class="small muted">Gotowe pomiary sterowników Simos18 (auta MQB z silnikiem EA888 gen. 3, 1.8 i 2.0 TSI/TFSI): doładowanie rzeczywiste i zadane, wastegate, obroty turbosprężarki, korekty spalania stukowego na każdy cylinder, pozycje wałków, ciśnienia paliwa, temperatura oleju. Lista i przeliczniki pochodzą z projektu VW_Flash. <span id="tSimNote">${simNote()}</span></p>
+        <div class="actions"><button class="btn small primary" id="tSimGo" type="button" ${on ? '' : 'disabled'}>Odczytaj</button>
+          <button class="btn small" id="tSimLive" type="button" ${on ? '' : 'disabled'}>Odczyt ciągły</button>
+          <button class="btn small ghost" id="tSimCopy" type="button" hidden>Kopiuj</button></div>
+        <p class="tstatus" id="tSimSt"></p>
+        <div id="tSimRes" class="tblwrap"></div></div>`}
+
       <div class="card"><div class="card-h"><h3>Konsola UDS</h3><span class="n">dla zaawansowanych</span></div>
         <p class="small muted">Wysyła pojedyncze polecenie do wybranego modułu, np. odczytane z podsłuchu. Odczyty idą od razu. Zapis, procedury i testy elementów wymagają potwierdzenia. Programowanie jest zablokowane.</p>
         <div class="frow">${modSelect('tConMod', st.con.mod)}
@@ -90,7 +99,7 @@ function createTools(api) {
           <button class="btn small ghost" id="tMonDl" type="button" hidden>Pobierz log</button></div>
         <p class="tstatus" id="tMonSt"></p>
         <div id="tMonOut" class="msgs"></div></div>`;
-    bind(); renderTests(); renderScan(); renderCon(); renderMon(); sync();
+    bind(); renderTests(); renderScan(); renderSim(); renderCon(); renderMon(); sync();
   }
 
   function bind() {
@@ -103,6 +112,7 @@ function createTools(api) {
     $('#tWatch').onclick = toggleWatch;
     $('#tOnlyChg').onchange = e => { st.scan.onlyChg = e.target.checked; renderScan(); };
     $('#tScanCopy').onclick = e => api.copyText(scanText(), e.currentTarget);
+    if ($('#tSimGo')) { $('#tSimGo').onclick = () => readSim(false); $('#tSimLive').onclick = () => st.sim.live ? (st.sim.live = false) : readSim(true); $('#tSimCopy').onclick = e => api.copyText(simText(), e.currentTarget); }
     $('#tConMod').onchange = e => { stopKeep(); st.con.mod = e.target.value; $('#tConCustom').hidden = e.target.value !== 'custom'; };
     $('#tConSend').onclick = () => conSend($('#tConIn').value);
     $('#tConIn').onkeydown = e => { if (e.key === 'Enter') conSend(e.target.value); };
@@ -124,6 +134,7 @@ function createTools(api) {
     $('#tWatch').disabled = !on || st.mon.running;
     $('#tOnlyChgL').hidden = !st.scan.found.length; $('#tScanCopy').hidden = !st.scan.found.length;
     $('#tConSend').disabled = !on || st.mon.running;
+    if ($('#tSimGo')) { $('#tSimGo').disabled = !on || busyBus || st.sim.busy; $('#tSimLive').disabled = !on || busyBus || (st.sim.busy && !st.sim.live); $('#tSimLive').textContent = st.sim.live ? 'Zatrzymaj' : 'Odczyt ciągły'; $('#tSimCopy').hidden = !Object.keys(st.sim.vals).length || st.sim.busy; }
     $('#tMonGo').hidden = st.mon.running; $('#tMonGo').disabled = !on || st.scan.running || st.scan.watch; $('#tMonStop').hidden = !st.mon.running;
     $('#tMonCopy').hidden = $('#tMonDl').hidden = !st.mon.raw.length || st.mon.running;
     if (api.framed) $('#tMonDl').hidden = true;
@@ -266,6 +277,55 @@ function createTools(api) {
       ...S.found.map(fd => `${hex4(fd.did)}  ${S.changed.has(fd.did) ? 'ZMIENNY' : '       '}  start: ${hexs(S.base[fd.did] || fd.bytes)}${S.changed.has(fd.did) ? '  teraz: ' + hexs(S.last[fd.did]) : ''}`)].join('\n');
   }
 
+  /* ---------- pomiary Simos18 ---------- */
+  function engineInfo() { return api.report().modules.find(m => m.tx === 0x7E0) || null; }
+  function simNote() {
+    const m = engineInfo(); if (!m) return 'Po skanie modułów aplikacja sprawdzi po numerze części, czy sterownik to Simos18.';
+    const part = m.ident && m.ident['Nr części'];
+    if (isSimos18(m.family)) return `Twój sterownik: <b>${esc(m.family)}</b> (rozpoznany po numerze części ${esc(part || '')}).`;
+    if (m.family) return `Twój sterownik to ${esc(m.family)}, a nie Simos18. Te identyfikatory raczej nie odpowiedzą, a jeśli odpowiedzą, mogą znaczyć co innego.`;
+    return part ? `Numeru części ${esc(part)} nie ma na liście Simos18. Możesz spróbować: pomiary, których sterownik nie zna, po prostu nie odpowiedzą, ale te, które odpowiedzą, mogą znaczyć co innego.` : '';
+  }
+  async function readSim(live) {
+    const e = api.elm(); if (!e || st.sim.busy) return;
+    const S = st.sim; S.busy = true; S.live = live; S.rounds = 0; sync();
+    const resume = api.pause(); const mod = { tx: 0x7E0, rx: 0x7E8 }; const t0 = now();
+    try {
+      let list = S.ok ? SIMOS18_DIDS.filter(d => S.ok.has(d.did)) : SIMOS18_DIDS;
+      do {
+        const ok = new Set();
+        for (const def of list) {
+          if (e !== api.elm()) break;
+          if (!S.ok) { const el = $('#tSimSt'); if (el) el.textContent = `Sprawdzam 0x${hex4(def.did)} · ${def.name}…`; }
+          const b = await e.op(() => e.readDidRaw(mod, def.did));
+          if (b) { ok.add(def.did); S.raw[def.did] = b; S.vals[def.did] = decodeSimosDid(def, b); }
+        }
+        if (!S.ok) { S.ok = ok; list = SIMOS18_DIDS.filter(d => ok.has(d.did)); }
+        S.rounds++; S.at = new Date();
+        S.msg = S.ok.size ? `${S.ok.size} z ${SIMOS18_DIDS.length} pomiarów odpowiada${S.live ? ` · runda ${S.rounds}, ${(S.rounds / ((now() - t0) / 1000)).toFixed(2)} rund/s` : ''}.` : 'Sterownik nie odpowiedział na żaden z tych identyfikatorów. To raczej nie jest Simos18.';
+        const el = $('#tSimSt'); if (el) el.textContent = S.msg;
+        renderSim();
+      } while (S.live && S.ok.size && e === api.elm());
+    } catch (err) { S.msg = 'Odczyt przerwany: ' + err.message; }
+    S.busy = false; S.live = false; resume(); const el = $('#tSimSt'); if (el) el.textContent = S.msg; renderSim(); sync();
+    if (S.ok && S.ok.size) api.saveLog('pomiary', `Pomiary Simos18, ${S.ok.size} wartości, ${S.rounds} ${plural(S.rounds, 'runda', 'rundy', 'rund')}`, simText());
+  }
+  function simFmt(def, v) { return v == null ? '?' : f(v, def.unit === 'λ' ? 3 : dec(v)); }
+  function renderSim() {
+    const el = $('#tSimRes'); if (!el) return;
+    const S = st.sim; if (!S.ok || !S.ok.size) { el.innerHTML = ''; return; }
+    const rows = SIMOS18_DIDS.filter(d => !SIMOS18_SP.has(d.did) || !SIMOS18_DIDS.some(x => x.sp === d.did && S.ok.has(x.did)));
+    el.innerHTML = `<table class="tbl simtbl"><thead><tr><th>Pomiar</th><th class="num">Rzeczywiste</th><th class="num">Zadane</th><th class="num">Różnica</th><th>Jedn.</th><th>DID</th></tr></thead><tbody>
+      ${rows.map(d => { const ok = S.ok.has(d.did), v = S.vals[d.did], spd = d.sp && SIMOS18_DIDS.find(x => x.did === d.sp), sv = spd && S.ok.has(spd.did) ? S.vals[spd.did] : null;
+        return `<tr class="${ok ? '' : 'off'}"><td>${esc(d.name)}</td><td class="num">${ok ? simFmt(d, v) : '—'}</td><td class="num sp">${sv != null ? simFmt(spd, sv) : ''}</td><td class="num">${sv != null && v != null ? f(v - sv, dec(v - sv)) : ''}</td><td>${esc(d.unit)}</td><td class="mono">${hex4(d.did)}</td></tr>`; }).join('')}
+      </tbody></table><p class="small muted">Wyszarzone: sterownik nie odpowiada na ten identyfikator.</p>`;
+  }
+  function simText() {
+    const S = st.sim;
+    return [`Pomiary Simos18 (UDS 0x22, 0x7E0) · ${S.at ? S.at.toLocaleString('pl-PL') : ''} · rund: ${S.rounds}`,
+      ...SIMOS18_DIDS.filter(d => S.ok && S.ok.has(d.did)).map(d => `${hex4(d.did)}  ${d.name}: ${simFmt(d, S.vals[d.did])} ${d.unit}  [${hexs(S.raw[d.did] || [])}]`)].join('\n');
+  }
+
   /* ---------- konsola ---------- */
   function conMod() {
     const v = $('#tConMod').value;
@@ -379,15 +439,16 @@ function createTools(api) {
   /* ---------- API ---------- */
   return {
     render,
-    onConnect() { st.tests = null; st.testsMsg = ''; st.scan.found = []; st.scan.changed = new Set(); render(); },
+    onConnect() { st.sim = { busy: false, live: false, vals: {}, raw: {}, ok: null, msg: '', rounds: 0, at: null }; st.tests = null; st.testsMsg = ''; st.scan.found = []; st.scan.changed = new Set(); render(); },
     sync,
     async stopAll() {
-      stopKeep(); st.scan.stop = true; st.scan.watch = false;
+      stopKeep(); st.scan.stop = true; st.scan.watch = false; st.sim.live = false;
       if (st.mon.running) { st.mon.running = false; try { st.mon.h && await st.mon.h.stop(); } catch (e) {} st.mon.resume = null; if (st.mon.raw.length) api.saveLog('podsluch', `Podsłuch, ${st.mon.msgs.length} wiadomości`, monText()); }
       if (st.con.lines.length) { api.saveLog('konsola', `Konsola UDS, ${st.con.lines.length} ${plural(st.con.lines.length, 'linia', 'linie', 'linii')}`, st.con.lines.map(l => l.s).join('\n')); st.con.lines = []; renderCon(); }
       sync();
     },
-    busy() { return st.mon.running || st.scan.running || st.scan.watch; },
+    onScan() { const n = $('#tSimNote'); if (n) n.innerHTML = simNote(); },
+    busy() { return st.mon.running || st.scan.running || st.scan.watch || st.sim.busy; },
     reportLines() {
       const L = [];
       if (st.tests && st.tests.tests.length) {
@@ -397,6 +458,7 @@ function createTools(api) {
         const fails = st.tests.tests.filter(t => !t.pass);
         L.push(fails.length ? 'Poza zakresem: ' + fails.map(t => `${midName(t.mid)} – ${t.name}: ${f(t.value, dec(t.value))} ${t.unit} (min ${f(t.min, dec(t.min))}, max ${f(t.max, dec(t.max))})`).join('; ') : `Wszystkie ${st.tests.tests.length} wyniki w zakresie.`);
       }
+      if (st.sim.ok && st.sim.ok.size) L.push('', '== Pomiary Simos18 (ostatni odczyt) ==', ...SIMOS18_DIDS.filter(d => st.sim.ok.has(d.did)).map(d => `${d.name}: ${simFmt(d, st.sim.vals[d.did])} ${d.unit}`.trim()));
       if (st.scan.found.length) L.push('', `Skaner 0x22: ${st.scan.found.length} DID, zmiennych ${st.scan.changed.size}`);
       return L;
     }

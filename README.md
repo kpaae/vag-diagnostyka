@@ -46,6 +46,14 @@ Wyniki obu testów trafiają do raportu, a dane można skopiować jako CSV.
 
 **Baza kodów (`src/dtcdb.js`):** przy kodach z bazy (SAE używane w VAG i BMW oraz wybrane kody BMW, np. `21A02D`, `2A82`, `30FF`, kody paliwa N54/N55/B58) pod opisem jest rozwijana lista „Możliwe przyczyny” z linkami do źródeł. Do bazy trafiają tylko wpisy, które mają źródło, a gdy źródła się różnią, wpis jest oznaczony jako orientacyjny. To podpowiedź z poradników, nie diagnoza. Nie znaleziono wiarygodnego opisu m.in. dla `21B000`, więc go tam nie ma.
 
+**Błędy w modułach VAG – numer producenta.** Moduły VAG po UDS nie wysyłają kodu SAE, tylko własny 3-bajtowy numer błędu. VCDS pokazuje go dziesiętnie (np. `19225`), a kod `P0299 00` i opis bierze z bazy danego sterownika. Ten sam kod P ma różne numery w różnych sterownikach (np. P0299 to `14914` w Simos18, a `19225` w innym silniku). Aplikacja pokazuje więc numer VAG i surowe bajty, a kod P i opis tylko wtedy, gdy zna bazę sterownika. Na razie to Simos18 (EA888 gen. 3), rozpoznawany po numerze części (`0xF187`) z listy VW_Flash. Kody OBD (tryby 03/07/0A) są zawsze w formacie SAE.
+
+**Kontekst błędu VAG:** przy każdym błędzie aplikacja sama czyta dane rozszerzone (`0x19 06`). Rekord `0x01` to priorytet i liczba wystąpień, rekord `0x02` to licznik zapomnienia, przebieg w km oraz data i godzina z zegara auta. Do tego przebieg i zegar „teraz” z identyfikatora `0x02BD` gatewaya, więc przy każdym błędzie widać, ile kilometrów temu wystąpił. Rekordy `0x70` i `0x71` (warunki pracy modułu) są zapisywane surowo, bo ich skala zależy od sterownika.
+
+**Pomiary silnika Simos18 (Narzędzia):** 48 pomiarów `0x22` z przelicznikami, m.in. ciśnienie doładowania rzeczywiste i zadane, wastegate rzeczywisty i zadany, obroty turbosprężarki, korekty spalania stukowego na każdy cylinder, pozycje wałków, ciśnienie paliwa DI/MPI z wartościami zadanymi, temperatura oleju, licznik wypadania zapłonów. Odczyt jednorazowy lub ciągły, wynik trafia do logów i raportu.
+
+**Moduły VAG:** zwykły skan sprawdza też hamulec postojowy, asystenta parkowania, ACC, przednią kamerę/radar, drzwi, TPMS, Kessy, immobilizer i radio. Pełne przeszukanie nazywa znalezione moduły według tabeli identyfikatorów CAN.
+
 **Szczegóły błędów w modułach:** dane rozszerzone (`0x19 06`) i środowiskowe (`0x19 04`) dla każdego kodu, w postaci surowej.
 
 **Moduły:** oprócz numerów części także kodowanie (`0x0600`) i nazwa pliku ODX (`0xF19E`), po której można szukać dokumentacji sterownika. Wolne moduły (np. ABS), które odpowiadają „czekaj” (`7F xx 78`), są obsługiwane bez ponawiania żądania.
@@ -74,7 +82,7 @@ Do modułów VAG (UDS po CAN, mniej więcej auta od 2010 r.) adapter musi obsłu
 
 - Odczyt na żywo korzysta ze standardowego OBD-II. Kanały specyficzne dla VAG (np. wypadanie zapłonów na cylinder, korekty od spalania stukowego, pozycja wastegate) wymagają zmapowania identyfikatorów UDS `0x22` dla konkretnego sterownika. To jest w planach.
 - Starsze auta na protokole TP2.0 / KWP2000 (mniej więcej sprzed 2010) nie są obsługiwane w skanie modułów.
-- Opisy kodów obejmują ogólne kody SAE oraz wybrane kody BMW z bazy. Pozostałe kody producenta pokazywane są bez opisu.
+- Opisy kodów obejmują ogólne kody SAE, wybrane kody BMW oraz numery błędów sterowników Simos18. Dla innych sterowników VAG moduły pokazują numer błędu VAG bez kodu P i opisu, bo baza jest tylko w ODIS i VCDS.
 - Brak gotowych procedur kodowania, adaptacji i ustawień podstawowych, bo ich identyfikatory są w plikach ODX producenta. Konsola pozwala wysłać polecenie ręcznie (z potwierdzeniem), a podsłuch pozwala je przechwycić z innego testera.
 - Progi alarmowe są orientacyjne i nie zastępują danych serwisowych.
 
@@ -84,6 +92,8 @@ Do modułów VAG (UDS po CAN, mniej więcej auta od 2010 r.) adapter musi obsłu
 index.html        gotowa aplikacja (to serwuje GitHub Pages)
 src/core.js       komunikacja: ELM327, OBD-II, UDS
 src/dtcdb.js      opisy kodów i możliwe przyczyny
+src/vagdb.js      VAG: nazwy modułów, numery błędów, kontekst błędu, pomiary Simos18
+src/vagdb-data.js dane z VW_Flash (wygenerowane)
 src/panels.js     panele P0299 i Ogrzewanie
 src/tools.js      zakładka Narzędzia
 src/app.js        interfejs
@@ -93,6 +103,13 @@ src/build.js      składa src/ w index.html
 ```
 
 Po zmianach w `src/` uruchom `node src/build.js`.
+
+## Źródła danych
+
+- [ConnorHowell/vag-uds-ids](https://github.com/ConnorHowell/vag-uds-ids): identyfikatory CAN żądania i odpowiedzi modułów VAG.
+- [pashokitsme/vagcan](https://github.com/pashokitsme/vagcan) (`research/odis-dtc/freeze-frames.md`, `crates/uds/vag-uds-client/src/dtc.rs`): układ rekordów `0x01`/`0x02` danych rozszerzonych, zapis daty i godziny, znacznik `0x02BD`. Aplikacja ma własną implementację, nie kod z tego projektu.
+- [bri3d/VW_Flash](https://github.com/bri3d/VW_Flash) (BSD 2-Clause, Copyright (c) 2022-2024 Brian Ledbetter and contributors): numery błędów Simos18 (`data/dtcs.csv`), numery części i rodziny sterowników (`data/box_codes.csv`), pomiary `0x22` Simos18 (`logs/csv/parameters_22.csv`). Pełny tekst licencji jest w `src/vagdb-data.js` i w zbudowanym `index.html`.
+- Wydruki VCDS publikowane przez użytkowników (np. [pastebin](https://pastebin.com/W8GQ9r1v)): potwierdzenie, że numer błędu VAG nie jest kodem SAE, oraz pola priorytetu, częstości, licznika zapomnienia, przebiegu i czasu.
 
 ## Licencja
 

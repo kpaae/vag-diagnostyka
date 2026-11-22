@@ -6,7 +6,7 @@ const rd = f => fs.readFileSync(path.join(__dirname, f), 'utf8');
 const css = rd('style.css');
 const body = rd('body.html');
 const core = rd('core.js').replace(/\nif \(typeof module[^\n]*\n?/, '\n');
-const panels = rd('dtcdb.js') + '\n' + rd('panels.js') + '\n' + rd('tools.js') + '\n' + rd('journal.js') + '\n' + rd('bridge.js');
+const panels = rd('vagdb-data.js') + '\n' + rd('vagdb.js') + '\n' + rd('dtcdb.js') + '\n' + rd('panels.js') + '\n' + rd('tools.js') + '\n' + rd('journal.js') + '\n' + rd('bridge.js');
 const app = rd('app.js');
 const ver = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
 const fonts = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">';
