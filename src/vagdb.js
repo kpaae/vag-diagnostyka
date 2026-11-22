@@ -32,6 +32,11 @@ function vagEcuFamily(part) {
 }
 const isSimos18 = f => /^Simos18/.test(f || '');
 
+/* Numery VAG spoza baz sterowników, znane z pojedynczych raportów VCDS (tylko pomocniczo, bez pewności). */
+const VAG_REPORTED = {
+  922631: 'Kontrolka wyboru profilu jazdy, zwarcie do masy (B1428 11). Opis z jednego raportu VCDS z forum SEAT Ibiza Mk5, niepotwierdzony w innym źródle'
+};
+
 /* Błąd z modułu VAG: numer VAG + ewentualnie kod z bazy sterownika. Surowe bajty zostają w d.raw. */
 function resolveVagDtc(d, family, isEngine) {
   const n = parseInt(d.raw, 16);
@@ -40,7 +45,7 @@ function resolveVagDtc(d, family, isEngine) {
   if (hit) {
     const code = hit[0].slice(0, 5), ftb = hit[0].slice(5);
     Object.assign(o, { code, ftb, full: `${n} · ${code} ${ftb}`, desc: DTC_DESC[code] && ftb === '00' ? DTC_DESC[code] : hit[1], descEn: hit[1], dbSrc: 'Simos18' });
-  } else Object.assign(o, { code: String(n), full: String(n), desc: '', vagOnly: true });
+  } else Object.assign(o, { code: String(n), full: String(n), desc: isEngine ? '' : (VAG_REPORTED[n] || ''), vagOnly: true });
   return o;
 }
 
