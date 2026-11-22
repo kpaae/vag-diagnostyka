@@ -335,7 +335,7 @@ details.help a { color: var(--accent); }
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-22 16:42 UTC</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-22 16:51 UTC</p>
       </div>
     </div>
     <div class="conn">
@@ -493,7 +493,7 @@ details.help a { color: var(--accent); }
 </main>
 
 <script>
-const APP_VERSION = '2026-11-22 16:42 UTC';
+const APP_VERSION = '2026-11-22 16:51 UTC';
 /* ===== VAG Diagnostyka – rdzeń: ELM327 / OBD-II / UDS / symulator ===== */
 'use strict';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -2253,20 +2253,31 @@ function createPanels(api) {
     }
     const reach = th => { const s = S.find(x => x.ect != null && x.ect >= th); return s ? s.t : null; };
     const t80 = reach(80), driving = (avg(col(S, 'speed')) ?? 0) >= 20;
-    const win = S.filter(s => s.ect != null && s.ect >= 40 && s.ect < 80);
-    const rate = win.length >= 2 && win[win.length - 1].t - win[0].t > 0.5 ? (win[win.length - 1].ect - win[0].ect) / (win[win.length - 1].t - win[0].t) : null;
-    if (maxE >= 85) { out.branch = 'heater'; out.checks.push(V('ok', 'Temperatura robocza', `Silnik doszedł do ${f(maxE, 0)} °C${t80 != null ? `, 80 °C po ${fmtMin(t80)}` : ''}. Termostat się zamyka.`)); }
+    /* Tempo liczymy tylko na pierwszym narastaniu (do pierwszego osiągnięcia 80 °C), a nie z próbek po późniejszym spadku. */
+    const rise = S.filter(s => s.ect != null && s.ect >= 40 && (t80 == null || s.t <= t80));
+    const rate = rise.length >= 2 && rise[rise.length - 1].t - rise[0].t > 0.5 && rise[rise.length - 1].ect > rise[0].ect ? (rise[rise.length - 1].ect - rise[0].ect) / (rise[rise.length - 1].t - rise[0].t) : null;
+    const rateFrom = rise.length ? rise[0].ect : null, rateTo = rise.length ? rise[rise.length - 1].ect : null;
+    if (maxE >= 85) { out.branch = 'heater'; out.checks.push(V('ok', 'Temperatura robocza', `Silnik doszedł do ${f(maxE, 0)} °C${t80 != null && first.ect < 75 ? `, 80 °C po ${fmtMin(t80)} od startu testu` : ''}. Termostat się zamyka.`)); }
     else if (dur >= 15) {
       out.branch = driving ? 'engine' : null;
       out.checks.push(V(driving ? 'crit' : 'warn', 'Silnik nie osiąga temperatury', `Po ${fmtMin(dur)} ${driving ? 'jazdy' : 'pracy na postoju'} najwyżej ${f(maxE, 0)} °C. Rozgrzany silnik ma zwykle 85–105 °C. ${driving ? 'Termostat najpewniej jest stale otwarty.' : 'Na postoju, zwłaszcza zimą, silnik grzeje się bardzo wolno. Powtórz test w jeździe.'}`));
     } else out.checks.push(V('info', 'Test w toku', `Minęło ${fmtMin(dur)}, najwyżej ${f(maxE, 0)} °C. Do oceny potrzeba około 15 minut jazdy albo osiągnięcia 85 °C.`));
-    if (rate != null) out.checks.push(V('info', 'Tempo nagrzewania', `${f(rate, 1)} °C/min między 40 a 80 °C, ${driving ? 'w jeździe' : 'głównie na postoju'}.`));
+    if (rate != null) out.checks.push(V('info', 'Tempo nagrzewania', `${f(rate, 1)} °C/min (od ${f(rateFrom, 0)} do ${f(rateTo, 0)} °C), ${driving ? 'w jeździe' : 'głównie na postoju'}.`));
     if (maxE >= 85) {
       const iMax = S.findIndex(s => s.ect === maxE);
       const low = mn(col(S.slice(iMax).filter(s => (s.speed ?? 0) >= 40), 'ect'));
       if (low != null && maxE - low >= 10) {
-        out.branch = 'engine';
-        out.checks.push(V('warn', 'Temperatura spada w jeździe', `Z ${f(maxE, 0)} do ${f(low, 0)} °C przy prędkości powyżej 40 km/h. Termostat nie trzyma temperatury albo moduł zarządzania temperaturą źle steruje przepływem.`));
+        /* Spadek po pierwszym otwarciu termostatu (zimny płyn z chłodnicy) bywa normalny. Liczy się, czy temperatura wraca. */
+        const iLow = S.findIndex((s, i) => i > iMax && s.ect === low);
+        const back = mx(col(S.slice(iLow), 'ect'));
+        if (back != null && back >= maxE - 5) {
+          out.checks.push(V('info', 'Chwilowy spadek temperatury', `Z ${f(maxE, 0)} do ${f(low, 0)} °C, potem z powrotem ${f(back, 0)} °C. Tak zwykle wygląda pierwsze otwarcie termostatu albo zaworu modułu zarządzania temperaturą: zimny płyn z chłodnicy miesza się z gorącym. Jeśli zdarza się raz na początku jazdy, jest normalny.`));
+        } else if (dur < 15) {
+          out.checks.push(V('warn', 'Temperatura spada w jeździe', `Z ${f(maxE, 0)} do ${f(low, 0)} °C przy prędkości powyżej 40 km/h i do końca testu nie wróciła. Test trwał ${fmtMin(dur)}, za krótko, żeby to ocenić: przy pierwszym otwarciu termostatu taki spadek bywa normalny. Jedź dalej, łącznie co najmniej 15 minut.`));
+        } else {
+          out.branch = 'engine';
+          out.checks.push(V('warn', 'Temperatura spada w jeździe', `Z ${f(maxE, 0)} do ${f(low, 0)} °C przy prędkości powyżej 40 km/h i przez resztę testu (${fmtMin(dur)}) nie wróciła. Termostat nie trzyma temperatury albo moduł zarządzania temperaturą źle steruje przepływem.`));
+        }
       }
     }
     if (maxE >= 110) out.checks.push(V('crit', 'Przegrzewanie', `Płyn doszedł do ${f(maxE, 0)} °C. Sprawdź poziom płynu i wentylator chłodnicy, zanim pojedziesz dalej.`));
