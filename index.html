@@ -335,7 +335,7 @@ details.help a { color: var(--accent); }
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-22 23:09 UTC</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-22 23:16 UTC</p>
       </div>
     </div>
     <div class="conn">
@@ -378,7 +378,7 @@ details.help a { color: var(--accent); }
         <span id="rate" class="rate"></span>
         <select id="rateSel" class="inp small" aria-label="Tempo odczytu"></select>
         <label class="chk" title="Bez wykresów na kafelkach. Mniej pracy dla telefonu."><input type="checkbox" id="liteChk"> lekki tryb</label>
-        <label class="chk" title="Po 5 minutach połączenia aplikacja sama nagrywa testy (nagrzewanie, doładowanie, czujnik MAP) z normalnej jazdy i co 10 minut zapisuje logi, które idą na GitHub. Odczyt jest wtedy wolniejszy."><input type="checkbox" id="autoChk"> auto-testy</label>
+        <label class="chk" title="Po 3 minutach połączenia aplikacja sama nagrywa testy (nagrzewanie, doładowanie, czujnik MAP) z normalnej jazdy i co 10 minut zapisuje logi, które idą na GitHub. Odczyt jest wtedy wolniejszy."><input type="checkbox" id="autoChk"> auto-testy</label>
         <span id="autoSt" class="small muted"></span>
         <button id="btnPoll" class="btn" type="button" disabled>Pauza</button>
         <button id="btnRec" class="btn" type="button" disabled>Nagrywaj</button>
@@ -495,7 +495,7 @@ details.help a { color: var(--accent); }
 </main>
 
 <script>
-const APP_VERSION = '2026-11-22 23:09 UTC';
+const APP_VERSION = '2026-11-22 23:16 UTC';
 /* ===== VAG Diagnostyka – rdzeń: ELM327 / OBD-II / UDS / symulator ===== */
 'use strict';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -2615,10 +2615,10 @@ function createPanels(api) {
   }
 
   /* =================== Automatyczne testy ===================
-     Po 5 minutach ciągłego połączenia aplikacja sama nagrywa trzy testy (nagrzewanie, doładowanie P0299, czujnik MAP)
+     Po 3 minutach ciągłego połączenia aplikacja sama nagrywa trzy testy (nagrzewanie, doładowanie P0299, czujnik MAP)
      z normalnej jazdy. Co 10 minut kończy odcinek i zapisuje logi (wysyłane na GitHub razem z resztą), po czym zaczyna
      następny. Odcinek bez przyspieszenia z pełnym gazem nie daje logu doładowania ani MAP, bo nie ma czego oceniać. */
-  const AUTO_DELAY = 5 * 60000, AUTO_SEG = 10 * 60000;
+  const AUTO_DELAY = 3 * 60000, AUTO_SEG = 10 * 60000;
   const auto = { on: api.store.get('autoTests', '1') !== '0', elm: null, since: 0, segAt: 0, off: false, active: false, shown: 0 };
   const hasPlateau = S => S.filter(x => (x.rpm ?? 0) >= 2800 && (x.pedal != null ? x.pedal >= 50 : (x.load ?? 0) >= 85)).length >= 4;
   const worthBoost = () => bt.samples.length >= 10 && findPulls(bt.samples).length >= 1;

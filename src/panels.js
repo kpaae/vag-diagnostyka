@@ -788,10 +788,10 @@ function createPanels(api) {
   }
 
   /* =================== Automatyczne testy ===================
-     Po 5 minutach ciągłego połączenia aplikacja sama nagrywa trzy testy (nagrzewanie, doładowanie P0299, czujnik MAP)
+     Po 3 minutach ciągłego połączenia aplikacja sama nagrywa trzy testy (nagrzewanie, doładowanie P0299, czujnik MAP)
      z normalnej jazdy. Co 10 minut kończy odcinek i zapisuje logi (wysyłane na GitHub razem z resztą), po czym zaczyna
      następny. Odcinek bez przyspieszenia z pełnym gazem nie daje logu doładowania ani MAP, bo nie ma czego oceniać. */
-  const AUTO_DELAY = 5 * 60000, AUTO_SEG = 10 * 60000;
+  const AUTO_DELAY = 3 * 60000, AUTO_SEG = 10 * 60000;
   const auto = { on: api.store.get('autoTests', '1') !== '0', elm: null, since: 0, segAt: 0, off: false, active: false, shown: 0 };
   const hasPlateau = S => S.filter(x => (x.rpm ?? 0) >= 2800 && (x.pedal != null ? x.pedal >= 50 : (x.load ?? 0) >= 85)).length >= 4;
   const worthBoost = () => bt.samples.length >= 10 && findPulls(bt.samples).length >= 1;
