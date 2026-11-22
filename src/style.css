@@ -302,3 +302,6 @@ details.help a { color: var(--accent); }
 .dtc .vagctx { display: block; font-size: 13px; margin-top: 3px; }
 .simtbl td.sp { color: var(--muted, #8a949e); }
 .simtbl tr.off td { opacity: .45; }
+
+/* Tempo odczytu na żywo */
+#rateSel { min-height: 32px; padding: 5px 8px; font-size: 13px; }

@@ -600,12 +600,21 @@ class ELM {
   async readLive(defs) {
     await this.selectObd();
     const out = {}; let queue = [...defs];
+    this.respLen = this.respLen || {};
     while (queue.length) {
       const n = this.multiPid ? Math.min(6, queue.length) : 1;
       const ch = queue.splice(0, n);
-      const r = await this.request('01' + ch.map(d => hex2(d.pid)).join(''), { attempts: 2 });
+      /* Cyfra liczby odpowiedzi na końcu zapytania (np. 010C0D1): adapter oddaje wynik zaraz po odpowiedzi sterownika,
+         zamiast czekać, czy odezwie się ktoś jeszcze. Używana, gdy znamy już długość odpowiedzi. Przy odpowiedziach
+         wieloramkowych sprawdzamy, czy adapter ich nie ucina; jeśli tak, wyłączamy ją dla nich. */
+      const key = ch.map(d => d.pid).join(','), known = this.respLen[key];
+      const useCount = this.fastCount !== false && this.countOk && known != null && (known <= 7 || this.countMulti !== false);
+      const r = await this.request('01' + ch.map(d => hex2(d.pid)).join('') + (useCount ? '1' : ''), { attempts: 2 });
+      if (r.err && useCount && (r.err === '?' || r.err === 'NO DATA')) { if (r.err === '?') this.countOk = false; else if (known > 7) this.countMulti = false; else if ((this.countFails = (this.countFails || 0) + 1) >= 3) this.fastCount = false; delete this.respLen[key]; queue = ch.concat(queue); continue; }
       if (r.err) { if (n > 1) { this.multiPid = false; queue = ch.concat(queue); } continue; }
       const p = parseMode01(r.data, ch);
+      if (useCount && known > 7 && (!p || p.seen.size < ch.length)) { this.countMulti = false; queue = ch.concat(queue); continue; }
+      if (p && p.seen.size === ch.length) { this.respLen[key] = r.data.length / 2; if (useCount && known > 7) this.countMulti = true; }
       if (!p || (n > 1 && p.seen.size <= 1)) {
         if (n > 1) {
           this.multiPid = false;

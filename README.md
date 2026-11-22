@@ -17,6 +17,8 @@ Webowa aplikacja diagnostyczna dla aut grupy VAG (VW, Audi, Seat/Cupra, Škoda) 
 
 Aplikacja pokazuje tylko te parametry, które sterownik zgłasza jako obsługiwane. Ma wykresy ostatnich odczytów, min/max i nagrywanie przejazdu do CSV.
 
+Tempo odczytu wybiera się obok przycisku Pauza: Oszczędnie (2 Hz), Normalnie (5 Hz), Szybko (10 Hz) albo Maksymalnie (tyle, ile da adapter). Ekran odświeża się najwyżej 5 razy na sekundę, a dane i nagranie idą w pełnym tempie. „Lekki tryb” wyłącza wykresy na kafelkach, co odciąża słabszy telefon. Gdy aplikacja zna już długość odpowiedzi sterownika, dopisuje do zapytania liczbę odpowiedzi (np. `010C0D1`), więc adapter nie czeka na kolejne odpowiedzi. Jeśli adapter tego nie obsługuje albo ucina odpowiedzi, aplikacja sama z tego rezygnuje.
+
 **Błędy:**
 - kody OBD silnika: zapisane, oczekujące i stałe, plus zamrożona ramka,
 - skan modułów VAG przez UDS (0x19): silnik, skrzynia, ABS/ESP, klimatyzacja, BCM, airbag, kolumna, licznik, gateway, wspomaganie, radio, opcjonalnie pełne przeszukanie adresów 0x700–0x774,

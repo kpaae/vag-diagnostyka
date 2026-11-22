@@ -111,7 +111,7 @@
   }
   function makeTile(k) {
     const c = CAT[k], w = isWide(k), cfg = WIDE[k] || {};
-    const spark = !c.text && !c.nospark;
+    const spark = !c.text && !c.nospark && !lite;
     const t = el('div', 'tile' + (w ? ' wide' : '') + (c.text ? ' text' : ''));
     t.dataset.key = k; t.dataset.s = 'none';
     t.innerHTML = `<div class="t-head"><span class="t-name">${esc(c.name)}</span><span class="pill"></span></div>
@@ -142,7 +142,7 @@
         else { t.fill.style.left = '0'; t.fill.style.width = pos(v) + '%'; }
         if (t.mk) { const tv = vals[WIDE[t.k].target]; if (tv != null) { t.mk.hidden = false; t.mk.style.left = pos(tv) + '%'; } else t.mk.hidden = true; }
       }
-      if (t.cv) drawSpark(t.cv, hist[t.k] || [], s === 'crit' ? tk.crit : s === 'warn' ? tk.warn : tk.accent);
+      if (t.cv && !lite) drawSpark(t.cv, hist[t.k] || [], s === 'crit' ? tk.crit : s === 'warn' ? tk.warn : tk.accent);
     }
   }
   function drawSpark(cv, h, color) {
@@ -193,10 +193,27 @@
       }
     }
   }
+  /* Tempo odczytu: okres pętli (0 = tak szybko, jak pozwala adapter), co ile ms odświeżać ekran,
+     co który cykl czytać wszystkie parametry (do rejestru), a nie tylko widoczne. */
+  const RATES = {
+    eco: { label: 'Oszczędnie · 2 Hz', period: 500, draw: 500, full: 6 },
+    normal: { label: 'Normalnie · 5 Hz', period: 200, draw: 200, full: 6 },
+    fast: { label: 'Szybko · 10 Hz', period: 100, draw: 150, full: 10 },
+    max: { label: 'Maksymalnie', period: 0, draw: 200, full: 20 }
+  };
+  let rateKey = RATES[store.get('rate', 'normal')] ? store.get('rate', 'normal') : 'normal';
+  let lite = !!store.get('lite', false);
+  let lastDraw = 0, rateEma = 0, lastStart = 0;
+  $('#rateSel').innerHTML = Object.entries(RATES).map(([k, r]) => `<option value="${k}">${r.label}</option>`).join('');
+  $('#rateSel').value = rateKey;
+  $('#rateSel').onchange = e => { rateKey = e.target.value; store.set('rate', rateKey); rateEma = 0; };
+  $('#liteChk').checked = lite;
+  $('#liteChk').onchange = e => { lite = e.target.checked; store.set('lite', lite); buildTiles(); };
   async function pollLoop(run) {
     while (polling && run === pollRun && elm) {
       if (tools && tools.busy()) { await sleep(400); continue; }
-      const t0 = performance.now(); const wanted = activeKeys(); const keys = (cycle % 6 === 0 && !(panels && panels.busy())) ? allKeys() : wanted; const e = elm;
+      const R = RATES[rateKey];
+      const t0 = performance.now(); const wanted = activeKeys(); const keys = (cycle % R.full === 0 && !(panels && panels.busy())) ? allKeys() : wanted; const e = elm;
       try {
         const res = await e.op(() => e.readLive(defsFor(keys)));
         if (keys.includes('adapterV') && (cycle % 10 === 0 || vals.adapterV == null)) { const v = await e.op(() => e.voltage()); if (v != null) res.adapterV = v; }
@@ -206,18 +223,26 @@
         take(res);
         journal && journal.regTick(vals, CAT);
         if (rec) { const row = { t: (Date.now() - rec.t0) / 1000 }; for (const k of wanted) if (vals[k] != null && seen[k] === cycle) { row[k] = vals[k]; rec.keys.add(k); } rec.rows.push(row); $('#btnRec').textContent = `Zatrzymaj · ${rec.rows.length}`; }
-        if (!$('#tab-live').hidden) updateTiles();
-        panels && panels.tick();
-        updateAlerts();
+        /* Ekran odświeżamy rzadziej niż dane, gdy telefon nie nadąża: dane i nagranie idą w pełnym tempie. */
+        const tn = performance.now();
+        if (tn - lastDraw >= R.draw && !document.hidden) {
+          lastDraw = tn;
+          if (!$('#tab-live').hidden) updateTiles();
+          updateAlerts();
+        }
+        panels && panels.tick();   // testy w panelach zbierają próbki z każdego cyklu
       } catch (err) { logLine('! ' + err.message); }
       cycle++;
       const dt = performance.now() - t0;
-      $('#rate').textContent = `odświeżanie ${fmtNum(1000 / Math.max(dt, 1), 1)} Hz`;
-      await sleep(Math.max(0, 160 - dt));
+      await sleep(Math.max(R.period ? 0 : 5, R.period - dt));
+      /* Rzeczywiste tempo: pełne cykle na sekundę, razem z przerwą, wygładzone. */
+      const tEnd = performance.now(), per = lastStart ? tEnd - lastStart : dt; lastStart = tEnd;
+      rateEma = rateEma ? rateEma * 0.85 + per * 0.15 : per;
+      $('#rate').textContent = `${fmtNum(1000 / Math.max(rateEma, 1), 1)} Hz · ${keys.length} ${plural(keys.length, 'parametr', 'parametry', 'parametrów')} · zapytanie ${fmtNum(dt, 0)} ms`;
     }
   }
   function startPolling() {
-    if (!elm) return; polling = true; pollRun++; $('#btnPoll').textContent = 'Pauza'; $('#btnPoll').disabled = false;
+    if (!elm) return; polling = true; pollRun++; lastStart = 0; rateEma = 0; $('#btnPoll').textContent = 'Pauza'; $('#btnPoll').disabled = false;
     try { navigator.wakeLock && navigator.wakeLock.request('screen').then(w => { wake = w; }).catch(() => {}); } catch (e) {}
     pollLoop(pollRun);
   }
