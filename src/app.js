@@ -3,7 +3,7 @@
   const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
   const GROUPS = [['silnik', 'Silnik'], ['chlodzenie', 'Chłodzenie i temperatury'], ['doladowanie', 'Doładowanie'], ['mieszanka', 'Mieszanka']];
   const ORDER = {
-    silnik: ['rpm', 'speed', 'load', 'absload', 'tps', 'pedal', 'timing', 'tqDem', 'tqAct', 'fuelRate', 'fuelLvl', 'ecuV', 'adapterV', 'runTime'],
+    silnik: ['rpm', 'speed', 'load', 'absload', 'tps', 'pedal', 'pedalRel', 'timing', 'tqDem', 'tqAct', 'fuelRate', 'fuelLvl', 'ecuV', 'adapterV', 'runTime'],
     chlodzenie: ['coolant', 'oil', 'iat', 'iatRise', 'ambient', 'cat1', 'cat2'],
     doladowanie: ['boost', 'boostTarget', 'boostDev', 'wgCmd', 'wgAct', 'map', 'mapX', 'boostCmdAbs', 'boostActAbs', 'baro', 'compIn', 'maf'],
     mieszanka: ['lambdaA', 'lambdaV', 'lambdaCmd', 'lambdaDev', 'trimTotal', 'stft1', 'ltft1', 'stft2', 'ltft2', 'fuelSys', 'railP', 'railPabs', 'injTiming', 'o2s2', 'o2s2trim', 'lambdaI', 'lambdaVv']
@@ -747,7 +747,8 @@
   bridge = createBridge({
     esc, store, logLine, copyText, banner, chip, devName: () => journal.devName(),
     startBridgeHost, stopBridgeHost, connectRemote: code => connect('remote', code),
-    remoteLost: msg => lost(msg)
+    remoteLost: msg => lost(msg),
+    ghChanged: () => { journal.render(); journal.sync(true); }
   });
   $('#btnBridge').onclick = () => bridge.dialog();
   syncSeg(); setButtons();

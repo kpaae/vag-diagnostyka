@@ -90,7 +90,7 @@ function createJournal(api) {
   }
 
   /* ---------- GitHub ---------- */
-  function cfg() { return { repo: api.store.get('ghRepo', ''), token: api.store.get('ghToken', ''), auto: api.store.get('ghAuto', '1') === '1' }; }
+  function cfg() { return { repo: api.store.get('ghRepo', '') || 'kpaae/vag-logi', token: api.store.get('ghToken', ''), auto: api.store.get('ghAuto', '1') === '1' }; }
   const enc = new TextEncoder();
   function b64(str) {
     const bytes = enc.encode(str); let bin = '';
@@ -198,9 +198,10 @@ function createJournal(api) {
         <div id="jList"></div></div>
       <details class="help" id="jGh"${c.token ? '' : ' open'}><summary>Wysyłanie logów na GitHub ${c.token ? '· ustawione' : ''}</summary>
         <ol>
-          <li>Utwórz <b>prywatne</b> repozytorium na logi: <a href="https://github.com/new?name=vag-logi&visibility=private&description=Logi%20z%20VAG%20Diagnostyka" target="_blank" rel="noopener">github.com/new</a> (nazwa vag-logi, Private).</li>
-          <li>Utwórz klucz dostępu: <a href="https://github.com/settings/personal-access-tokens/new?name=VAG%20Diagnostyka%20logi&expires_in=366&contents=write" target="_blank" rel="noopener">nowy fine-grained token</a>. W „Repository access” wybierz „Only select repositories” i <b>tylko vag-logi</b>. W uprawnieniach ustaw <b>Contents: Read and write</b>. Skopiuj token.</li>
-          <li>Wklej poniżej i naciśnij Zapisz. Klucz zostaje tylko w tej przeglądarce i daje dostęp wyłącznie do repozytorium z logami.</li>
+          <li>Prywatne repozytorium <b>kpaae/vag-logi</b> już jest. Na innym koncie utwórz własne: <a href="https://github.com/new?name=vag-logi&visibility=private&description=Logi%20z%20VAG%20Diagnostyka" target="_blank" rel="noopener">github.com/new</a> (nazwa vag-logi, Private).</li>
+          <li>Otwórz <a href="https://github.com/settings/personal-access-tokens/new?name=VAG%20Diagnostyka%20logi&description=Wysy%C5%82anie%20log%C3%B3w%20z%20aplikacji%20VAG%20Diagnostyka&expires_in=366&contents=write" target="_blank" rel="noopener">gotowy formularz tokenu</a> (nazwa, ważność rok i uprawnienie Contents: Read and write są już ustawione). Zostaje jedno: w „Repository access” wybierz „Only select repositories” i <b>tylko vag-logi</b>. Potem „Generate token” i skopiuj go.</li>
+          <li>Wklej poniżej i naciśnij „Zapisz i sprawdź”. Od tej chwili logi wysyłają się same, także te już zapisane w telefonie. Klucz zostaje tylko w tej przeglądarce i daje dostęp wyłącznie do repozytorium z logami.</li>
+          <li>Na drugim urządzeniu nie trzeba wpisywać tokenu ręcznie: gdy steruje ono przez most, na urządzeniu przy aucie naciśnij „Przekaż ustawienia logów GitHub”.</li>
         </ol>
         <div class="frow"><label class="fl">Repozytorium <input id="jRepo" class="inp mono" value="${esc(c.repo || 'kpaae/vag-logi')}" spellcheck="false" autocomplete="off" autocapitalize="off"></label></div>
         <div class="frow"><label class="fl">Urządzenie <input id="jDev" class="inp" value="${esc(api.store.get('devName', ''))}" placeholder="${esc(devName())}" spellcheck="false" autocomplete="off"></label></div>

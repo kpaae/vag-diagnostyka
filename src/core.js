@@ -181,6 +181,7 @@ const PIDS = [
   { pid: 0x43, len: 2, g: 'silnik', f: b => [u16(b[0], b[1]) * 100 / 255], outs: [{ key: 'absload', name: 'Obciążenie bezwzględne', unit: '%', d: 0, min: 0, max: 200 }] },
   { pid: 0x11, len: 1, g: 'silnik', f: b => [b[0] * 100 / 255], outs: [{ key: 'tps', name: 'Przepustnica', unit: '%', d: 0, min: 0, max: 100 }] },
   { pid: 0x49, len: 1, g: 'silnik', f: b => [b[0] * 100 / 255], outs: [{ key: 'pedal', name: 'Pedał gazu', unit: '%', d: 0, min: 0, max: 100 }] },
+  { pid: 0x5A, len: 1, g: 'silnik', f: b => [b[0] * 100 / 255], outs: [{ key: 'pedalRel', name: 'Pedał gazu (względny)', unit: '%', d: 0, min: 0, max: 100 }] },
   { pid: 0x0E, len: 1, g: 'silnik', f: b => [b[0] / 2 - 64], outs: [{ key: 'timing', name: 'Wyprzedzenie zapłonu', unit: '°', d: 1, min: -15, max: 45 }] },
   { pid: 0x61, len: 1, g: 'silnik', f: b => [b[0] - 125], outs: [{ key: 'tqDem', name: 'Moment żądany', unit: '%', d: 0, min: 0, max: 100 }] },
   { pid: 0x62, len: 1, g: 'silnik', f: b => [b[0] - 125], outs: [{ key: 'tqAct', name: 'Moment rzeczywisty', unit: '%', d: 0, min: 0, max: 100 }] },
@@ -407,7 +408,7 @@ class ELM {
     this.t = transport; this.log = log || (() => {});
     this.buf = ''; this.waiter = null; this.q = Promise.resolve(); this.opq = Promise.resolve();
     this.fcOk = true; this.cur = null; this.multiPid = true; this.onWarn = null; this.ident = '';
-    this.st = '64'; this.countOk = true; this.mon = null;
+    this.st = '64'; this.countOk = true; this.mon = null; this.stale = false; this.multiFail = 0;
     transport.onData(s => {
       if (this.mon) { this.mon(s); return; }
       this.buf += s;
@@ -415,19 +416,46 @@ class ELM {
     });
   }
   send(cmd, timeout = 4000) {
+    /* Przez most (drugie urządzenie) każde polecenie idzie dwa razy przez sieć, więc limit czasu jest dłuższy. */
+    if (this.t.name && /^Most/.test(this.t.name)) timeout *= 2;
     const run = async () => {
+      /* Poprzednie polecenie nie doczekało się odpowiedzi. Jego spóźniona odpowiedź może jeszcze dojść
+         i zostałaby przypisana temu poleceniu (przesunięcie odpowiedzi o jedno). Czekamy na nią i ją wyrzucamy. */
+      if (this.stale) {
+        const t0 = Date.now();
+        while (!this.buf.includes('>') && Date.now() - t0 < 2000) await sleep(30);
+        if (this.buf.replace(/[>\s]/g, '')) this.log('(spóźniona odpowiedź odrzucona)', [this.buf.replace(/[\r\n>]+/g, ' ').trim()]);
+        this.stale = false;
+      }
       this.buf = '';
       const done = new Promise(res => {
         this.waiter = res;
-        setTimeout(() => { if (this.waiter === res) { this.waiter = null; res(); } }, timeout);
+        setTimeout(() => { if (this.waiter === res) { this.waiter = null; this.stale = true; res(); } }, timeout);
       });
       await this.t.write(cmd + '\r');
       await done;
-      const raw = this.buf.replace(/>/g, ''); this.buf = '';
-      let lines = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
-      if (lines.length && lines[0].replace(/\s/g, '').toUpperCase() === cmd.replace(/\s/g, '').toUpperCase()) lines = lines.slice(1);
-      this.log(cmd, lines);
-      return lines;
+      const raw = this.buf; this.buf = '';
+      return this.linesOf(cmd, raw);
+    };
+    const p = this.q.then(run, run);
+    this.q = p.catch(() => {});
+    return p;
+  }
+  linesOf(cmd, raw) {
+    let lines = String(raw || '').replace(/>/g, '').split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+    if (lines.length && lines[0].replace(/\s/g, '').toUpperCase() === cmd.replace(/\s/g, '').toUpperCase()) lines = lines.slice(1);
+    this.log(cmd, lines);
+    return lines;
+  }
+  /* Kilka poleceń naraz. Przez most: jedna wiadomość w obie strony (urządzenie przy aucie wykonuje je po kolei).
+     Bez mostu: zwykłe wysyłanie po kolei. Zwraca listę odpowiedzi (linie) albo null, gdy most nie odpowiedział. */
+  sendMany(cmds, timeout = 4000) {
+    if (!this.t.batch) return (async () => { const out = []; for (const c of cmds) out.push(await this.send(c, timeout)); return out; })();
+    const run = async () => {
+      try {
+        const raws = await this.t.batch(cmds, timeout);
+        return cmds.map((c, i) => this.linesOf(c, raws[i]));
+      } catch (e) { this.log('(most: wysyłka zbiorcza nieudana)', [e.message]); return null; }
     };
     const p = this.q.then(run, run);
     this.q = p.catch(() => {});
@@ -483,6 +511,17 @@ class ELM {
   async select(tx, rx, fc = tx) {
     const key = tx + ':' + rx; if (this.cur === key) return;
     if (this.rawMode) { await this.send('ATCAF1'); this.rawMode = false; }
+    if (this.t.batch) {
+      const cmds = ['ATSH' + hex3(tx), 'ATCRA' + hex3(rx)].concat(this.fcOk ? ['ATFCSH' + hex3(fc), 'ATFCSD300000', 'ATFCSM1'] : []);
+      const res = await this.sendMany(cmds);
+      if (res) {
+        if (this.fcOk && res.slice(2).some(r => !r.length || r[r.length - 1].toUpperCase() !== 'OK')) {
+          this.fcOk = false;
+          this.onWarn && this.onWarn('Adapter nie obsługuje ustawiania flow control (ATFCSH). Dłuższe odpowiedzi z modułów VAG mogą nie dochodzić.');
+        }
+        this.cur = key; return;
+      }
+    }
     await this.send('ATSH' + hex3(tx)); await this.send('ATCRA' + hex3(rx));
     if (this.fcOk) {
       for (const c of ['ATFCSH' + hex3(fc), 'ATFCSD300000', 'ATFCSM1']) {
@@ -599,33 +638,56 @@ class ELM {
   }
   async readLive(defs) {
     await this.selectObd();
-    const out = {}; let queue = [...defs];
+    const out = {}; const queue = [...defs];
     this.respLen = this.respLen || {};
-    while (queue.length) {
+    /* Cyfra liczby odpowiedzi na końcu zapytania (np. 010C0D1): adapter oddaje wynik zaraz po odpowiedzi sterownika,
+       zamiast czekać, czy odezwie się ktoś jeszcze. Używana, gdy znamy już długość odpowiedzi. Przy odpowiedziach
+       wieloramkowych sprawdzamy, czy adapter ich nie ucina; jeśli tak, wyłączamy ją dla nich. */
+    const plan = () => {
       const n = this.multiPid ? Math.min(6, queue.length) : 1;
       const ch = queue.splice(0, n);
-      /* Cyfra liczby odpowiedzi na końcu zapytania (np. 010C0D1): adapter oddaje wynik zaraz po odpowiedzi sterownika,
-         zamiast czekać, czy odezwie się ktoś jeszcze. Używana, gdy znamy już długość odpowiedzi. Przy odpowiedziach
-         wieloramkowych sprawdzamy, czy adapter ich nie ucina; jeśli tak, wyłączamy ją dla nich. */
       const key = ch.map(d => d.pid).join(','), known = this.respLen[key];
       const useCount = this.fastCount !== false && this.countOk && known != null && (known <= 7 || this.countMulti !== false);
-      const r = await this.request('01' + ch.map(d => hex2(d.pid)).join('') + (useCount ? '1' : ''), { attempts: 2 });
-      if (r.err && useCount && (r.err === '?' || r.err === 'NO DATA')) { if (r.err === '?') this.countOk = false; else if (known > 7) this.countMulti = false; else if ((this.countFails = (this.countFails || 0) + 1) >= 3) this.fastCount = false; delete this.respLen[key]; queue = ch.concat(queue); continue; }
-      if (r.err) { if (n > 1) { this.multiPid = false; queue = ch.concat(queue); } continue; }
+      return { n, ch, key, known, useCount, req: '01' + ch.map(d => hex2(d.pid)).join('') + (useCount ? '1' : '') };
+    };
+    const handle = ({ n, ch, key, known, useCount }, r) => {
+      if (r.err && useCount && (r.err === '?' || r.err === 'NO DATA')) { if (r.err === '?') this.countOk = false; else if (known > 7) this.countMulti = false; else if ((this.countFails = (this.countFails || 0) + 1) >= 3) this.fastCount = false; delete this.respLen[key]; queue.unshift(...ch); return; }
+      /* Kilka PID-ów naraz wyłączamy dopiero po dwóch nieudanych próbach z rzędu. Pojedynczy błąd (np. zakłócenie
+         albo spóźniona odpowiedź) nie może na stałe spowolnić odczytu kilkukrotnie. */
+      if (r.err) { if (n > 1) { if (++this.multiFail >= 2) this.multiPid = false; queue.unshift(...ch); } return; }
       const p = parseMode01(r.data, ch);
-      if (useCount && known > 7 && (!p || p.seen.size < ch.length)) { this.countMulti = false; queue = ch.concat(queue); continue; }
+      if (useCount && known > 7 && (!p || p.seen.size < ch.length)) { this.countMulti = false; queue.unshift(...ch); return; }
       if (p && p.seen.size === ch.length) { this.respLen[key] = r.data.length / 2; if (useCount && known > 7) this.countMulti = true; }
       if (!p || (n > 1 && p.seen.size <= 1)) {
-        if (n > 1) {
-          this.multiPid = false;
-          if (p) Object.assign(out, p.out);
-          queue = ch.filter(d => !(p && p.seen.has(d.pid))).concat(queue);
-        }
-        continue;
+        if (n > 1 && ++this.multiFail < 2) { queue.unshift(...ch); return; }
+        if (n > 1) { this.multiPid = false; if (p) Object.assign(out, p.out); queue.unshift(...ch.filter(d => !(p && p.seen.has(d.pid)))); }
+        return;
       }
       Object.assign(out, p.out);
+      if (n > 1) this.multiFail = 0;
+    };
+    /* Przez most wysyłamy cały cykl naraz: urządzenie przy aucie wykonuje zapytania po kolei i odsyła wszystkie
+       odpowiedzi w jednej wiadomości, więc opóźnienie sieci liczy się raz, a nie przy każdym zapytaniu. */
+    if (this.t.batch && queue.length > 1) {
+      const plans = []; while (queue.length) plans.push(plan());
+      const res = await this.sendMany(plans.map(P => P.req));
+      plans.forEach((P, i) => handle(P, res ? this.resultOf(P.req, res[i]) : { err: 'brak odpowiedzi z mostu' }));
     }
+    let guard = 0;
+    while (queue.length && guard++ < 60) { const P = plan(); handle(P, await this.request(P.req, { attempts: 2 })); }
     return out;
+  }
+  /* Odpowiedź z wysyłki zbiorczej w tej samej postaci, co z request() (bez ponawiania). */
+  resultOf(req, lines) {
+    if (!lines) return { err: 'brak odpowiedzi' };
+    const { msgs, err } = parseElm(lines);
+    if (err) return { err };
+    const real = msgs.filter(m => !(m.startsWith('7F') && m.substr(4, 2) === '78'));
+    if (!real.length) return { err: 'pusta odpowiedź' };
+    const m = real[real.length - 1];
+    if (m.startsWith('7F') && m.length >= 6) { const c = m.substr(4, 2); return { err: `NRC ${c}: ${NRC[c] || 'nieznany'}`, nrc: c }; }
+    if (!m.startsWith(hex2(parseInt(req.substr(0, 2), 16) + 0x40))) return { err: 'nieoczekiwana odpowiedź: ' + m };
+    return { data: m };
   }
   async readObdDtcs() {
     await this.selectObd();

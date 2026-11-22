@@ -116,10 +116,10 @@ function createPanels(api) {
   }
 
   /* =================== P0299 – za niskie doładowanie =================== */
-  const BOOST_KEYS = ['rpm', 'pedal', 'tps', 'load', 'boost', 'boostTarget', 'boostDev', 'map', 'baro', 'iat', 'ambient', 'stft1', 'ltft1', 'lambdaA', 'lambdaCmd', 'timing', 'railP', 'maf', 'wgCmd', 'wgAct', 'coolant', 'speed'];
+  const BOOST_KEYS = ['rpm', 'pedal', 'pedalRel', 'tps', 'load', 'boost', 'boostTarget', 'boostDev', 'map', 'baro', 'iat', 'ambient', 'stft1', 'ltft1', 'lambdaA', 'lambdaCmd', 'timing', 'railP', 'maf', 'wgCmd', 'wgAct', 'coolant', 'speed'];
   const BOOST_LIVE = ['boost', 'boostTarget', 'boostDev', 'map', 'rpm', 'pedal', 'iat', 'wgAct'];
   const BOOST_CODES = ['P0299', 'P0234', 'P0236', 'P0237', 'P0238', 'P0243', 'P0245', 'P0246', 'P2563', 'P0101', 'P0102', 'P0103', 'P0106', 'P0107', 'P0108', 'P0171', 'P2279', 'P0087', 'P0088', 'P0300', 'P0301', 'P0302', 'P0303', 'P0304', 'P0325'];
-  const BOOST_COLS = [['rpm', 'obroty [obr/min]'], ['pedal', 'pedał [%]'], ['load', 'obciążenie [%]'], ['boost', 'doładowanie [bar]'], ['target', 'zadane [bar]'], ['dev', 'odchyłka [bar]'], ['iat', 'dolot [°C]'], ['amb', 'otoczenie [°C]'], ['stft', 'korekta krótkoterm. [%]'], ['ltft', 'korekta długoterm. [%]'], ['lam', 'lambda'], ['lamCmd', 'lambda zadana'], ['timing', 'zapłon [°]'], ['rail', 'paliwo [bar]'], ['maf', 'MAF [g/s]'], ['wgC', 'wastegate zadany [%]'], ['wgA', 'wastegate rzecz. [%]'], ['ect', 'płyn [°C]'], ['speed', 'prędkość [km/h]']];
+  const BOOST_COLS = [['rpm', 'obroty [obr/min]'], ['pedal', 'pedał [%]'], ['pedalRaw', 'pedał OBD 0x49 [%]'], ['load', 'obciążenie [%]'], ['boost', 'doładowanie [bar]'], ['target', 'zadane [bar]'], ['dev', 'odchyłka [bar]'], ['iat', 'dolot [°C]'], ['amb', 'otoczenie [°C]'], ['stft', 'korekta krótkoterm. [%]'], ['ltft', 'korekta długoterm. [%]'], ['lam', 'lambda'], ['lamCmd', 'lambda zadana'], ['timing', 'zapłon [°]'], ['rail', 'paliwo [bar]'], ['maf', 'MAF [g/s]'], ['wgC', 'wastegate zadany [%]'], ['wgA', 'wastegate rzecz. [%]'], ['ect', 'płyn [°C]'], ['speed', 'prędkość [km/h]']];
   const SUSPECT = {
     leak: ['Nieszczelność dolotu po stronie ciśnienia', 'Przewody intercoolera i ich opaski, sam intercooler i membrana zaworu przelotowego. Najpewniej wykryje to test dymny albo próba szczelności przy lekkim nadciśnieniu w warsztacie.'],
     wg: ['Wastegate i jego siłownik', 'Czy cięgno nie ma luzu, czy porusza się płynnie w pełnym zakresie i czy siłownik reaguje na sterowanie. Wyrobiony sworzeń klapy wastegate to częsta przyczyna P0299.'],
@@ -132,13 +132,18 @@ function createPanels(api) {
 
   function sampleBoost(v) {
     return {
-      t: (performance.now() - bt.t0) / 1000, rpm: v.rpm, pedal: v.pedal ?? v.tps, load: v.load,
+      t: (performance.now() - bt.t0) / 1000, rpm: v.rpm, pedal: v.pedalRel ?? v.pedal ?? v.tps, pedalRaw: v.pedal, load: v.load,
       boost: v.boost, target: v.boostTarget, dev: v.boostDev, iat: v.iat, amb: v.ambient,
       stft: v.stft1, ltft: v.ltft1, lam: v.lambdaA ?? v.lambdaV, lamCmd: v.lambdaCmd, timing: v.timing,
       rail: v.railP ?? v.railPabs, maf: v.maf, wgC: v.wgCmd, wgA: v.wgAct, ect: v.coolant, speed: v.speed
     };
   }
-  const isWot = s => (s.pedal != null ? s.pedal >= 80 : (s.load ?? 0) >= 85) && (s.rpm ?? 0) >= 1500;
+  /* Pełny gaz. Pedał z OBD (PID 0x49) u wielu aut, m.in. VAG, przy wciśniętym do końca pedale pokazuje tylko ok. 75–85%,
+     więc próg liczymy od największej wartości widzianej w teście: 90% z niej, nie mniej niż 60% i nie więcej niż 80%. */
+  function wotThr() { const m = bt.pedMax ?? 0; return Math.min(80, Math.max(60, m * 0.9)); }
+  /* Bieg jałowy: pedał puszczony. PID 0x49 nie schodzi do zera (zwykle 12–16%), więc liczymy od najmniejszej wartości w teście. */
+  const pedIdle = s => s.pedal == null || s.pedal < (bt.pedMin ?? 0) + 3;
+  const isWot = s => (s.pedal != null ? s.pedal >= wotThr() : (s.load ?? 0) >= 85) && (s.rpm ?? 0) >= 1500;
   const span = p => mx(col(p, 'rpm')) - mn(col(p, 'rpm'));
   function findPulls(S) {
     const segs = []; let cur = null, gap = 0;
@@ -147,7 +152,7 @@ function createPanels(api) {
       else if (cur && ++gap > 1) { segs.push(cur); cur = null; gap = 0; }
     });
     if (cur) segs.push(cur);
-    return segs.map(g => S.slice(g.a, g.b + 1)).filter(p => p.length >= 3 && p[p.length - 1].t - p[0].t >= 1.5 && span(p) >= 800);
+    return segs.map(g => S.slice(g.a, g.b + 1)).filter(p => p.length >= 2 && p[p.length - 1].t - p[0].t >= 1 && span(p) >= 500);   // przy wolnym odczycie (np. przez most) przyspieszenie ma tylko kilka próbek
   }
 
   function analyzeBoost() {
@@ -161,7 +166,7 @@ function createPanels(api) {
     const pulls = findPulls(S).sort((a, b) => span(b) - span(a));
     out.pulls = pulls.length;
     const P = pulls[0];
-    if (!P) out.checks.push(V('na', 'Brak przyspieszenia', 'Nie zarejestrowałem przyspieszenia z pedałem wciśniętym co najmniej w 80% powyżej 1500 obr/min. Zrób jedno pełne przyspieszenie, np. na trzecim biegu od 2000 obr/min.'));
+    if (!P) out.checks.push(V('na', 'Brak przyspieszenia', `Nie zarejestrowałem przyspieszenia z pełnym gazem powyżej 1500 obr/min. Największe wciśnięcie pedału w teście: ${f(bt.pedMax, 0)}%${S.some(s => s.pedal != null) ? '' : ' (sterownik nie podaje pozycji pedału, liczę po obciążeniu ≥ 85%)'}. Zrób jedno przyspieszenie z pedałem wciśniętym do końca, np. na trzecim biegu od 2000 obr/min, przez co najmniej 2–3 sekundy.`));
     else {
       out.best = P;
       const pb = col(P, 'boost'), peak = mx(pb), hasT = col(P, 'target').length >= 3;
@@ -226,7 +231,7 @@ function createPanels(api) {
       const tim = col(P, 'timing');
       if (tim.length >= 3) out.checks.push(V('info', 'Kąt zapłonu', `Od ${f(mn(tim), 1)}° do ${f(mx(tim), 1)}° w czasie przyspieszenia. Bardzo niski albo ujemny kąt przy pełnym gazie może oznaczać korekty od spalania stukowego, np. po tankowaniu słabszego paliwa.`));
     }
-    const idle = S.filter(s => (s.rpm ?? 0) > 400 && s.rpm < 1100 && (s.pedal ?? 0) < 3 && s.stft != null && s.ltft != null);
+    const idle = S.filter(s => (s.rpm ?? 0) > 400 && s.rpm < 1100 && pedIdle(s) && s.stft != null && s.ltft != null);
     if (idle.length >= 5) {
       const tot = avg(idle.map(s => s.stft + s.ltft));
       const lvl = tot >= 15 ? 'crit' : (tot >= 8 || tot <= -15) ? 'warn' : 'ok';
@@ -313,14 +318,14 @@ function createPanels(api) {
   }
   function boostStatus() {
     const st = $('#bStatus'), s = bt.samples[bt.samples.length - 1]; if (!st || !s) return;
-    const idleN = bt.samples.filter(x => (x.rpm ?? 0) > 400 && x.rpm < 1100 && (x.pedal ?? 0) < 3).length;
+    const idleN = bt.samples.filter(x => (x.rpm ?? 0) > 400 && x.rpm < 1100 && pedIdle(x)).length;
     st.textContent = isWot(s)
       ? `Nagrywam przyspieszenie: ${f(s.rpm, 0)} obr/min, ${f(s.boost, 2)} bar`
-      : `Nagrywam. Próbki na biegu jałowym: ${idleN}, przyspieszenia: ${bt.pulls}. ${bt.pulls ? 'Możesz zakończyć test albo powtórzyć przyspieszenie.' : 'Czekam na pełny gaz (pedał co najmniej 80%).'}`;
+      : `Nagrywam. Próbki na biegu jałowym: ${idleN}, przyspieszenia: ${bt.pulls}. ${bt.pulls ? 'Możesz zakończyć test albo powtórzyć przyspieszenie.' : `Czekam na pełny gaz (pedał teraz ${f(s.pedal, 0)}%, próg ${f(wotThr(), 0)}%).`}`;
   }
   function startBoost() {
     if (!api.elm()) return;
-    Object.assign(bt, { running: true, t0: performance.now(), samples: [], result: null, pulls: 0 });
+    Object.assign(bt, { running: true, t0: performance.now(), samples: [], result: null, pulls: 0, pedMax: 0, pedMin: null });
     api.ensurePolling(); syncBoost(); renderBoostResult();
     $('#bStatus').textContent = 'Nagrywam…';
   }
@@ -513,7 +518,7 @@ function createPanels(api) {
   function tick() {
     const v = api.vals();
     if (bt.running) {
-      if (bt.samples.length < 20000) bt.samples.push(sampleBoost(v));
+      if (bt.samples.length < 20000) { const sm = sampleBoost(v); bt.samples.push(sm); if (sm.pedal != null) { if (sm.pedal > (bt.pedMax ?? 0)) bt.pedMax = sm.pedal; if (bt.pedMin == null || sm.pedal < bt.pedMin) bt.pedMin = sm.pedal; } }
       const n = findPulls(bt.samples).length;
       if (n !== bt.pulls) { bt.pulls = n; renderBoostResult(); }
       boostStatus();
