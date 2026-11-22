@@ -226,6 +226,8 @@
   $('#rateSel').innerHTML = Object.entries(RATES).map(([k, r]) => `<option value="${k}">${r.label}</option>`).join('');
   $('#rateSel').value = rateKey;
   $('#rateSel').onchange = e => { rateKey = e.target.value; store.set('rate', rateKey); rateEma = 0; };
+  $('#autoChk').checked = store.get('autoTests', '1') !== '0';
+  $('#autoChk').onchange = e => { store.set('autoTests', e.target.checked ? '1' : '0'); panels && panels.setAuto(e.target.checked); };
   $('#liteChk').checked = lite;
   $('#liteChk').onchange = e => { lite = e.target.checked; store.set('lite', lite); buildTiles(); };
   async function pollLoop(run) {

@@ -427,12 +427,12 @@ function createPanels(api) {
         <li><b>Wydech.</b> Zatkany katalizator zdarza się rzadko, ale daje spadek doładowania na wysokich obrotach.</li></ol></details>`;
     $('#bRead').onclick = e => readCodes(e.currentTarget, ['01']);
     $('#bSensorBtn').onclick = () => { bt.sensorMsg = sensorCheck(); renderSensor(); if (!bt.running && bt.samples.length) { bt.result = analyzeBoost(); renderBoostResult(); } };
-    $('#mStart').onclick = startMap; $('#mStop').onclick = stopMap;
+    $('#mStart').onclick = manualStart(mt, startMap); $('#mStop').onclick = manualStop(mt, stopMap);
     $('#mWatch').onclick = async () => { mt.watch = !mt.watch; if (mt.watch) { await mapProbe(); api.ensurePolling(); } mapStatus(); renderMapLive(); };
     $('#mCsv').onclick = e => api.copyText(csvOf(mt.samples, MAP_COLS, 'czas [s]', 1), e.currentTarget);
     renderMapLive(); renderMapResult(); mapStatus();
-    $('#bStart').onclick = startBoost;
-    $('#bStop').onclick = stopBoost;
+    $('#bStart').onclick = manualStart(bt, startBoost);
+    $('#bStop').onclick = manualStop(bt, stopBoost);
     $('#bCsv').onclick = e => api.copyText(csvOf(bt.samples, BOOST_COLS, 'czas [s]', 1), e.currentTarget);
     renderBoostCodes(); renderSensor(); syncBoost(); updMinis('bLive'); renderBoostResult();
   }
@@ -702,8 +702,8 @@ function createPanels(api) {
       $('#hSym').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
       $('#hTip').textContent = SYM_TIP[ht.sym];
     });
-    $('#hStart').onclick = startHeat;
-    $('#hStop').onclick = stopHeat;
+    $('#hStart').onclick = manualStart(ht, startHeat);
+    $('#hStop').onclick = manualStop(ht, stopHeat);
     $('#hCsv').onclick = e => api.copyText(csvOf(ht.samples, heatCols(), 'czas [min]', 1), e.currentTarget);
     $('#hC2Go').onclick = findC2;
     $('#hC2Clr').onclick = () => { c2.choose(null); c2.setCands([]); c2.vals = {}; c2Status(); reMinis(); };
@@ -787,6 +787,54 @@ function createPanels(api) {
     drawChart(cv, [{ pts: O, color: tk.ink, dash: true }].concat(C.length ? [{ pts: C, color: tk.warn }] : [], [{ pts: E, color: tk.accent }]), { refs: [{ y: 85, label: '85 °C' }], xMin: 0 });
   }
 
+  /* =================== Automatyczne testy ===================
+     Po 5 minutach ciągłego połączenia aplikacja sama nagrywa trzy testy (nagrzewanie, doładowanie P0299, czujnik MAP)
+     z normalnej jazdy. Co 10 minut kończy odcinek i zapisuje logi (wysyłane na GitHub razem z resztą), po czym zaczyna
+     następny. Odcinek bez przyspieszenia z pełnym gazem nie daje logu doładowania ani MAP, bo nie ma czego oceniać. */
+  const AUTO_DELAY = 5 * 60000, AUTO_SEG = 10 * 60000;
+  const auto = { on: api.store.get('autoTests', '1') !== '0', elm: null, since: 0, segAt: 0, off: false, active: false, shown: 0 };
+  const hasPlateau = S => S.filter(x => (x.rpm ?? 0) >= 2800 && (x.pedal != null ? x.pedal >= 50 : (x.load ?? 0) >= 85)).length >= 4;
+  const worthBoost = () => bt.samples.length >= 10 && findPulls(bt.samples).length >= 1;
+  const worthHeat = () => ht.samples.length >= 60;
+  const worthMap = () => mt.samples.length >= 20 && hasPlateau(mt.samples);
+  function autoStart() {
+    auto.active = true; auto.segAt = performance.now();
+    if (!bt.running) { startBoost(); bt.auto = true; }
+    if (!ht.running) { startHeat(); ht.auto = true; }
+    if (!mt.running) { startMap(); mt.auto = true; }
+  }
+  function autoCycle(restart) {
+    if (bt.auto && bt.running) { bt.running = false; bt.result = analyzeBoost(); if (worthBoost()) saveBoost(); syncBoost(); renderBoostResult(); }
+    if (ht.auto && ht.running) { ht.running = false; finishHeat(); if (worthHeat()) saveHeat(); syncHeat(); renderHeatResult(); c2Status(); }
+    if (mt.auto && mt.running) { mt.running = false; if (worthMap()) saveMap(); renderMapResult(); mapStatus(); }
+    bt.auto = ht.auto = mt.auto = false;
+    if (restart) autoStart(); else auto.active = false;
+  }
+  /* Ręczne zatrzymanie testu uruchomionego automatycznie kończy auto-testy do następnego połączenia. */
+  const manualStop = (t, fn) => () => { if (t.auto) { t.auto = false; auto.off = true; fn(); autoCycle(false); autoStatus(true); } else fn(); };
+  const manualStart = (t, fn) => () => { fn(); t.auto = false; };
+  function autoStatus(force) {
+    const el = document.querySelector('#autoSt'); if (!el) return;
+    const now = performance.now(); if (!force && now - auto.shown < 900) return; auto.shown = now;
+    const mmss = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+    el.textContent = !auto.on || !api.elm() ? '' : auto.off ? 'auto-testy wyłączone do ponownego połączenia' : auto.active ? `auto-testy nagrywają ${mmss(now - auto.segAt)}` : `auto-testy ruszą za ${mmss(Math.max(0, AUTO_DELAY - (now - auto.since)))}`;
+  }
+  function autoTick() {
+    const e = api.elm(), now = performance.now();
+    if (e !== auto.elm) { auto.elm = e; auto.since = now; auto.off = false; auto.active = false; }
+    if (auto.on && e && !auto.off) {
+      if (!auto.active) { if (now - auto.since >= AUTO_DELAY) autoStart(); }
+      else if (now - auto.segAt >= AUTO_SEG) autoCycle(true);
+    }
+    autoStatus();
+  }
+  function setAuto(on) {
+    auto.on = !!on; api.store.set('autoTests', on ? '1' : '0');
+    if (!on && auto.active) autoCycle(false);
+    if (on) auto.off = false;
+    autoStatus(true);
+  }
+
   /* ---------- API dla aplikacji ---------- */
   function render() {
     if (!api.elm()) { mt.running = false; mt.watch = false; if (bt.running) { bt.running = false; bt.result = analyzeBoost(); } if (ht.running) { ht.running = false; finishHeat(); } }
@@ -799,6 +847,7 @@ function createPanels(api) {
     if (t === 'heat') { updMinis('hLive'); renderHeatResult(); }
   }
   function tick() {
+    autoTick();
     const v = api.vals();
     if (bt.running) {
       if (bt.samples.length < 20000) { const sm = sampleBoost(v); bt.samples.push(sm); if (sm.pedal != null) { if (sm.pedal > (bt.pedMax ?? 0)) bt.pedMax = sm.pedal; if (bt.pedMin == null || sm.pedal < bt.pedMin) bt.pedMin = sm.pedal; } }
@@ -828,6 +877,8 @@ function createPanels(api) {
     return ks.length ? [...new Set(ks)] : null;
   }
   function stopAll() {
+    if (auto.active) autoCycle(false);
+    auto.elm = null; autoStatus(true);
     if (mt.running) { mt.running = false; saveMap(); }
     mt.watch = false; mapStatus();
     if (bt.running) { bt.running = false; bt.result = analyzeBoost(); saveBoost(); }
@@ -859,5 +910,5 @@ function createPanels(api) {
   function saveHeat() { if (ht.samples.length >= 3) api.saveLog('test-ogrzewanie', 'Test nagrzewania', heatLines().join('\n').trim() + '\n\n== Próbki (CSV) ==\n' + csvOf(ht.samples, heatCols(), 'czas [min]', 1)); }
   let rs = null;
   window.addEventListener('resize', () => { clearTimeout(rs); rs = setTimeout(() => { if (cur === 'boost') renderBoostResult(); if (cur === 'heat') drawHeat(); }, 200); });
-  return { render, refresh, onTab, tick, keysFor, stopAll, reportLines, busy: () => bt.running || ht.running || mt.running };
+  return { render, refresh, onTab, tick, keysFor, stopAll, setAuto, reportLines, busy: () => bt.running || ht.running || mt.running };
 }
