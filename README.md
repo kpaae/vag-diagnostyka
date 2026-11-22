@@ -35,6 +35,7 @@ Tempo odczytu wybiera się obok przycisku Pauza: Oszczędnie (2 Hz), Normalnie (
 **Panel Ogrzewanie:**
 - wybór objawu i podpowiedź, co zwykle za nim stoi,
 - test nagrzewania z wykresem temperatury płynu i oleju: wiarygodność czujnika na zimnym starcie, tempo nagrzewania, czy silnik osiąga temperaturę roboczą, czy temperatura spada w jeździe,
+- drugi czujnik płynu (za chłodnicą, G83): numeru UDS nie ma w żadnej otwartej bazie, więc aplikacja szuka go sama (okno 0x1000–0x13FF, pojedynczy bajt −40 °C), a test nagrzewania wybiera kandydata, który śledzi płyn, ale od niego odstaje. Wybór jest wnioskiem z danych, nie z dokumentacji. Po wyborze czujnik 2 jest kafelkiem na żywo, linią na wykresie i podstawą oceny, kiedy otwiera się obieg radiatora,
 - wniosek: problem po stronie silnika (termostat) albo nagrzewnicy i nawiewu, z listą kontroli,
 - kody Climatronic i kody silnika związane z chłodzeniem.
 

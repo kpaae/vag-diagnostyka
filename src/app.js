@@ -14,12 +14,24 @@
   PIDS.forEach(def => def.outs.forEach(o => { CAT[o.key] = { ...o, g: def.g, pid: def.pid, slow: !!def.slow }; }));
   DERIVED.forEach(d => { CAT[d.key] = { ...d, derived: true }; });
   CAT.adapterV = { key: 'adapterV', name: 'Akumulator (gniazdo OBD)', unit: 'V', d: 1, min: 10, max: 16, g: 'silnik', special: true, check: voltCheck };
+  /* Drugi czujnik temperatury płynu (za chłodnicą). Jego numeru UDS nie ma w żadnej otwartej bazie, więc aplikacja
+     szuka go sama (panel Ogrzewanie), a dopiero potwierdzony na danych z testu staje się kanałem na żywo. */
+  CAT.coolant2 = { key: 'coolant2', name: 'Płyn za chłodnicą (czujnik 2)', unit: '°C', d: 0, min: -10, max: 130, g: 'chlodzenie', special: true, when: () => c2.sel != null };
 
   const store = {
     get(k, d) { try { const v = localStorage.getItem('vagdiag.' + k); return v == null ? d : v; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('vagdiag.' + k, v); } catch (e) {} }
   };
   const framed = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+  const C2MOD = { tx: 0x7E0, rx: 0x7E8 };
+  const c2num = v => { const n = parseInt(v, 10); return isFinite(n) ? n : null; };
+  const c2 = {
+    sel: c2num(store.get('c2sel', null)),
+    cands: String(store.get('c2cands', '')).split(',').map(c2num).filter(n => n != null),
+    vals: {}, probe: false, scanning: false,
+    choose(did) { c2.sel = did; store.set('c2sel', did == null ? '' : did); },
+    setCands(l) { c2.cands = l; store.set('c2cands', l.join(',')); }
+  };
 
   let elm = null, tr = null, mode = null, sup = new Set();
   let panels = null, tools = null, bridge = null, currentTab = 'live';
@@ -88,7 +100,7 @@
   }));
 
   /* ---------- grupy i kafelki ---------- */
-  function avail(k) { const c = CAT[k]; if (!c || !elm) return false; if (c.special) return true; if (c.derived) return c.needs(sup); return sup.has(c.pid); }
+  function avail(k) { const c = CAT[k]; if (!c || !elm) return false; if (c.special) return c.when ? c.when() : true; if (c.derived) return c.needs(sup); return sup.has(c.pid); }
   function isWide(k) { return !!WIDE[k] && !(k === 'lambdaV' && avail('lambdaA')); }
   function syncSeg() { $$('#groupSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.g === view ? 'true' : 'false')); }
   $$('#groupSeg button').forEach(b => b.addEventListener('click', () => { view = b.dataset.g; store.set('group', view); syncSeg(); buildTiles(); }));
@@ -202,7 +214,7 @@
     max: { label: 'Maksymalnie', period: 0, draw: 200, full: 20 }
   };
   let rateKey = RATES[store.get('rate', 'normal')] ? store.get('rate', 'normal') : 'normal';
-  let lite = !!store.get('lite', false);
+  let lite = store.get('lite', '') === 'true';
   let lastDraw = 0, rateEma = 0, lastStart = 0;
   $('#rateSel').innerHTML = Object.entries(RATES).map(([k, r]) => `<option value="${k}">${r.label}</option>`).join('');
   $('#rateSel').value = rateKey;
@@ -217,6 +229,9 @@
       try {
         const res = await e.op(() => e.readLive(defsFor(keys)));
         if (keys.includes('adapterV') && (cycle % 10 === 0 || vals.adapterV == null)) { const v = await e.op(() => e.voltage()); if (v != null) res.adapterV = v; }
+        /* Czujnik 2 płynu: wybrany numer co 2. cykl, a w trakcie szukania kandydaci co 3. cykl (bajt − 40 °C). */
+        if (c2.sel != null && keys.includes('coolant2') && cycle % 2 === 0) { const b = await e.op(() => e.readDidRaw(C2MOD, c2.sel)); if (b && b.length === 1) res.coolant2 = b[0] - 40; }
+        if (c2.probe && c2.sel == null && cycle % 3 === 0) for (const d of c2.cands) { if (e !== elm) break; const b = await e.op(() => e.readDidRaw(C2MOD, d)); if (b && b.length === 1) c2.vals[d] = b[0] - 40; }
         if (run !== pollRun || e !== elm) break;
         Object.assign(vals, res);
         for (const d of DERIVED) { const v = d.calc(vals); if (v != null && isFinite(v)) { vals[d.key] = v; res[d.key] = v; } }
@@ -731,8 +746,29 @@
     version: typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'dev'
   });
   const saveLog = (kind, title, text, opt) => journal.add(kind, title, text, opt);
+  /* Szukanie drugiego czujnika płynu: pojedynczy bajt (×1 − 40 °C) w oknie 0x1000–0x13FF, którego wartość jest zbliżona
+     do temperatury płynu. Wynik to lista kandydatów; wybór robi dopiero analiza testu nagrzewania. */
+  async function c2Scan(onProg) {
+    const e = elm; if (!e || c2.scanning || (tools && tools.busy())) return null;
+    c2.scanning = true; const resume = pause(); const found = [];
+    try {
+      await e.op(() => e.scanDids(C2MOD, [[0x1000, 0x13FF]], {
+        stop: () => e !== elm, onProgress: (did, n, tot) => onProg && onProg(did, n, tot, found.length),
+        onFound: fd => found.push(fd)
+      }));
+    } catch (err) { logLine('! szukanie czujnika 2: ' + err.message); }
+    c2.scanning = false; resume();
+    if (e !== elm) return null;
+    const ect = vals.coolant;
+    const cand = found.filter(fd => fd.bytes.length === 1 && fd.bytes[0] > 0 && fd.bytes[0] < 255 && fd.did !== 0x11CD)
+      .map(fd => ({ did: fd.did, t: fd.bytes[0] - 40 })).filter(c => ect != null ? Math.abs(c.t - ect) <= 30 : (c.t >= -20 && c.t <= 130))
+      .sort((a, b) => ect != null ? Math.abs(a.t - ect) - Math.abs(b.t - ect) : a.did - b.did).slice(0, 10);
+    c2.choose(null); c2.vals = {}; c2.setCands(cand.map(c => c.did));
+    logLine(`— szukanie czujnika 2: ${found.length} DID, ${cand.length} kandydatów`);
+    return { total: found.length, cand, ect };
+  }
   panels = createPanels({
-    saveLog,
+    saveLog, c2, c2Scan,
     vals: () => vals, avail, stateOf, tokens, store, CAT, DTC_DESC, MODULES, modules, brand,
     esc, fmtNum, fmtVal, plural, copyText, logLine,
     elm: () => elm, mode: () => mode, sup: () => sup, report: () => report,

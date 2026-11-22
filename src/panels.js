@@ -401,10 +401,10 @@ function createPanels(api) {
   }
 
   /* =================== Ogrzewanie =================== */
-  const HEAT_KEYS = ['coolant', 'oil', 'ambient', 'iat', 'rpm', 'speed', 'runTime', 'load'];
-  const HEAT_LIVE = ['coolant', 'oil', 'ambient', 'speed', 'runTime'];
+  const HEAT_KEYS = ['coolant', 'coolant2', 'oil', 'ambient', 'iat', 'rpm', 'speed', 'runTime', 'load'];
+  const HEAT_LIVE = ['coolant', 'coolant2', 'oil', 'ambient', 'speed', 'runTime'];
   const HEAT_CODES = ['P0128', 'P0125', 'P0116', 'P0117', 'P0118', 'P0119', 'P2181', 'P0597', 'P0598', 'P0599', 'P0480', 'P0481', 'P0217'];
-  const HEAT_COLS = [['ect', 'płyn [°C]'], ['oil', 'olej [°C]'], ['amb', 'otoczenie [°C]'], ['iat', 'dolot [°C]'], ['rpm', 'obroty [obr/min]'], ['speed', 'prędkość [km/h]'], ['run', 'od uruchomienia [s]']];
+  const HEAT_COLS = [['ect', 'płyn [°C]'], ['ect2', 'płyn za chłodnicą [°C]'], ['oil', 'olej [°C]'], ['amb', 'otoczenie [°C]'], ['iat', 'dolot [°C]'], ['rpm', 'obroty [obr/min]'], ['speed', 'prędkość [km/h]'], ['run', 'od uruchomienia [s]']];
   const SYMPTOMS = [['cold', 'Zimny nawiew'], ['slow', 'Długo się grzeje'], ['idle', 'Zimno na postoju'], ['drive', 'Zimno w jeździe'], ['side', 'Grzeje jedna strona']];
   const SYM_TIP = {
     cold: 'Zimne powietrze przy rozgrzanym silniku wskazuje na nagrzewnicę albo klapę temperatury. Zimne powietrze i zimny silnik wskazują na termostat.',
@@ -429,7 +429,58 @@ function createPanels(api) {
   const ht = { running: false, t0: 0, samples: [], n: 0, sym: api.store.get('heatSym', 'cold') };
   if (!SYM_TIP[ht.sym]) ht.sym = 'cold';
 
-  const sampleHeat = v => ({ t: (performance.now() - ht.t0) / 60000, ect: v.coolant, oil: v.oil, amb: v.ambient, iat: v.iat, rpm: v.rpm, speed: v.speed, run: v.runTime });
+  /* Drugi czujnik płynu (za chłodnicą): wybrany numer, a przed wyborem lista kandydatów zapisywana obok. */
+  const c2 = api.c2 || { sel: null, cands: [], vals: {}, probe: false, choose() {}, setCands() {} };
+  const c2hex = d => '0x' + d.toString(16).toUpperCase().padStart(4, '0');
+  const heatCols = () => HEAT_COLS.concat(c2.cands.map(d => ['c' + d, 'DID ' + c2hex(d) + ' [°C]']));
+  const sampleHeat = v => {
+    const o = { t: (performance.now() - ht.t0) / 60000, ect: v.coolant, ect2: v.coolant2, oil: v.oil, amb: v.ambient, iat: v.iat, rpm: v.rpm, speed: v.speed, run: v.runTime };
+    if (c2.probe) for (const d of c2.cands) if (c2.vals[d] != null) o['c' + d] = c2.vals[d];
+    return o;
+  };
+  const corr = (a, b) => {
+    const n = a.length; if (n < 3) return null;
+    const ma = avg(a), mb = avg(b); let sab = 0, saa = 0, sbb = 0;
+    for (let i = 0; i < n; i++) { const x = a[i] - ma, y = b[i] - mb; sab += x * y; saa += x * x; sbb += y * y; }
+    return saa > 0 && sbb > 0 ? sab / Math.sqrt(saa * sbb) : null;
+  };
+  /* Ocena kandydatów: stały odczyt to nie temperatura, kopia płynu to ten sam czujnik co w OBD, a czujnik za chłodnicą
+     śledzi płyn, ale od niego odstaje (przy zimnym silniku i otwarciu obiegu). */
+  function rankC2(S) {
+    const res = [];
+    for (const d of c2.cands) {
+      const k = 'c' + d, P = S.filter(x => x[k] != null && x.ect != null);
+      if (P.length < 10) continue;
+      const b = P.map(x => x[k]), rng = mx(b) - mn(b), r = corr(P.map(x => x.ect), b), dabs = avg(P.map(x => Math.abs(x[k] - x.ect)));
+      const kind = rng < 5 ? 'stały' : (r != null && r >= 0.98 && dabs < 1.5) ? 'kopia' : (r != null && r >= 0.6 && rng >= 15) ? 'czujnik' : 'inny';
+      res.push({ did: d, key: k, r, rng, dabs, dm: avg(P.map(x => x[k] - x.ect)), kind, n: P.length });
+    }
+    return res.sort((x, y) => (y.kind === 'czujnik') - (x.kind === 'czujnik') || (y.r ?? -1) - (x.r ?? -1));
+  }
+  /* Kolumna z danymi czujnika 2: wybrany czujnik albo najlepszy kandydat z tego testu. */
+  function c2Series(S) {
+    if (S.some(x => x.ect2 != null)) return { key: 'ect2', label: 'płyn za chłodnicą', ranked: null };
+    const ranked = rankC2(S), best = ranked.find(x => x.kind === 'czujnik');
+    return best ? { key: best.key, label: 'kandydat ' + c2hex(best.did), best, ranked } : { key: null, ranked };
+  }
+  function c2Checks(S, out, maxE) {
+    const ser = c2Series(S), { ranked } = ser;
+    if (ranked && ranked.length) {
+      const fmt = x => `${c2hex(x.did)}: ${x.kind}${x.r != null ? `, r = ${f(x.r, 2)}` : ''}, zakres ${f(x.rng, 0)} °C`;
+      out.checks.push(V('info', 'Szukanie czujnika 2 płynu', `Sprawdzone numery: ${ranked.map(fmt).join('; ')}. ${ser.best ? `Najlepiej pasuje ${c2hex(ser.best.did)}: zmienia się razem z płynem (r = ${f(ser.best.r, 2)}) i średnio jest o ${f(Math.abs(ser.best.dm), 0)} °C ${ser.best.dm < 0 ? 'chłodniejszy' : 'cieplejszy'}. To wniosek z danych, nie z dokumentacji, więc traktuj go jako prawdopodobny, nie pewny.` : 'Żaden nie zachowuje się jak czujnik za chłodnicą (zmienia się razem z płynem, ale się od niego różni). Powtórz test od zimnego silnika albo skorzystaj z VCDS (IDE00192).'}`));
+    }
+    if (!ser.key) return;
+    const P = S.filter(x => x[ser.key] != null && x.ect != null); if (P.length < 10) return;
+    const c0 = P[0][ser.key], e0 = P[0].ect;
+    if (e0 > 60) { out.checks.push(V('info', 'Czujnik 2 płynu', `Test zaczął się na ciepłym silniku (płyn ${f(e0, 0)} °C), więc nie da się ocenić, kiedy otworzył się obieg radiatora. Powtórz od zimnego silnika.`)); return; }
+    const open = P.find(x => x.t > P[0].t && x[ser.key] >= c0 + 8);
+    if (open) {
+      const warm = open.ect >= 70;
+      out.checks.push(V(warm ? 'ok' : 'warn', 'Obieg radiatora (czujnik 2)', `Za chłodnicą temperatura wzrosła o 8 °C po ${fmtMin(open.t)}, gdy płyn silnika miał ${f(open.ect, 0)} °C. ${warm ? 'Radiator włączył się dopiero po nagrzaniu silnika, jak powinien.' : 'To za wcześnie: obieg radiatora otworzył się przy zimnym silniku. Termostat albo zawór modułu zarządzania temperaturą otwiera się za wcześnie lub jest stale otwarty. Wniosek jest pewny tylko wtedy, gdy ten czujnik naprawdę stoi za chłodnicą.'}`));
+    } else if (maxE >= 85) out.checks.push(V('info', 'Obieg radiatora (czujnik 2)', `Czujnik 2 nie wzrósł o 8 °C przez cały test, mimo że płyn doszedł do ${f(maxE, 0)} °C. Obieg radiatora prawie się nie otworzył albo to nie jest czujnik za chłodnicą.`));
+    const dr = P.filter(x => x.ect >= 85 && (x.speed ?? 0) >= 50);
+    if (dr.length >= 5) out.checks.push(V('info', 'Różnica płynu i czujnika 2', `Przy rozgrzanym silniku i prędkości od 50 km/h płyn jest średnio o ${f(avg(dr.map(x => x.ect - x[ser.key])), 0)} °C cieplejszy niż czujnik 2.`));
+  }
 
   function analyzeHeat() {
     const S = ht.samples, out = { checks: [], concl: null, branch: null };
@@ -475,6 +526,7 @@ function createPanels(api) {
     if (maxE >= 110) out.checks.push(V('crit', 'Przegrzewanie', `Płyn doszedł do ${f(maxE, 0)} °C. Sprawdź poziom płynu i wentylator chłodnicy, zanim pojedziesz dalej.`));
     const O = col(S, 'oil');
     if (O.length) out.checks.push(V('info', 'Olej', `Od ${f(mn(O), 0)} do ${f(mx(O), 0)} °C. Olej nagrzewa się wolniej niż płyn. Po dłuższej jeździe obie temperatury powinny być zbliżone.`));
+    c2Checks(S, out, maxE);
     out.concl = CONCL[out.branch || 'none'];
     return out;
   }
@@ -488,6 +540,10 @@ function createPanels(api) {
       <div class="card"><h3 class="sect">Objaw</h3>
         <div class="seg" id="hSym">${SYMPTOMS.map(([k, l]) => `<button type="button" data-k="${k}" aria-pressed="${k === ht.sym}">${l}</button>`).join('')}</div>
         <p class="small" id="hTip">${esc(SYM_TIP[ht.sym])}</p></div>
+      <div class="card" id="hC2Card"><h3 class="sect">Drugi czujnik temperatury płynu</h3>
+        <p class="small muted">Silnik ma dwa czujniki płynu: na wyjściu z silnika (ten widzisz wszędzie) i drugi, za chłodnicą. Drugi pokazuje, kiedy otwiera się obieg radiatora, więc najlepiej ocenia termostat. Jego numeru nie ma w otwartych bazach, dlatego aplikacja szuka go sama. Zrób to raz, przy uruchomionym silniku (ok. 1–3 minuty). Potem test nagrzewania sprawdzi, który z kandydatów zachowuje się jak czujnik za chłodnicą.</p>
+        <p class="small" id="hC2St"></p>
+        <div class="actions"><button class="btn small" id="hC2Go" type="button">Znajdź czujnik 2</button><button class="btn small ghost" id="hC2Clr" type="button" hidden>Zapomnij wynik</button></div></div>
       <div class="card ptest"><h3 class="sect">Test nagrzewania</h3>
         <ol class="steps"><li>Najlepiej po kilku godzinach postoju, na zimnym silniku.</li><li>Połącz się, naciśnij Start i uruchom silnik.</li><li>Jedź normalnie 15–20 minut. Ekran telefonu musi zostać włączony, aplikacja sama go podtrzymuje.</li><li>Naciśnij Zakończ.</li></ol>
         <div id="hLive">${minis(HEAT_LIVE)}</div>
@@ -495,7 +551,7 @@ function createPanels(api) {
         <div class="actions"><button class="btn primary" id="hStart" type="button">Start</button><button class="btn" id="hStop" type="button" hidden>Zakończ</button><button class="btn small ghost" id="hCsv" type="button" hidden>Kopiuj dane CSV</button></div></div>
       <div class="card" id="hResCard" hidden><h3 class="sect">Wynik</h3>
         <div class="chartbox"><canvas id="hChart" class="chart" aria-label="Temperatura płynu w czasie"></canvas>
-          <p class="legend"><span><i class="sw"></i>płyn chłodzący</span><span><i class="sw dash"></i>olej</span><span>oś pozioma: minuty, pionowa: °C</span></p></div>
+          <p class="legend" id="hLegend"><span><i class="sw"></i>płyn chłodzący</span><span><i class="sw dash"></i>olej</span><span>oś pozioma: minuty, pionowa: °C</span></p></div>
         <div id="hChecks"></div></div>
       <div class="card" id="hConclCard" hidden><h3 class="sect">Wniosek</h3><p class="concl" id="hConcl"></p><ol class="sus" id="hSteps"></ol></div>
       <div class="card"><h3 class="sect">Kody związane z ogrzewaniem</h3><div id="hCodes"></div>
@@ -508,9 +564,29 @@ function createPanels(api) {
     });
     $('#hStart').onclick = startHeat;
     $('#hStop').onclick = stopHeat;
-    $('#hCsv').onclick = e => api.copyText(csvOf(ht.samples, HEAT_COLS, 'czas [min]', 1), e.currentTarget);
+    $('#hCsv').onclick = e => api.copyText(csvOf(ht.samples, heatCols(), 'czas [min]', 1), e.currentTarget);
+    $('#hC2Go').onclick = findC2;
+    $('#hC2Clr').onclick = () => { c2.choose(null); c2.setCands([]); c2.vals = {}; c2Status(); reMinis(); };
+    c2Status();
     $('#hRead').onclick = e => readCodes(e.currentTarget, ['01', '08']);
     renderHeatCodes(); syncHeat(); updMinis('hLive'); renderHeatResult();
+  }
+  /* Kafelek czujnika 2 pojawia się dopiero po wyborze numeru, więc odświeżamy listę kafelków. */
+  function reMinis() { const h = $('#hLive'); if (h) { h.innerHTML = minis(HEAT_LIVE); updMinis('hLive'); } }
+  function c2Status(msg) {
+    const el = $('#hC2St'); if (!el) return;
+    const go = $('#hC2Go'), clr = $('#hC2Clr');
+    const txt = msg || (c2.sel != null ? `Wybrany czujnik 2: ${c2hex(c2.sel)}, odczyt na żywo w kafelku „Płyn za chłodnicą”. Wybór wynika z danych testu, nie z dokumentacji.` : c2.cands.length ? `Kandydaci: ${c2.cands.map(c2hex).join(', ')}. Uruchom test nagrzewania na zimnym silniku, a aplikacja oceni, który to czujnik za chłodnicą.` : 'Jeszcze nie szukano.');
+    el.textContent = txt;
+    if (go) go.disabled = !api.elm() || ht.running || !!c2.scanning;
+    if (clr) clr.hidden = c2.sel == null && !c2.cands.length;
+  }
+  async function findC2() {
+    if (!api.elm() || ht.running || c2.scanning || !api.c2Scan) return;
+    c2Status('Szukam…'); $('#hC2Go').disabled = true;
+    const r = await api.c2Scan((did, n, tot, fc) => { const el = $('#hC2St'); if (el) el.textContent = `Sprawdzam 0x${did.toString(16).toUpperCase().padStart(4, '0')} · ${n} z ${tot} · znaleziono ${fc}`; });
+    if (!r) { c2Status('Szukanie przerwane albo adapter jest zajęty.'); return; }
+    c2Status(r.cand.length ? `Znaleziono ${r.total} odpowiadających numerów, w tym ${r.cand.length} podobnych do temperatury płynu: ${r.cand.map(c => `${c2hex(c.did)} (${f(c.t, 0)} °C)`).join(', ')}. Uruchom test nagrzewania na zimnym silniku, a aplikacja oceni, który to czujnik za chłodnicą.` : `Znaleziono ${r.total} odpowiadających numerów, ale żaden nie wygląda jak druga temperatura płynu. Ten sterownik może mieć czujnik pod innym numerem albo go nie udostępniać.`);
   }
   function renderHeatCodes() {
     const el = $('#hCodes'); if (!el) return;
@@ -524,11 +600,12 @@ function createPanels(api) {
     html += eng.length ? `<p class="small muted">Silnik:</p>${codeList(eng)}` : '<p class="noerr">Silnik: brak kodów związanych z chłodzeniem</p>';
     el.innerHTML = html;
   }
+  const msgKeep = () => $('#hC2St') && c2.scanning ? $('#hC2St').textContent : undefined;
   function syncHeat() {
     const s = $('#hStart'), p = $('#hStop'), c = $('#hCsv'); if (!s) return;
     s.hidden = ht.running; p.hidden = !ht.running; c.hidden = ht.running || !ht.samples.length;
     s.textContent = ht.samples.length ? 'Nowy test' : 'Start'; s.disabled = !api.elm();
-    heatStatus();
+    heatStatus(); c2Status(msgKeep());
   }
   function heatStatus() {
     const el = $('#hStatus'); if (!el) return;
@@ -542,9 +619,15 @@ function createPanels(api) {
   function startHeat() {
     if (!api.elm()) return;
     Object.assign(ht, { running: true, t0: performance.now(), samples: [], n: 0 });
-    api.ensurePolling(); syncHeat(); renderHeatResult();
+    c2.vals = {}; c2.probe = c2.sel == null && c2.cands.length > 0;
+    api.ensurePolling(); syncHeat(); renderHeatResult(); c2Status();
   }
-  function stopHeat() { if (!ht.running) return; ht.running = false; syncHeat(); renderHeatResult(); saveHeat(); }
+  /* Po teście wybieramy czujnik 2 z kandydatów, jeśli któryś zachował się jak czujnik za chłodnicą. */
+  function finishHeat() {
+    if (c2.probe && c2.sel == null) { const b = rankC2(ht.samples).find(x => x.kind === 'czujnik'); if (b) c2.choose(b.did); }
+    c2.probe = false; reMinis();
+  }
+  function stopHeat() { if (!ht.running) return; ht.running = false; finishHeat(); syncHeat(); renderHeatResult(); saveHeat(); c2Status(); }
   function renderHeatResult() {
     const card = $('#hResCard'), cc = $('#hConclCard'); if (!card) return;
     const ok = ht.samples.length >= 3; card.hidden = !ok; cc.hidden = !ok;
@@ -559,12 +642,14 @@ function createPanels(api) {
     const tk = api.tokens();
     const E = ht.samples.filter(s => s.ect != null).map(s => ({ x: s.t, y: s.ect }));
     const O = ht.samples.filter(s => s.oil != null).map(s => ({ x: s.t, y: s.oil }));
-    drawChart(cv, [{ pts: O, color: tk.ink, dash: true }, { pts: E, color: tk.accent }], { refs: [{ y: 85, label: '85 °C' }], xMin: 0 });
+    const ser = c2Series(ht.samples), C = ser.key ? ht.samples.filter(s => s[ser.key] != null).map(s => ({ x: s.t, y: s[ser.key] })) : [];
+    const lg = $('#hLegend'); if (lg) lg.innerHTML = `<span><i class="sw"></i>płyn chłodzący</span>${C.length ? `<span><i class="sw" style="background:${tk.warn}"></i>${esc(ser.label)}</span>` : ''}<span><i class="sw dash"></i>olej</span><span>oś pozioma: minuty, pionowa: °C</span>`;
+    drawChart(cv, [{ pts: O, color: tk.ink, dash: true }].concat(C.length ? [{ pts: C, color: tk.warn }] : [], [{ pts: E, color: tk.accent }]), { refs: [{ y: 85, label: '85 °C' }], xMin: 0 });
   }
 
   /* ---------- API dla aplikacji ---------- */
   function render() {
-    if (!api.elm()) { if (bt.running) { bt.running = false; bt.result = analyzeBoost(); } ht.running = false; }
+    if (!api.elm()) { if (bt.running) { bt.running = false; bt.result = analyzeBoost(); } if (ht.running) { ht.running = false; finishHeat(); } }
     renderBoost(); renderHeat();
   }
   function refresh() { renderBoostCodes(); renderHeatCodes(); }
@@ -597,7 +682,7 @@ function createPanels(api) {
   }
   function stopAll() {
     if (bt.running) { bt.running = false; bt.result = analyzeBoost(); saveBoost(); }
-    if (ht.running) { ht.running = false; saveHeat(); }
+    if (ht.running) { ht.running = false; finishHeat(); saveHeat(); }
     syncBoost(); syncHeat();
   }
   function boostLines() {
@@ -622,7 +707,7 @@ function createPanels(api) {
   }
   function reportLines() { return boostLines().concat(heatLines()); }
   function saveBoost() { if (bt.samples.length) api.saveLog('test-p0299', `Test doładowania, ${bt.pulls} ${bt.pulls === 1 ? 'przyspieszenie' : 'przyspieszeń'}`, boostLines().join('\n').trim() + '\n\n== Próbki (CSV) ==\n' + csvOf(bt.samples, BOOST_COLS, 'czas [s]', 1)); }
-  function saveHeat() { if (ht.samples.length >= 3) api.saveLog('test-ogrzewanie', 'Test nagrzewania', heatLines().join('\n').trim() + '\n\n== Próbki (CSV) ==\n' + csvOf(ht.samples, HEAT_COLS, 'czas [min]', 1)); }
+  function saveHeat() { if (ht.samples.length >= 3) api.saveLog('test-ogrzewanie', 'Test nagrzewania', heatLines().join('\n').trim() + '\n\n== Próbki (CSV) ==\n' + csvOf(ht.samples, heatCols(), 'czas [min]', 1)); }
   let rs = null;
   window.addEventListener('resize', () => { clearTimeout(rs); rs = setTimeout(() => { if (cur === 'boost') renderBoostResult(); if (cur === 'heat') drawHeat(); }, 200); });
   return { render, refresh, onTab, tick, keysFor, stopAll, reportLines, busy: () => bt.running || ht.running };
