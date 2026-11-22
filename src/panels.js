@@ -159,6 +159,8 @@ function createPanels(api) {
     const S = bt.samples, out = { checks: [], suspects: [], best: null, pulls: 0 };
     const score = { leak: 0, wg: 0, sensor: 0, ic: 0, fuel: 0, restr: 0 };
     if (bt.sensor) { out.checks.push(bt.sensor); if (bt.sensor.lvl === 'warn' || bt.sensor.lvl === 'crit') score.sensor += 3; }
+    const wgCodes = engineCodes().list.filter(h => /^P256[345]$|^P00AF$|^P024[3-6]$/.test(h.code));
+    if (wgCodes.length) { out.checks.push(V('crit', 'Błąd sterowania wastegate', `${wgCodes.map(h => h.code).join(', ')} w pamięci sterownika. Sterownik sam wykrył, że siłownik wastegate albo jego czujnik położenia nie działa prawidłowo.`)); score.wg += 4; }
     const ect = mx(col(S, 'ect'));
     if (ect != null) out.checks.push(ect >= 70
       ? V('ok', 'Silnik rozgrzany', `Płyn chłodzący ${f(ect, 0)} °C.`)
@@ -260,10 +262,10 @@ function createPanels(api) {
     const host = $('#boostPanel'); if (!host) return;
     const on = !!api.elm();
     host.innerHTML = `
-      <div class="panel-intro"><h2 class="ptitle">P0299 · za niskie doładowanie</h2>
-        <p class="muted">Sterownik zapisuje ten kod, gdy rzeczywiste doładowanie przez dłuższą chwilę jest niższe od zadanego. Panel sprawdza czujniki, mierzy przyspieszenie i wskazuje, od czego zacząć.</p></div>
+      <div class="panel-intro"><h2 class="ptitle">Doładowanie i EPC</h2>
+        <p class="muted">Wszystkie błędy silnika związane z mocą, czyli te, które zapalają kontrolkę EPC: doładowanie i wastegate (P0299, P2563 i inne), przepustnica i pedał, wypadanie zapłonów, paliwo, rozrząd. Do tego test czujników i przyspieszenia, który wskazuje, od czego zacząć.</p></div>
       <div class="pgrid">
-        <div class="card"><h3 class="sect">1. Stan kodu</h3><div id="bCodes"></div>
+        <div class="card"><h3 class="sect">1. Błędy silnika: EPC, doładowanie, zapłon</h3><div id="bCodes"></div>
           <div class="cardfoot"><button class="btn small" id="bRead" type="button" ${on ? '' : 'disabled'}>Odczytaj kody silnika</button></div></div>
         <div class="card"><h3 class="sect">2. Czujniki bez pracy silnika</h3>
           <p class="small muted">Zgaś silnik i zostaw włączony zapłon. Ciśnienie w kolektorze i doładowania musi wtedy równać się atmosferycznemu.</p>
@@ -298,15 +300,60 @@ function createPanels(api) {
     const el = $('#bSensor'); if (!el) return;
     el.innerHTML = bt.sensorMsg ? `<p class="small">${esc(bt.sensorMsg)}</p>` : bt.sensor ? checksHtml([bt.sensor]) : '';
   }
+  /* Grupy kodów silnika pokazywane w tej zakładce. EPC u VAG zapala się przy usterkach wpływających na moc:
+     doładowanie, przepustnica i pedał, włącznik świateł stopu, sterownik, a często też przy wypadaniu zapłonów. */
+  const rng = (a, b, pre = 'P') => { const o = []; for (let i = a; i <= b; i++) o.push(pre + i.toString(16).toUpperCase().padStart(4, '0')); return o; };
+  const ENG_GROUPS = [
+    ['boost', 'Doładowanie i wastegate', new Set(['P0299', 'P0234', 'P00AF', 'P2261', 'P2279', ...rng(0x0236, 0x0238), ...rng(0x0243, 0x0246), ...rng(0x2563, 0x2565), ...rng(0x0045, 0x0048), ...rng(0x0033, 0x0035), ...rng(0x0106, 0x0108), ...rng(0x0101, 0x0103)])],
+    ['epc', 'Przepustnica, pedał gazu, hamulec, sterownik (EPC)', new Set(['P0571', 'P0504', 'P0606', 'P0638', 'P0562', 'P0563', ...rng(0x0120, 0x0123), ...rng(0x0220, 0x0223), ...rng(0x2100, 0x2119), ...rng(0x2122, 0x2138), ...rng(0x0600, 0x060F)])],
+    ['mis', 'Wypadanie zapłonów i zapłon', new Set([...rng(0x0300, 0x0312), ...rng(0x0350, 0x0358), ...rng(0x0261, 0x0272), ...rng(0x0325, 0x0334)])],
+    ['fuel', 'Paliwo i mieszanka', new Set(['P0087', 'P0088', 'P2293', 'P0171', 'P0172', 'P2187', 'P2188', ...rng(0x0191, 0x0193)])],
+    ['cam', 'Rozrząd i czujniki obrotów', new Set(['P0011', 'P0014', 'P0335', 'P0340', 'P0341', ...rng(0x0016, 0x0019)])]
+  ];
+  const groupOf = code => (ENG_GROUPS.find(g => g[2].has(code)) || ['other', 'Inne błędy silnika'])[0];
+  const groupName = k => (ENG_GROUPS.find(g => g[0] === k) || [k, 'Inne błędy silnika'])[1];
+  /* Wszystkie kody silnika: z OBD (tryby 03/07/0A) i z modułu silnika (UDS). Kod z modułu VAG ma kod P tylko wtedy,
+     gdy aplikacja zna bazę sterownika; inaczej sam numer VAG, który też tu trafia. */
+  function engineCodes() {
+    const rep = api.report(), ENG = mapAddr('01'), out = [], seen = new Map();
+    const add = (code, src, flags, d) => {
+      const k = code; if (seen.has(k)) { const h = seen.get(k); h.src += ', ' + src; if (d && !h.d) h.d = d; return; }
+      const h = { code, src, flags: flags || [], d, group: groupOf(code) }; seen.set(k, h); out.push(h);
+    };
+    if (rep.obd) for (const [k, n] of [['stored', 'OBD zapisany'], ['pending', 'OBD oczekujący'], ['permanent', 'OBD stały']]) (rep.obd[k] || []).forEach(d => add(d.code, n));
+    rep.modules.filter(m => m.addr === ENG).forEach(m => m.dtcs.forEach(d => add(d.code, 'moduł ' + m.addr, d.flags.filter(x => !x.startsWith('status')), d)));
+    const read = !!rep.obd || rep.modules.some(m => m.addr === ENG);
+    return { list: out, read };
+  }
+  function engCodeHtml(h) {
+    const d = h.d, desc = api.DTC_DESC[h.code] || (d && d.desc) || '';
+    const ctx = d && d.vagNo != null && d.details && !d.details.err ? vagContextText(vagFaultContext(d.details.ext, api.report().stamp)) : '';
+    const inf = dtcInfo(h.code, false);
+    return `<div class="codeline"><code>${esc(d ? d.full : h.code)}</code><span>${esc(desc || (d && d.vagOnly ? 'numer VAG, opis tylko w bazie producenta' : 'kod producenta, brak opisu'))}</span>
+      <span class="flag">${esc(h.src)}${h.flags.length ? ' · ' + esc(h.flags.join(', ')) : ''}</span>
+      ${ctx ? `<span class="small muted">${esc(ctx)}</span>` : ''}
+      ${inf && inf.causes.length ? `<details class="cz"><summary>Możliwe przyczyny</summary>${inf.warn ? `<p class="warnp">${esc(inf.warn)}</p>` : ''}<ul>${inf.causes.map(c => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted small">Źródła: ${inf.src.map(x => `<a href="${esc(x[1])}" target="_blank" rel="noopener">${esc(x[0])}</a>`).join(', ')}</p></details>` : ''}</div>`;
+  }
   function renderBoostCodes() {
     const el = $('#bCodes'); if (!el) return;
-    const { hits, read } = codeHits(BOOST_CODES, []);
+    const { list, read } = engineCodes();
     if (!read) { el.innerHTML = '<p class="small muted">Kody nie zostały jeszcze odczytane.</p>'; return; }
-    const p = hits.filter(h => h.base === 'P0299'), other = hits.filter(h => h.base !== 'P0299');
-    el.innerHTML = (p.length
-      ? `<p class="codehead crit">P0299 jest zapisany (${esc(p.map(h => h.src + (h.flags ? ', ' + h.flags : '')).join('; '))}).</p>`
-      : '<p class="codehead ok">P0299 nie jest teraz zapisany. Jeśli został skasowany albo pojawia się sporadycznie, test przyspieszenia i tak pokaże przyczynę.</p>')
-      + (other.length ? `<p class="small muted">Inne kody, które mogą mieć związek:</p>${codeList(other)}` : '')
+    const active = h => h.flags.includes('aktywny') || h.flags.includes('kontrolka');
+    const key = list.filter(h => h.group !== 'other'), act = key.filter(active);
+    const p0299 = list.filter(h => h.code === 'P0299');
+    let head;
+    if (act.length) head = `<p class="codehead crit">Aktywny błąd związany z mocą silnika (EPC): ${esc(act.map(h => `${h.code} – ${groupName(h.group).toLowerCase()}`).join('; '))}.</p>`;
+    else if (key.length) head = `<p class="codehead warn">Zapisane błędy związane z mocą silnika: ${esc(key.map(h => h.code).join(', '))}. Teraz nie są aktywne.</p>`;
+    else if (list.length) head = '<p class="codehead ok">Brak błędów doładowania, przepustnicy, pedału ani wypadania zapłonów. Inne błędy silnika są niżej.</p>';
+    else head = '<p class="codehead ok">Silnik nie ma zapisanych błędów. Jeśli kontrolka EPC się zapala, a błąd znika, test przyspieszenia i tak pokaże przyczynę.</p>';
+    if (!p0299.length && key.some(h => h.group === 'boost')) head += '<p class="small muted">P0299 nie jest zapisany, ale jest inny błąd układu doładowania (wyżej). Test przyspieszenia poniżej dotyczy też jego.</p>';
+    const tips = [];
+    if (list.some(h => /^P256[345]$|^P00AF$|^P024[3-6]$/.test(h.code))) tips.push('Błąd siłownika lub czujnika wastegate: w Narzędziach → „Pomiary silnika Simos18” porównaj wastegate rzeczywisty z zadanym (na postoju i przy przyspieszeniu). Po naprawie siłownika potrzebne jest podstawowe ustawienie w VCDS/ODIS.');
+    if (list.some(h => h.group === 'mis')) tips.push('Wypadanie zapłonów: w Narzędziach → „Testy sterownika” są liczniki wypadania na każdy cylinder. Zamień cewki między cylindrami i sprawdź, czy błąd idzie za cewką.');
+    if (list.some(h => h.group === 'epc')) tips.push('Przepustnica, pedał lub włącznik stopu: sprawdź wtyczki, a przy błędach przepustnicy wyczyść ją i zrób adaptację przepustnicy w VCDS/ODIS.');
+    const groups = ['boost', 'epc', 'mis', 'fuel', 'cam', 'other'].map(g => [g, list.filter(h => h.group === g)]).filter(x => x[1].length);
+    el.innerHTML = head + groups.map(([g, hs]) => `<h4 class="sub">${esc(groupName(g))}</h4><div class="codes">${hs.map(engCodeHtml).join('')}</div>`).join('')
+      + (tips.length ? `<ul class="small tips">${tips.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '')
       + freezeHtml('P0299');
   }
   function syncBoost() {

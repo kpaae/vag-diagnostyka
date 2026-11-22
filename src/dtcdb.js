@@ -11,7 +11,9 @@ const DTC_SRC = {
   fp: ['onefastshop.com (paliwo N54/N55/B58)', 'https://onefastshop.com/blogs/blog/bmw-low-fuel-pressure-codes-29f2-29dc-lpfp-failing'],
   us: ['blog.usro.net', 'https://blog.usro.net/2025/04/bmw-fault-dtc-codes-complete-list-explained/'],
   ef: ['enginefinder.co.za (VW)', 'https://www.enginefinder.co.za/blog/problems/vw-error-codes-problems/'],
-  bc: ['brightcoding.dev (VAG)', 'https://converter.brightcoding.dev/vag-obd-codes']
+  bc: ['brightcoding.dev (VAG)', 'https://converter.brightcoding.dev/vag-obd-codes'],
+  rt: ['Ross-Tech wiki: P2563', 'https://wiki.ross-tech.com/wiki/index.php/18995/P2563/009571'],
+  m1: ['Mitchell1: P2563 w Audi A3 2.0', 'https://mitchell1.com/shopconnection/suretrack-community-real-fix-boosting-audi-turbo/']
 };
 
 /* Brakujące opisy SAE (dołączane do DTC_DESC). */
@@ -23,7 +25,40 @@ const DTC_EXTRA = {
   P0430: 'Sprawność katalizatora poniżej progu (bank 2)',
   P0442: 'Układ odparowania paliwa (EVAP) – mały wyciek',
   P0496: 'Układ odparowania paliwa (EVAP) – zbyt duży przepływ oczyszczania',
-  P2463: 'Filtr cząstek stałych (DPF) – nagromadzenie sadzy'
+  P2463: 'Filtr cząstek stałych (DPF) – nagromadzenie sadzy',
+  P2563: 'Czujnik położenia siłownika doładowania (wastegate) – zakres lub działanie',
+  P2564: 'Czujnik położenia siłownika doładowania (wastegate) – sygnał za niski',
+  P2565: 'Czujnik położenia siłownika doładowania (wastegate) – sygnał za wysoki',
+  P00AF: 'Moduł sterowania doładowaniem A – działanie',
+  P0045: 'Zawór sterujący doładowaniem A – obwód',
+  P0047: 'Zawór sterujący doładowaniem A – sygnał za niski',
+  P0048: 'Zawór sterujący doładowaniem A – sygnał za wysoki',
+  P0033: 'Zawór obejściowy turbosprężarki – obwód',
+  P0034: 'Zawór obejściowy turbosprężarki – sygnał za niski',
+  P0035: 'Zawór obejściowy turbosprężarki – sygnał za wysoki',
+  P2261: 'Zawór obejściowy turbosprężarki – zacięcie mechaniczne',
+  P0120: 'Czujnik położenia przepustnicy / pedału A – obwód',
+  P0122: 'Czujnik położenia przepustnicy / pedału A – sygnał za niski',
+  P0123: 'Czujnik położenia przepustnicy / pedału A – sygnał za wysoki',
+  P0221: 'Czujnik położenia przepustnicy / pedału B – zakres lub działanie',
+  P0222: 'Czujnik położenia przepustnicy / pedału B – sygnał za niski',
+  P0223: 'Czujnik położenia przepustnicy / pedału B – sygnał za wysoki',
+  P2100: 'Silnik przepustnicy – przerwa w obwodzie',
+  P2101: 'Silnik przepustnicy – zakres lub działanie obwodu',
+  P2106: 'Sterowanie przepustnicą – wymuszone ograniczenie mocy',
+  P2119: 'Przepustnica – zakres lub działanie',
+  P2122: 'Czujnik pedału gazu D – sygnał za niski',
+  P2123: 'Czujnik pedału gazu D – sygnał za wysoki',
+  P2127: 'Czujnik pedału gazu E – sygnał za niski',
+  P2128: 'Czujnik pedału gazu E – sygnał za wysoki',
+  P2135: 'Czujniki przepustnicy A i B – niezgodność',
+  P2138: 'Czujniki pedału gazu D i E – niezgodność',
+  P0571: 'Włącznik świateł stopu A – obwód',
+  P0504: 'Włączniki świateł stopu A i B – niezgodność',
+  P0305: 'Wypadanie zapłonów – cylinder 5',
+  P0306: 'Wypadanie zapłonów – cylinder 6',
+  P0191: 'Czujnik ciśnienia paliwa w szynie – zakres lub działanie',
+  P0192: 'Czujnik ciśnienia paliwa w szynie – sygnał za niski'
 };
 
 /* Przyczyny dla kodów SAE (VAG, BMW i inne). c = lista od najczęstszej, w = ostrzeżenie. */
@@ -43,6 +78,7 @@ const DTC_CAUSES = {
   P0455: { s: ['bt'], c: ['Najpierw korek wlewu paliwa i jego uszczelka'] },
   P2015: { s: ['ef', 'bc'], c: ['Nagar na klapach kolektora dolotowego (silniki z wtryskiem bezpośrednim)', 'Pęknięty drążek lub zużyty czujnik położenia klap', 'W VCDS ten sam błąd to 18447'] },
   P2463: { s: ['ef'], c: ['Czujnik ciśnienia DPF', 'Rzeczywiście zapchany filtr po jeździe na krótkich trasach: wymuszona regeneracja, czyszczenie lub wymiana'] },
+  P2563: { s: ['rt', 'm1'], c: ['Wastegate zacina się albo ma luz: cięgno, sworzeń klapy, nagar (do EA888 gen. 3 są zestawy naprawcze wastegate)', 'Uszkodzony elektryczny siłownik wastegate albo jego czujnik położenia', 'Przewody i wtyczka siłownika', 'Po naprawie: podstawowe ustawienie siłownika doładowania w VCDS/ODIS'], w: 'Sterownik zwykle ogranicza wtedy moc i zapala EPC. Jazda z pełnym obciążeniem do czasu naprawy nie ma sensu.' },
   P0014: { s: ['bt'], c: ['Elektrozawór VANOS nie doprowadza wałka do zadanej pozycji: brud, olej, łańcuch (patrz 2A82)'] }
 };
 
