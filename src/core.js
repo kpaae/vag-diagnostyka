@@ -699,6 +699,19 @@ class ELM {
       const b = bytesOf(r.data).slice(6);
       if (b.length > 1 && b[0] === rec) ext.push({ rec, bytes: b.slice(1) });
     }
+    if (mod.bmw == null && !ext.some(x => x.rec === 1 || x.rec === 2)) {
+      /* Część modułów odpowiada tylko na „wszystkie rekordy” (FF). Rekordy idą wtedy jeden za drugim bez długości:
+         0x01 ma 2 bajty, 0x02 ma 10, nieznany rekord zabiera resztę odpowiedzi. */
+      const r = await this.ureq(mod, '1906' + raw + 'FF', { attempts: 2 });
+      if (!r.err) {
+        const b = bytesOf(r.data).slice(6); let i = 0;
+        while (i < b.length) {
+          const rec = b[i], len = { 1: 2, 2: 10 }[rec];
+          if (len && i + 1 + len <= b.length) { ext.push({ rec, bytes: b.slice(i + 1, i + 1 + len) }); i += 1 + len; }
+          else { if (b.length - i > 1) ext.push({ rec, bytes: b.slice(i + 1) }); break; }
+        }
+      }
+    }
     let snap = null;
     const s = await this.ureq(mod, '1904' + raw + 'FF', { attempts: 2 });
     if (!s.err) { const b = bytesOf(s.data).slice(6); if (b.length) snap = b; }

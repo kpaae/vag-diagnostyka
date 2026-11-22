@@ -52,7 +52,7 @@ Wyniki obu testów trafiają do raportu, a dane można skopiować jako CSV.
 
 **Pomiary silnika Simos18 (Narzędzia):** 48 pomiarów `0x22` z przelicznikami, m.in. ciśnienie doładowania rzeczywiste i zadane, wastegate rzeczywisty i zadany, obroty turbosprężarki, korekty spalania stukowego na każdy cylinder, pozycje wałków, ciśnienie paliwa DI/MPI z wartościami zadanymi, temperatura oleju, licznik wypadania zapłonów. Odczyt jednorazowy lub ciągły, wynik trafia do logów i raportu.
 
-**Moduły VAG:** zwykły skan sprawdza też hamulec postojowy, asystenta parkowania, ACC, przednią kamerę/radar, drzwi, TPMS, Kessy, immobilizer i radio. Pełne przeszukanie nazywa znalezione moduły według tabeli identyfikatorów CAN.
+**Moduły VAG:** zwykły skan sprawdza też hamulec postojowy, asystenta parkowania, przednią kamerę/radar, kontrolę ciśnienia w oponach, immobilizer i telematykę. Pełne przeszukanie nazywa znalezione moduły według tabeli identyfikatorów CAN.
 
 **Szczegóły błędów w modułach:** dane rozszerzone (`0x19 06`) i środowiskowe (`0x19 04`) dla każdego kodu, w postaci surowej.
 
@@ -106,8 +106,8 @@ Po zmianach w `src/` uruchom `node src/build.js`.
 
 ## Źródła danych
 
-- [ConnorHowell/vag-uds-ids](https://github.com/ConnorHowell/vag-uds-ids): identyfikatory CAN żądania i odpowiedzi modułów VAG.
-- [pashokitsme/vagcan](https://github.com/pashokitsme/vagcan) (`research/odis-dtc/freeze-frames.md`, `crates/uds/vag-uds-client/src/dtc.rs`): układ rekordów `0x01`/`0x02` danych rozszerzonych, zapis daty i godziny, znacznik `0x02BD`. Aplikacja ma własną implementację, nie kod z tego projektu.
+- Identyfikatory CAN modułów VAG, tylko potwierdzone w otwartych źródłach: [wiki mr-fix.info, CAN-BUS sniffing](https://wiki.mr-fix.info/index.php?title=CAN-BUS_sniffing), [OVMS vweup_obd.h](https://github.com/openvehicles/Open-Vehicle-Monitoring-System-3) (MIT), lista OBD2 VW e-Up z [GoingElectric](https://www.goingelectric.de/wiki/Liste-der-OBD2-Codes/), [SenseiIssei/Caruspex](https://github.com/SenseiIssei/Caruspex) `data/ecus/vag.csv` (MIT) oraz adresy z zestawów [OBDb](https://github.com/OBDb) (wzięte jako fakty, bez danych OBDb). Nazwy modułów są własne.
+- Układ rekordów `0x01`/`0x02` danych rozszerzonych, zapis daty i godziny oraz znacznik `0x02BD`: opisany w badaniach [pashokitsme/vagcan](https://github.com/pashokitsme/vagcan) (`research/odis-dtc/freeze-frames.md`) i potwierdzony niezależnie przez [NinjaStyle82/dtcsweep](https://github.com/NinjaStyle82/dtcsweep) (MIT). Aplikacja ma własną implementację.
 - [bri3d/VW_Flash](https://github.com/bri3d/VW_Flash) (BSD 2-Clause, Copyright (c) 2022-2024 Brian Ledbetter and contributors): numery błędów Simos18 (`data/dtcs.csv`), numery części i rodziny sterowników (`data/box_codes.csv`), pomiary `0x22` Simos18 (`logs/csv/parameters_22.csv`). Pełny tekst licencji jest w `src/vagdb-data.js` i w zbudowanym `index.html`.
 - Wydruki VCDS publikowane przez użytkowników (np. [pastebin](https://pastebin.com/W8GQ9r1v)): potwierdzenie, że numer błędu VAG nie jest kodem SAE, oraz pola priorytetu, częstości, licznika zapomnienia, przebiegu i czasu.
 

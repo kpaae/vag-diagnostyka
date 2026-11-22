@@ -1,42 +1,27 @@
 /* VAG: dane, które precyzują skan i raport.
-   - Adresy CAN modułów: zestawienie ConnorHowell/vag-uds-ids (identyfikatory żądania i odpowiedzi).
-   - Rekordy 0x01 i 0x02 danych rozszerzonych (0x19 06) i znacznik 0x02BD: układ opisany w pashokitsme/vagcan
-     (research/odis-dtc/freeze-frames.md, crates/uds/vag-uds-client/src/dtc.rs) i zgodny z wydrukami VCDS
-     (priorytet, częstość, licznik zapomnienia, przebieg, data i godzina).
+   - Adresy CAN modułów: patrz niżej.
+   - Rekordy 0x01 i 0x02 danych rozszerzonych (0x19 06) i znacznik 0x02BD: układ opisany w badaniach pashokitsme/vagcan
+     (research/odis-dtc/freeze-frames.md), potwierdzony niezależnie przez NinjaStyle82/dtcsweep (MIT, decode_vw_extended)
+     i zgodny z wydrukami VCDS (priorytet, częstość, licznik zapomnienia, przebieg, data i godzina). Implementacja własna.
    - Numery błędów Simos18, rodziny sterowników i pomiary 0x22 Simos18: bri3d/VW_Flash (BSD 2-Clause).
    Moduły VAG po UDS zgłaszają błąd jako własny 3-bajtowy numer (VCDS pokazuje go dziesiętnie, np. 19225),
    a nie jako kod SAE. Kod P/U/B/C i opis bierze się z bazy danego sterownika. */
 
-/* Nazwy modułów po identyfikatorze żądania (TX). Odpowiedź = TX + 0x6A. Adres VAG podany tam, gdzie jest pewny. */
+/* Nazwy modułów po identyfikatorze żądania (TX). Odpowiedź = TX + 0x6A (silnik i skrzynia: +8).
+   Tylko identyfikatory potwierdzone w otwartych źródłach: wiki mr-fix.info (CAN-BUS sniffing), OVMS vweup_obd.h (MIT),
+   GoingElectric (lista OBD2 VW e-Up), SenseiIssei/Caruspex data/ecus/vag.csv (MIT) i adresy z zestawów OBDb (fakty, CC BY-SA).
+   Adres VAG (dwa znaki) tylko tam, gdzie źródło go podaje; nazwy własne. */
 const VAG_MOD_NAMES = {
-  0x70A: ['10', 'Asystent parkowania'], 0x70B: ['65', 'Kontrola ciśnienia w oponach'], 0x70C: ['16', 'Kolumna kierownicy'],
-  0x70D: ['46', 'Moduł komfortu'], 0x70E: ['09', 'Elektronika centralna'], 0x70F: ['22', 'Napęd na cztery koła'],
-  0x710: ['19', 'Gateway'], 0x711: ['25', 'Immobilizer'], 0x712: ['44', 'Wspomaganie kierownicy'], 0x713: ['03', 'ABS / ESP'],
-  0x714: ['17', 'Zestaw wskaźników'], 0x715: ['15', 'Poduszki powietrzne'], 0x716: ['??', 'Aktywny układ kierowniczy / wyświetlacz'],
-  0x718: ['56', 'Radio'], 0x719: ['??', 'Sprężarka klimatyzacji'], 0x71A: ['??', 'Klimatyzacja tylna'], 0x71B: ['??', 'Wyświetlacz head-up'],
-  0x71C: ['??', 'Generator dźwięku (aktor)'], 0x71E: ['??', 'Elektronika zamka'], 0x71F: ['??', 'Hamulec koła tylnego lewego'],
-  0x720: ['??', 'Hamulec koła tylnego prawego'], 0x721: ['??', 'Elektronika czujników'], 0x723: ['6D', 'Klapa bagażnika'],
-  0x726: ['??', 'Kamera pokładowa'], 0x727: ['??', 'Noktowizor'], 0x728: ['61', 'Regulacja akumulatora'], 0x72A: ['??', 'Moduł AdBlue (reduktor)'],
-  0x72B: ['??', 'Funkcje specjalne 2'], 0x72C: ['??', 'Funkcje specjalne'], 0x72D: ['??', 'Dach elektryczny'], 0x72E: ['??', 'Mocowanie zespołu'],
-  0x730: ['??', 'Asystent świateł drogowych'], 0x731: ['2B', 'Blokada kolumny kierownicy'], 0x732: ['05', 'Dostęp i start (Kessy)'],
-  0x733: ['??', 'Drzwi przesuwne lewe'], 0x734: ['??', 'Drzwi przesuwne prawe'], 0x735: ['??', 'Fotel wielokonturowy kierowcy'],
-  0x736: ['??', 'Fotel wielokonturowy pasażera'], 0x737: ['??', 'Fotel wielokonturowy tylny lewy'], 0x738: ['??', 'Fotel wielokonturowy tylny prawy'],
-  0x739: ['??', 'Podłokietnik'], 0x73C: ['??', 'Wyświetlacz dodatkowy'], 0x73D: ['??', 'Dach elektryczny 2'],
-  0x73E: ['62', 'Drzwi tylne lewe'], 0x73F: ['72', 'Drzwi tylne prawe'], 0x745: ['??', 'Moduł komfortu 2'], 0x746: ['08', 'Klimatyzacja'],
-  0x747: ['69', 'Hak / przyczepa'], 0x748: ['??', 'Asystent świateł drogowych'], 0x749: ['??', 'Interfejs multimediów'],
-  0x74A: ['42', 'Drzwi kierowcy'], 0x74B: ['52', 'Drzwi pasażera'], 0x74C: ['36', 'Fotel kierowcy'], 0x74D: ['06', 'Fotel pasażera'],
-  0x74E: ['3C', 'Asystent zmiany pasa'], 0x74F: ['A5', 'Czujniki przednie asystentów (kamera, radar)'], 0x750: ['??', 'Wykrywanie położenia auta'],
-  0x751: ['??', 'Czujnik kąta skrętu'], 0x752: ['53', 'Hamulec postojowy'], 0x753: ['??', 'Wybierak biegów'],
-  0x754: ['55', 'Regulacja zasięgu świateł'], 0x755: ['34', 'Regulacja poziomu zawieszenia'], 0x756: ['??', 'Tempomat adaptacyjny 2'],
-  0x757: ['13', 'Tempomat adaptacyjny (ACC)'], 0x758: ['??', 'Przetwarzanie obrazu'], 0x75E: ['??', 'Napinacz pasa przedni lewy'],
-  0x75F: ['??', 'Napinacz pasa przedni prawy'], 0x762: ['??', 'Czujniki układu hamulcowego'], 0x763: ['??', 'Mikrokontroler'],
-  0x765: ['??', 'Ładowarka akumulatora'], 0x767: ['75', 'Telematyka'], 0x769: ['6C', 'Kamera cofania'], 0x76A: ['18', 'Ogrzewanie postojowe'],
-  0x76B: ['77', 'Telefon / komunikacja zewnętrzna'], 0x76C: ['37', 'Nawigacja'], 0x76D: ['57', 'Tuner TV'], 0x76E: ['??', 'Odtwarzacz 3'],
-  0x76F: ['47', 'System audio'], 0x770: ['??', 'Odtwarzacz 1'], 0x771: ['??', 'Tachograf'], 0x772: ['14', 'Elektronika amortyzatorów'],
+  0x7E0: ['01', 'Elektronika silnika'], 0x7E1: ['02', 'Skrzynia biegów'], 0x7E2: ['??', 'Drugi sterownik silnika'],
+  0x70A: ['10', 'Asystent parkowania'], 0x70B: ['??', 'Kontrola ciśnienia w oponach'], 0x70C: ['16', 'Kolumna kierownicy'],
+  0x70E: ['09', 'Elektronika centralna'], 0x70F: ['22', 'Napęd na cztery koła'], 0x710: ['19', 'Gateway'], 0x711: ['25', 'Immobilizer'],
+  0x712: ['44', 'Wspomaganie kierownicy'], 0x713: ['03', 'ABS / ESP'], 0x714: ['17', 'Zestaw wskaźników'], 0x715: ['15', 'Poduszki powietrzne'],
+  0x71D: ['??', 'Pompa sprzęgła napędu 4x4'], 0x742: ['??', 'Ogrzewanie (moduł dodatkowy)'], 0x746: ['08', 'Klimatyzacja'],
+  0x74F: ['A5', 'Czujniki przednie asystentów (kamera, radar)'], 0x752: ['??', 'Hamulec postojowy'], 0x767: ['75', 'Telematyka'],
   0x773: ['5F', 'Elektronika informacyjna (radio, MIB)']
 };
-/* Moduły sprawdzane w zwykłym skanie oprócz podstawowej listy. */
-const VAG_EXTRA_MODULES = [0x752, 0x70A, 0x757, 0x74F, 0x74A, 0x74B, 0x70B, 0x732, 0x711, 0x718]
+/* Moduły sprawdzane w zwykłym skanie oprócz podstawowej listy (pełne przeszukanie i tak sprawdza 0x700–0x774). */
+const VAG_EXTRA_MODULES = [0x752, 0x70A, 0x74F, 0x70B, 0x711, 0x767]
   .map(tx => ({ addr: VAG_MOD_NAMES[tx][0], name: VAG_MOD_NAMES[tx][1], tx, rx: tx + 0x6A }));
 
 function vagEcuFamily(part) {
