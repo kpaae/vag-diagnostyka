@@ -845,6 +845,18 @@ class ELM {
       this.st = '64'; await this.send('ATST64');
     }
   }
+  /* Kilka identyfikatorów 22 naraz: przez most jedna wysyłka zbiorcza, bezpośrednio kolejno. Zwraca {did: bajty}. */
+  async readDidsRaw(mod, dids) {
+    const out = {};
+    if (this.t.batch && dids.length > 1 && mod.bmw == null) {
+      await this.select(mod.tx, mod.rx);
+      const reqs = dids.map(d => '22' + hex4(d)), res = await this.sendMany(reqs);
+      dids.forEach((d, i) => { const r = res ? this.resultOf(reqs[i], res[i]) : { err: 'brak' }; if (!r.err && r.data.startsWith('62' + hex4(d))) out[d] = bytesOf(r.data).slice(3); });
+      return out;
+    }
+    for (const d of dids) { const b = await this.readDidRaw(mod, d); if (b) out[d] = b; }
+    return out;
+  }
   async readDidRaw(mod, did) {
     const r = await this.ureq(mod, '22' + hex4(did), { attempts: 1 });
     return (r.err || !r.data.startsWith('62' + hex4(did))) ? null : bytesOf(r.data).slice(3);

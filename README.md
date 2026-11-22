@@ -32,6 +32,8 @@ Tempo odczytu wybiera się obok przycisku Pauza: Oszczędnie (2 Hz), Normalnie (
 - test przyspieszenia z automatycznym wykryciem pełnego gazu: doładowanie rzeczywiste i zadane, odchyłka (bez pierwszych 1,5 s rozkręcania turbo), wastegate, temperatura dolotu, mieszanka i ciśnienie paliwa pod obciążeniem, korekty na biegu jałowym,
 - lista „od czego zacząć” ułożona według wyników.
 
+**Czujnik MAP w zakładce „Doładowanie i EPC”:** odczyt ciśnień zadanych i rzeczywistych (kolektor, przed przepustnicą, atmosferyczne) z Simos18 (UDS 0x39C0/0x39C1, 0x202A/0x2029, 0x13CA) albo z OBD (PID 0x0B, 0x70, 0x33). Test z trzema fazami: silnik wyłączony (czujniki muszą równać się atmosferycznemu, w granicach 3 kPa), bieg jałowy (podciśnienie w kolektorze), pełny gaz (od 2800 obr/min, bez pierwszej sekundy: zgodność z zadanym i kolektor kontra ciśnienie przed przepustnicą). Wniosek odróżnia uszkodzony czujnik od prawdziwego braku doładowania. Progi są regułami praktycznymi, nie wartościami z dokumentacji producenta.
+
 **Panel Ogrzewanie:**
 - wybór objawu i podpowiedź, co zwykle za nim stoi,
 - test nagrzewania z wykresem temperatury płynu i oleju: wiarygodność czujnika na zimnym starcie, tempo nagrzewania, czy silnik osiąga temperaturę roboczą, czy temperatura spada w jeździe,

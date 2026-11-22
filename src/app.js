@@ -4,8 +4,8 @@
   const GROUPS = [['silnik', 'Silnik'], ['chlodzenie', 'Chłodzenie i temperatury'], ['doladowanie', 'Doładowanie'], ['mieszanka', 'Mieszanka']];
   const ORDER = {
     silnik: ['rpm', 'speed', 'load', 'absload', 'tps', 'pedal', 'pedalRel', 'timing', 'tqDem', 'tqAct', 'fuelRate', 'fuelLvl', 'ecuV', 'adapterV', 'runTime'],
-    chlodzenie: ['coolant', 'oil', 'iat', 'iatRise', 'ambient', 'cat1', 'cat2'],
-    doladowanie: ['boost', 'boostTarget', 'boostDev', 'wgCmd', 'wgAct', 'map', 'mapX', 'boostCmdAbs', 'boostActAbs', 'baro', 'compIn', 'maf'],
+    chlodzenie: ['coolant', 'coolant2', 'oil', 'iat', 'iatRise', 'ambient', 'cat1', 'cat2'],
+    doladowanie: ['boost', 'boostTarget', 'boostDev', 'wgCmd', 'wgAct', 'map', 'mapX', 'boostCmdAbs', 'boostActAbs', 'baro', 'baroU', 'mapU', 'mapUsp', 'chgU', 'chgUsp', 'compIn', 'maf'],
     mieszanka: ['lambdaA', 'lambdaV', 'lambdaCmd', 'lambdaDev', 'trimTotal', 'stft1', 'ltft1', 'stft2', 'ltft2', 'fuelSys', 'railP', 'railPabs', 'injTiming', 'o2s2', 'o2s2trim', 'lambdaI', 'lambdaVv']
   };
   const WIDE = { rpm: {}, coolant: {}, boost: { target: 'boostTarget' }, lambdaA: { target: 'lambdaCmd' }, lambdaV: { target: 'lambdaCmd' }, trimTotal: { zero: true } };
@@ -16,6 +16,13 @@
   CAT.adapterV = { key: 'adapterV', name: 'Akumulator (gniazdo OBD)', unit: 'V', d: 1, min: 10, max: 16, g: 'silnik', special: true, check: voltCheck };
   /* Drugi czujnik temperatury płynu (za chłodnicą). Jego numeru UDS nie ma w żadnej otwartej bazie, więc aplikacja
      szuka go sama (panel Ogrzewanie), a dopiero potwierdzony na danych z testu staje się kanałem na żywo. */
+  /* Ciśnienia ze sterownika Simos18 (UDS 0x22), których OBD nie podaje albo podaje inaczej: kolektor (MAP) i ciśnienie
+     przed przepustnicą, każde rzeczywiste i zadane, oraz atmosferyczne. Kanał działa dopiero po tym, jak sterownik odpowie. */
+  [['baroU', 0x13CA, 'Atmosferyczne (sterownik)'], ['mapU', 0x39C0, 'Kolektor (MAP), rzeczywiste'], ['mapUsp', 0x39C1, 'Kolektor (MAP), zadane'],
+   ['chgU', 0x202A, 'Przed przepustnicą, rzeczywiste'], ['chgUsp', 0x2029, 'Przed przepustnicą, zadane']].forEach(([key, did, name]) => {
+    CAT[key] = { key, name, unit: 'kPa', d: 1, min: key === 'baroU' ? 80 : 0, max: key === 'baroU' ? 110 : 300, g: 'doladowanie', special: true, uds: did, when: () => udsPr.ok.has(did) };
+  });
+  const udsPr = { ok: new Set(), elm: null };
   CAT.coolant2 = { key: 'coolant2', name: 'Płyn za chłodnicą (czujnik 2)', unit: '°C', d: 0, min: -10, max: 130, g: 'chlodzenie', special: true, when: () => c2.sel != null };
 
   const store = {
@@ -231,6 +238,9 @@
         if (keys.includes('adapterV') && (cycle % 10 === 0 || vals.adapterV == null)) { const v = await e.op(() => e.voltage()); if (v != null) res.adapterV = v; }
         /* Czujnik 2 płynu: wybrany numer co 2. cykl, a w trakcie szukania kandydaci co 3. cykl (bajt − 40 °C). */
         if (c2.sel != null && keys.includes('coolant2') && cycle % 2 === 0) { const b = await e.op(() => e.readDidRaw(C2MOD, c2.sel)); if (b && b.length === 1) res.coolant2 = b[0] - 40; }
+        if (udsPr.elm !== e) { udsPr.ok.clear(); udsPr.elm = e; }
+        { const uk = keys.filter(k => CAT[k] && CAT[k].uds != null && udsPr.ok.has(CAT[k].uds));
+          if (uk.length) { const m = await e.op(() => e.readDidsRaw(C2MOD, uk.map(k => CAT[k].uds))); for (const k of uk) { const def = SIMOS18_DIDS.find(d => d.did === CAT[k].uds), v = m[CAT[k].uds] && decodeSimosDid(def, m[CAT[k].uds]); if (v != null) res[k] = v; } } }
         if (c2.probe && c2.sel == null && cycle % 3 === 0) for (const d of c2.cands) { if (e !== elm) break; const b = await e.op(() => e.readDidRaw(C2MOD, d)); if (b && b.length === 1) c2.vals[d] = b[0] - 40; }
         if (run !== pollRun || e !== elm) break;
         Object.assign(vals, res);
@@ -767,8 +777,18 @@
     logLine(`— szukanie czujnika 2: ${found.length} DID, ${cand.length} kandydatów`);
     return { total: found.length, cand, ect };
   }
+  /* Sprawdza, które ciśnienia Simos18 sterownik podaje (jednorazowo), i zwraca ich liczbę. */
+  async function udsProbe() {
+    const e = elm; if (!e) return 0;
+    const dids = Object.values(CAT).filter(c => c.uds != null).map(c => c.uds);
+    const m = await e.op(() => e.readDidsRaw(C2MOD, dids));
+    if (e !== elm) return 0;
+    udsPr.elm = e; udsPr.ok.clear(); for (const d of dids) if (m[d]) udsPr.ok.add(d);
+    if (udsPr.ok.size) { buildTiles(); }
+    return udsPr.ok.size;
+  }
   panels = createPanels({
-    saveLog, c2, c2Scan,
+    saveLog, c2, c2Scan, udsProbe,
     vals: () => vals, avail, stateOf, tokens, store, CAT, DTC_DESC, MODULES, modules, brand,
     esc, fmtNum, fmtVal, plural, copyText, logLine,
     elm: () => elm, mode: () => mode, sup: () => sup, report: () => report,

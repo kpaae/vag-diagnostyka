@@ -335,7 +335,7 @@ details.help a { color: var(--accent); }
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-22 17:11 UTC</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-22 22:10 UTC</p>
       </div>
     </div>
     <div class="conn">
@@ -493,7 +493,7 @@ details.help a { color: var(--accent); }
 </main>
 
 <script>
-const APP_VERSION = '2026-11-22 17:11 UTC';
+const APP_VERSION = '2026-11-22 22:10 UTC';
 /* ===== VAG Diagnostyka – rdzeń: ELM327 / OBD-II / UDS / symulator ===== */
 'use strict';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -1341,6 +1341,18 @@ class ELM {
       this.st = '64'; await this.send('ATST64');
     }
   }
+  /* Kilka identyfikatorów 22 naraz: przez most jedna wysyłka zbiorcza, bezpośrednio kolejno. Zwraca {did: bajty}. */
+  async readDidsRaw(mod, dids) {
+    const out = {};
+    if (this.t.batch && dids.length > 1 && mod.bmw == null) {
+      await this.select(mod.tx, mod.rx);
+      const reqs = dids.map(d => '22' + hex4(d)), res = await this.sendMany(reqs);
+      dids.forEach((d, i) => { const r = res ? this.resultOf(reqs[i], res[i]) : { err: 'brak' }; if (!r.err && r.data.startsWith('62' + hex4(d))) out[d] = bytesOf(r.data).slice(3); });
+      return out;
+    }
+    for (const d of dids) { const b = await this.readDidRaw(mod, d); if (b) out[d] = b; }
+    return out;
+  }
   async readDidRaw(mod, did) {
     const r = await this.ureq(mod, '22' + hex4(did), { attempts: 1 });
     return (r.err || !r.data.startsWith('62' + hex4(did))) ? null : bytesOf(r.data).slice(3);
@@ -2071,6 +2083,135 @@ function createPanels(api) {
     return '';
   }
 
+  /* =================== Czujnik MAP: zadane i rzeczywiste =================== */
+  const MAP_KEYS = ['rpm', 'pedal', 'pedalRel', 'load', 'baro', 'baroU', 'map', 'mapX', 'mapU', 'mapUsp', 'chgU', 'chgUsp', 'boostActAbs', 'boostCmdAbs', 'maf', 'wgAct', 'wgCmd', 'speed'];
+  const MAP_COLS = [['rpm', 'obroty [obr/min]'], ['pedal', 'pedał [%]'], ['load', 'obciążenie [%]'], ['baro', 'atmosferyczne [kPa]'], ['map', 'kolektor MAP [kPa]'], ['mapSp', 'kolektor zadane [kPa]'], ['chg', 'przed przepustnicą [kPa]'], ['chgSp', 'przed przepustnicą zadane [kPa]'], ['maf', 'MAF [g/s]'], ['wgA', 'wastegate rzecz. [%]'], ['wgC', 'wastegate zadany [%]'], ['speed', 'prędkość [km/h]']];
+  const mt = { running: false, watch: false, t0: 0, samples: [], result: null, src: '', n: 0 };
+  const med = a => { if (!a.length) return null; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+  const sampleMap = v => ({
+    t: (performance.now() - mt.t0) / 1000, rpm: v.rpm, pedal: v.pedalRel ?? v.pedal ?? v.tps, load: v.load, baro: v.baroU ?? v.baro,
+    map: v.mapU ?? v.mapX ?? v.map, mapSp: v.mapUsp, chg: v.chgU ?? v.boostActAbs, chgSp: v.chgUsp ?? v.boostCmdAbs, maf: v.maf, wgA: v.wgAct, wgC: v.wgCmd, speed: v.speed
+  });
+  const lv3 = (d, a, b) => d <= a ? 'ok' : d <= b ? 'warn' : 'crit';
+  function analyzeMap() {
+    const S = mt.samples, out = { checks: [], suspect: null };
+    if (S.length < 5) return out;
+    const hasMap = S.some(s => s.map != null), hasChg = S.some(s => s.chg != null);
+    if (!hasMap) { out.checks.push(V('na', 'Czujnik MAP', 'Sterownik nie podaje ciśnienia w kolektorze.')); return out; }
+    const pMax = mx(col(S, 'pedal')) ?? 0, wotT = Math.min(80, Math.max(60, pMax * 0.9));
+    const off = S.filter(s => (s.rpm ?? 1) < 100), idle = S.filter(s => (s.rpm ?? 0) >= 600 && (s.rpm ?? 0) <= 1300 && (s.speed ?? 0) < 3);
+    /* Pełny gaz oceniamy na plateau: od 2800 obr/min i bez pierwszej sekundy, bo na początku przyspieszenia doładowanie
+       dopiero narasta i brak do zadanego jest wtedy normalny. */
+    const wot = []; { let segT = null, lastT = null;
+      for (const s of S) {
+        const on = (s.pedal != null ? s.pedal >= wotT : (s.load ?? 0) >= 85) && (s.rpm ?? 0) >= 1500;
+        if (!on) { segT = null; continue; }
+        if (segT == null || s.t - lastT > 1.5) segT = s.t;
+        lastT = s.t;
+        if (s.t - segT >= 1 && (s.rpm ?? 0) >= 2800) wot.push(s);
+      } }
+    let bad = null;   // 'map' | 'chg' | 'baro'
+    // A. Zapłon włączony, silnik wyłączony: wszystkie czujniki mają pokazywać atmosferyczne.
+    if (off.length >= 3) {
+      const b = med(col(off, 'baro')), m = med(col(off, 'map')), c = med(col(off, 'chg'));
+      if (b != null && m != null) {
+        const dm = m - b, dc = c != null ? c - b : null, worst = Math.max(Math.abs(dm), dc != null ? Math.abs(dc) : 0), lvl = lv3(worst, 3, 6);
+        let who = '';
+        if (lvl !== 'ok') {
+          if (dc == null) who = ' Nie mam drugiego czujnika do porównania, więc nie wiadomo, który jest zły: kolektor czy atmosferyczny.';
+          else if (Math.abs(dm) > 3 && Math.abs(dc) <= 3) { bad = 'map'; who = ' Odstaje czujnik w kolektorze (MAP), a ciśnienie przed przepustnicą zgadza się z atmosferycznym.'; }
+          else if (Math.abs(dc) > 3 && Math.abs(dm) <= 3) { bad = 'chg'; who = ' Odstaje czujnik ciśnienia przed przepustnicą (doładowania), a MAP zgadza się z atmosferycznym.'; }
+          else if (Math.abs(m - c) <= 3) { bad = 'baro'; who = ' Kolektor i czujnik przed przepustnicą zgadzają się ze sobą, a odstaje atmosferyczne. Czujnik atmosferyczny siedzi w sterowniku, więc wniosek jest mniej pewny.'; }
+          else who = ' Odstają oba, w różne strony. Sprawdź zasilanie czujników i masę.';
+        }
+        out.checks.push(V(lvl, 'Silnik wyłączony: czujniki ciśnienia', `Atmosferyczne ${f(b, 1)} kPa, kolektor (MAP) ${f(m, 1)} kPa (${sgn(dm, 1)})${dc != null ? `, przed przepustnicą ${f(c, 1)} kPa (${sgn(dc, 1)})` : ''}. ${lvl === 'ok' ? 'Wszystkie zgodne w granicach 3 kPa.' : 'Różnica powyżej normy.' + who}`));
+      }
+    } else out.checks.push(V('na', 'Silnik wyłączony', 'Brak próbek z wyłączonym silnikiem i włączonym zapłonem. Ten krok najlepiej wykrywa uszkodzony czujnik: zacznij test przed uruchomieniem silnika.'));
+    // B. Bieg jałowy.
+    if (idle.length >= 8) {
+      const m = med(col(idle, 'map')), c = med(col(idle, 'chg')), b = med(col(idle, 'baro')) ?? med(col(off, 'baro')), mm = col(idle, 'map').sort((x, y) => x - y), spread = mm[Math.floor(mm.length * 0.95)] - mm[Math.floor(mm.length * 0.05)];
+      const lvl = m >= 22 && m <= 55 ? 'ok' : m > 70 ? 'crit' : 'warn';
+      out.checks.push(V(lvl, 'Bieg jałowy: podciśnienie w kolektorze', `MAP ${f(m, 0)} kPa (zwykle 25–50 kPa abs. na rozgrzanym silniku na biegu jałowym). ${m > 55 ? 'Za wysokie: podciśnienie jest za małe. Możliwe: nieszczelność dolotu za przepustnicą, zawieszony zawór lub czujnik pokazuje za dużo.' : m < 22 ? 'Za niskie jak na bieg jałowy, to podejrzane dla czujnika.' : 'W normie.'} Rozrzut odczytów ${f(spread, 0)} kPa${spread > 10 ? ', czyli czujnik albo dolot pulsuje mocniej niż zwykle.' : '.'}`));
+      if (m > 55 && b != null && m >= b - 8) { if (!bad) bad = 'leakIdle'; }
+      if (c != null && b != null) out.checks.push(V(lv3(Math.abs(c - b), 6, 12), 'Bieg jałowy: przed przepustnicą', `Ciśnienie przed przepustnicą ${f(c, 0)} kPa przy atmosferycznym ${f(b, 0)} kPa. Na biegu jałowym powinny być prawie równe (różnica do ok. 6 kPa z filtra i rur).`));
+    } else out.checks.push(V('na', 'Bieg jałowy', 'Za mało próbek na biegu jałowym (potrzeba kilkunastu sekund po uruchomieniu silnika).'));
+    // C. Pełny gaz: zadane i rzeczywiste.
+    if (wot.length >= 4) {
+      const gap = (key, spKey) => { const d = wot.filter(s => s[key] != null && s[spKey] != null).map(s => s[spKey] - s[key]); return d.length >= 3 ? { avg: avg(d), max: mx(d), n: d.length } : null; };
+      const gm = gap('map', 'mapSp'), gc = gap('chg', 'chgSp');
+      for (const [g, name] of [[gm, 'kolektor (MAP)'], [gc, 'przed przepustnicą']]) {
+        if (!g) continue;
+        const lvl = g.avg >= 30 ? 'crit' : g.avg >= 15 ? 'warn' : g.avg <= -20 ? 'warn' : 'ok';
+        out.checks.push(V(lvl, `Pełny gaz: ${name}, zadane i rzeczywiste`, `${lvl === 'ok' ? `Odchyłka od zadanego średnio ${f(Math.abs(g.avg), 0)} kPa` : `Średnio ${g.avg >= 0 ? 'brakuje' : 'jest za dużo o'} ${f(Math.abs(g.avg), 0)} kPa względem zadanego`}, najwięcej ${f(g.max, 0)} kPa (${g.n} próbek). ${lvl === 'ok' ? 'Doładowanie wykonuje zadanie.' : g.avg > 0 ? 'Doładowanie nie osiąga wartości zadanej.' : 'Doładowanie przekracza zadane, sterownik może ograniczać moc.'}`));
+      }
+      if (!gm && !gc) out.checks.push(V('na', 'Zadane i rzeczywiste', 'Sterownik nie podał ciśnień zadanych (potrzebny odczyt Simos18 albo PID 0x70). Naciśnij „Odczytaj ciśnienia”.'));
+      if (hasChg) {
+        const d = wot.filter(s => s.map != null && s.chg != null).map(s => s.chg - s.map);
+        if (d.length >= 3) {
+          const a = avg(d), lvl = a > 20 ? 'crit' : a > 12 ? 'warn' : a < -8 ? 'warn' : 'ok';
+          let who = '';
+          if (lvl !== 'ok') {
+            if (a > 12) { bad = bad || 'mapLow'; who = ' Przed przepustnicą jest wyraźnie więcej niż w kolektorze: przepustnica nie otwiera się do końca, jest opór za nią albo czujnik MAP zaniża.'; }
+            else { bad = bad || 'mapHigh'; who = ' W kolektorze jest więcej niż przed przepustnicą, co fizycznie nie jest możliwe: czujnik MAP zawyża albo czujnik doładowania zaniża.'; }
+          }
+          out.checks.push(V(lvl, 'Pełny gaz: kolektor a ciśnienie przed przepustnicą', `Przy pełnym gazie różnica (przed przepustnicą minus kolektor) wynosi średnio ${f(a, 0)} kPa. Przy szeroko otwartej przepustnicy powinna być mała (do ok. 8–10 kPa).${lvl === 'ok' ? ' Czujniki są zgodne.' : who}`));
+        }
+      }
+      // Wniosek: czy to czujnik, czy realny brak doładowania.
+      const low = (gm && gm.avg >= 15) || (gc && gc.avg >= 15), agree = out.checks.find(c => /kolektor a ciśnienie przed/.test(c.title));
+      if (low && agree && agree.lvl === 'ok') out.suspect = V('info', 'Czujniki wiarygodne, doładowania realnie brakuje', 'Kolektor i ciśnienie przed przepustnicą zgadzają się ze sobą, a oba są poniżej zadanego. To nie wygląda na usterkę czujnika MAP, tylko na prawdziwy brak doładowania (nieszczelność, wastegate, turbosprężarka, zawór przelotowy). Przy P2563 najpierw wastegate.');
+      else if (!low && agree && agree.lvl === 'ok') out.suspect = V('ok', 'Czujniki ciśnienia i doładowanie w normie', 'W tym teście kolektor i ciśnienie przed przepustnicą są zgodne i osiągają zadane. Jeśli EPC wraca, szukaj w innych grupach błędów, zwłaszcza w wastegate (P2563).');
+    } else out.checks.push(V('na', 'Pełny gaz', 'Nie zarejestrowałem pełnego gazu powyżej 2800 obr/min (pierwszej sekundy nie liczę, bo doładowanie dopiero narasta). Zrób przyspieszenie na niskim biegu, np. na trzecim od 2000 obr/min do 5000.'));
+    // Kody czujników w pamięci.
+    const cs = engineCodes().list.filter(h => /^P010[6-9]$|^P023[6-9]$|^P0069$|^P2227$|^P2228$|^P2229$/.test(h.code));
+    if (cs.length) out.checks.push(V('crit', 'Błędy czujników ciśnienia w pamięci', `${cs.map(h => h.code).join(', ')}: sterownik sam zgłasza usterkę czujnika ciśnienia w kolektorze albo doładowania.`));
+    if (bad === 'map' || bad === 'mapHigh' || bad === 'mapLow') out.suspect = V('warn', 'Podejrzany: czujnik ciśnienia w kolektorze (MAP)', 'Sprawdź wtyczkę i przewód czujnika, nalot olejowy w otworze czujnika, a przy powtarzalnej rozbieżności wymień czujnik. Po wymianie wyczyść błędy i powtórz test.');
+    else if (bad === 'chg') out.suspect = V('warn', 'Podejrzany: czujnik ciśnienia doładowania (przed przepustnicą)', 'Sprawdź wtyczkę, przewód i nalot olejowy czujnika w rurze ciśnieniowej, potem wymień czujnik, jeśli rozbieżność się powtarza.');
+    else if (bad === 'baro') out.suspect = V('info', 'Podejrzany: pomiar atmosferyczny', 'Czujnik atmosferyczny jest we wnętrzu sterownika. Porównaj z OBD (PID 0x33) i z pogodą dla Twojej wysokości. Różnica kilku kPa wynika z pogody, powyżej 6 kPa to już usterka.');
+    else if (bad === 'leakIdle') out.suspect = V('warn', 'Za małe podciśnienie na biegu jałowym', 'Szukaj nieszczelności dolotu za przepustnicą: przewody podciśnienia, uszczelka kolektora, zawory.');
+    return out;
+  }
+  const mapLines = () => {
+    const L = []; if (mt.samples.length >= 5) { const r = analyzeMap(); L.push('', '== Czujnik MAP: zadane i rzeczywiste =='); r.checks.forEach(c => L.push(`[${LV[c.lvl]}] ${c.title}: ${c.text}`)); if (r.suspect) L.push(`[${LV[r.suspect.lvl]}] ${r.suspect.title}: ${r.suspect.text}`); } return L;
+  };
+  function mapRows() {
+    const v = api.vals(), baro = v.baroU ?? v.baro;
+    const rows = [
+      ['Atmosferyczne', baro, null, null],
+      ['Kolektor (MAP)', v.mapU ?? v.mapX ?? v.map, v.mapUsp, 'map'],
+      ['Przed przepustnicą (doładowanie)', v.chgU ?? v.boostActAbs, v.chgUsp ?? v.boostCmdAbs, 'chg']
+    ];
+    const cell = x => x == null ? '—' : `${f(x, 0)} kPa${baro != null ? ` <small>(${sgn((x - baro) / 100, 2)} bar)</small>` : ''}`;
+    return `<table class="simtbl"><thead><tr><th>Ciśnienie</th><th>Rzeczywiste</th><th>Zadane</th><th>Różnica</th></tr></thead><tbody>${rows.map(([n, a, sp, k]) => `<tr><td>${esc(n)}</td><td>${cell(a)}</td><td>${cell(sp)}</td><td>${a != null && sp != null ? `<b>${sgn(a - sp, 0)} kPa</b>` : '—'}</td></tr>`).join('')}</tbody></table>`;
+  }
+  function renderMapLive() { const el = $('#mTable'); if (el) el.innerHTML = mapRows(); }
+  function renderMapResult() {
+    const card = $('#mResCard'); if (!card) return;
+    const ok = mt.samples.length >= 5; card.hidden = !ok; if (!ok) return;
+    const r = analyzeMap(); $('#mChecks').innerHTML = checksHtml(r.checks.concat(r.suspect ? [r.suspect] : []));
+  }
+  function mapStatus() {
+    const el = $('#mStatus'); if (!el) return;
+    const S = mt.samples, l = S[S.length - 1];
+    el.textContent = mt.running ? (l ? `Nagrywam ${f(l.t, 0)} s · ${S.length} próbek${(l.rpm ?? 1) < 100 ? ' · silnik wyłączony' : ''}` : 'Nagrywam…') : mt.src || (l ? `Zakończono po ${f(l.t, 0)} s.` : '');
+    const go = $('#mStart'), st = $('#mStop'), w = $('#mWatch'), c = $('#mCsv');
+    if (go) { go.hidden = mt.running; st.hidden = !mt.running; go.disabled = !api.elm(); go.textContent = S.length ? 'Nowy test' : 'Start testu'; w.disabled = !api.elm() || mt.running; w.textContent = mt.watch ? 'Zatrzymaj podgląd' : 'Podgląd na żywo'; c.hidden = mt.running || !S.length; }
+  }
+  async function mapProbe() {
+    mt.src = 'Sprawdzam, które ciśnienia podaje sterownik…'; mapStatus();
+    const n = api.udsProbe ? await api.udsProbe() : 0;
+    mt.src = n ? `Sterownik podaje ${n} ciśnień Simos18 (kolektor, przed przepustnicą, zadane, atmosferyczne).` : 'Sterownik nie odpowiada na odczyty Simos18. Użyję ciśnień z OBD (kolektor PID 0x0B, doładowanie PID 0x70), o ile je podaje.';
+    mapStatus();
+  }
+  function startMap() {
+    if (!api.elm()) return;
+    Object.assign(mt, { running: true, t0: performance.now(), samples: [], result: null, n: 0, src: '' });
+    mapProbe().then(() => { mt.t0 = performance.now(); mt.samples = []; api.ensurePolling(); mapStatus(); });
+    api.ensurePolling(); renderMapResult(); mapStatus();
+  }
+  function stopMap() { if (!mt.running) return; mt.running = false; renderMapResult(); mapStatus(); saveMap(); }
+  function saveMap() { if (mt.samples.length >= 5) api.saveLog('test-map', 'Czujnik MAP: zadane i rzeczywiste', mapLines().join('\n').trim() + '\n\n== Próbki (CSV) ==\n' + csvOf(mt.samples, MAP_COLS, 'czas [s]', 1)); }
+
   function renderBoost() {
     const host = $('#boostPanel'); if (!host) return;
     const on = !!api.elm();
@@ -2085,6 +2226,13 @@ function createPanels(api) {
           <div id="bSensor"></div>
           <div class="cardfoot"><button class="btn small" id="bSensorBtn" type="button" ${on ? '' : 'disabled'}>Sprawdź czujniki</button></div></div>
       </div>
+      <div class="card ptest"><h3 class="sect">Czujnik MAP: zadane i rzeczywiste</h3>
+        <p class="small muted">Porównuje ciśnienie w kolektorze (czujnik MAP) z ciśnieniem przed przepustnicą, atmosferycznym i wartościami zadanymi przez sterownik. Odróżnia uszkodzony czujnik od prawdziwego braku doładowania.</p>
+        <ol class="steps"><li>Zapłon włączony, silnik wyłączony. Naciśnij „Start testu” i zostaw 10 sekund.</li><li>Uruchom silnik i zostaw na biegu jałowym 20 sekund.</li><li>Rozgrzany silnik: w bezpiecznym miejscu i zgodnie z przepisami jedno albo dwa przyspieszenia pełnym gazem od 2000 obr/min.</li><li>Naciśnij „Zakończ”.</li></ol>
+        <div id="mTable"></div>
+        <p class="tstatus" id="mStatus"></p>
+        <div class="actions"><button class="btn primary" id="mStart" type="button">Start testu</button><button class="btn" id="mStop" type="button" hidden>Zakończ</button><button class="btn small" id="mWatch" type="button">Podgląd na żywo</button><button class="btn small ghost" id="mCsv" type="button" hidden>Kopiuj dane CSV</button></div></div>
+      <div class="card" id="mResCard" hidden><h3 class="sect">Wynik: czujnik MAP</h3><div id="mChecks"></div></div>
       <div class="card ptest"><h3 class="sect">3. Test przyspieszenia</h3>
         <ol class="steps"><li>Rozgrzej silnik do ponad 80 °C.</li><li>Naciśnij Start i postój 20–30 s na biegu jałowym.</li><li>W bezpiecznym miejscu i zgodnie z przepisami: trzeci bieg, od około 2000 obr/min pełny gaz do około 5500 obr/min.</li><li>Naciśnij Zakończ.</li></ol>
         <div id="bLive">${minis(BOOST_LIVE)}</div>
@@ -2104,6 +2252,10 @@ function createPanels(api) {
         <li><b>Wydech.</b> Zatkany katalizator zdarza się rzadko, ale daje spadek doładowania na wysokich obrotach.</li></ol></details>`;
     $('#bRead').onclick = e => readCodes(e.currentTarget, ['01']);
     $('#bSensorBtn').onclick = () => { bt.sensorMsg = sensorCheck(); renderSensor(); if (!bt.running && bt.samples.length) { bt.result = analyzeBoost(); renderBoostResult(); } };
+    $('#mStart').onclick = startMap; $('#mStop').onclick = stopMap;
+    $('#mWatch').onclick = async () => { mt.watch = !mt.watch; if (mt.watch) { await mapProbe(); api.ensurePolling(); } mapStatus(); renderMapLive(); };
+    $('#mCsv').onclick = e => api.copyText(csvOf(mt.samples, MAP_COLS, 'czas [s]', 1), e.currentTarget);
+    renderMapLive(); renderMapResult(); mapStatus();
     $('#bStart').onclick = startBoost;
     $('#bStop').onclick = stopBoost;
     $('#bCsv').onclick = e => api.copyText(csvOf(bt.samples, BOOST_COLS, 'czas [s]', 1), e.currentTarget);
@@ -2462,7 +2614,7 @@ function createPanels(api) {
 
   /* ---------- API dla aplikacji ---------- */
   function render() {
-    if (!api.elm()) { if (bt.running) { bt.running = false; bt.result = analyzeBoost(); } if (ht.running) { ht.running = false; finishHeat(); } }
+    if (!api.elm()) { mt.running = false; mt.watch = false; if (bt.running) { bt.running = false; bt.result = analyzeBoost(); } if (ht.running) { ht.running = false; finishHeat(); } }
     renderBoost(); renderHeat();
   }
   function refresh() { renderBoostCodes(); renderHeatCodes(); }
@@ -2484,16 +2636,25 @@ function createPanels(api) {
       if (++ht.n % 8 === 0 && cur === 'heat') renderHeatResult();
       heatStatus();
     }
+    if (mt.running && mt.samples.length < 20000) {
+      mt.samples.push(sampleMap(v));
+      if (++mt.n % 8 === 0 && cur === 'boost') renderMapResult();
+      mapStatus();
+    }
+    if (cur === 'boost' && (mt.running || mt.watch)) renderMapLive();
     if (cur === 'boost') updMinis('bLive');
     if (cur === 'heat') updMinis('hLive');
   }
   function keysFor(tab) {
     const ks = [];
     if (bt.running || tab === 'boost') ks.push(...BOOST_KEYS);
+    if (mt.running || (mt.watch && tab === 'boost')) ks.push(...MAP_KEYS);
     if (ht.running || tab === 'heat') ks.push(...HEAT_KEYS);
     return ks.length ? [...new Set(ks)] : null;
   }
   function stopAll() {
+    if (mt.running) { mt.running = false; saveMap(); }
+    mt.watch = false; mapStatus();
     if (bt.running) { bt.running = false; bt.result = analyzeBoost(); saveBoost(); }
     if (ht.running) { ht.running = false; finishHeat(); saveHeat(); }
     syncBoost(); syncHeat();
@@ -2518,12 +2679,12 @@ function createPanels(api) {
     }
     return L;
   }
-  function reportLines() { return boostLines().concat(heatLines()); }
+  function reportLines() { return boostLines().concat(mapLines(), heatLines()); }
   function saveBoost() { if (bt.samples.length) api.saveLog('test-p0299', `Test doładowania, ${bt.pulls} ${bt.pulls === 1 ? 'przyspieszenie' : 'przyspieszeń'}`, boostLines().join('\n').trim() + '\n\n== Próbki (CSV) ==\n' + csvOf(bt.samples, BOOST_COLS, 'czas [s]', 1)); }
   function saveHeat() { if (ht.samples.length >= 3) api.saveLog('test-ogrzewanie', 'Test nagrzewania', heatLines().join('\n').trim() + '\n\n== Próbki (CSV) ==\n' + csvOf(ht.samples, heatCols(), 'czas [min]', 1)); }
   let rs = null;
   window.addEventListener('resize', () => { clearTimeout(rs); rs = setTimeout(() => { if (cur === 'boost') renderBoostResult(); if (cur === 'heat') drawHeat(); }, 200); });
-  return { render, refresh, onTab, tick, keysFor, stopAll, reportLines, busy: () => bt.running || ht.running };
+  return { render, refresh, onTab, tick, keysFor, stopAll, reportLines, busy: () => bt.running || ht.running || mt.running };
 }
 
 /* ===== Narzędzia: testy OBD, skaner pomiarów VAG, konsola UDS, podsłuch magistrali ===== */
@@ -3539,8 +3700,8 @@ function createBridge(api) {
   const GROUPS = [['silnik', 'Silnik'], ['chlodzenie', 'Chłodzenie i temperatury'], ['doladowanie', 'Doładowanie'], ['mieszanka', 'Mieszanka']];
   const ORDER = {
     silnik: ['rpm', 'speed', 'load', 'absload', 'tps', 'pedal', 'pedalRel', 'timing', 'tqDem', 'tqAct', 'fuelRate', 'fuelLvl', 'ecuV', 'adapterV', 'runTime'],
-    chlodzenie: ['coolant', 'oil', 'iat', 'iatRise', 'ambient', 'cat1', 'cat2'],
-    doladowanie: ['boost', 'boostTarget', 'boostDev', 'wgCmd', 'wgAct', 'map', 'mapX', 'boostCmdAbs', 'boostActAbs', 'baro', 'compIn', 'maf'],
+    chlodzenie: ['coolant', 'coolant2', 'oil', 'iat', 'iatRise', 'ambient', 'cat1', 'cat2'],
+    doladowanie: ['boost', 'boostTarget', 'boostDev', 'wgCmd', 'wgAct', 'map', 'mapX', 'boostCmdAbs', 'boostActAbs', 'baro', 'baroU', 'mapU', 'mapUsp', 'chgU', 'chgUsp', 'compIn', 'maf'],
     mieszanka: ['lambdaA', 'lambdaV', 'lambdaCmd', 'lambdaDev', 'trimTotal', 'stft1', 'ltft1', 'stft2', 'ltft2', 'fuelSys', 'railP', 'railPabs', 'injTiming', 'o2s2', 'o2s2trim', 'lambdaI', 'lambdaVv']
   };
   const WIDE = { rpm: {}, coolant: {}, boost: { target: 'boostTarget' }, lambdaA: { target: 'lambdaCmd' }, lambdaV: { target: 'lambdaCmd' }, trimTotal: { zero: true } };
@@ -3551,6 +3712,13 @@ function createBridge(api) {
   CAT.adapterV = { key: 'adapterV', name: 'Akumulator (gniazdo OBD)', unit: 'V', d: 1, min: 10, max: 16, g: 'silnik', special: true, check: voltCheck };
   /* Drugi czujnik temperatury płynu (za chłodnicą). Jego numeru UDS nie ma w żadnej otwartej bazie, więc aplikacja
      szuka go sama (panel Ogrzewanie), a dopiero potwierdzony na danych z testu staje się kanałem na żywo. */
+  /* Ciśnienia ze sterownika Simos18 (UDS 0x22), których OBD nie podaje albo podaje inaczej: kolektor (MAP) i ciśnienie
+     przed przepustnicą, każde rzeczywiste i zadane, oraz atmosferyczne. Kanał działa dopiero po tym, jak sterownik odpowie. */
+  [['baroU', 0x13CA, 'Atmosferyczne (sterownik)'], ['mapU', 0x39C0, 'Kolektor (MAP), rzeczywiste'], ['mapUsp', 0x39C1, 'Kolektor (MAP), zadane'],
+   ['chgU', 0x202A, 'Przed przepustnicą, rzeczywiste'], ['chgUsp', 0x2029, 'Przed przepustnicą, zadane']].forEach(([key, did, name]) => {
+    CAT[key] = { key, name, unit: 'kPa', d: 1, min: key === 'baroU' ? 80 : 0, max: key === 'baroU' ? 110 : 300, g: 'doladowanie', special: true, uds: did, when: () => udsPr.ok.has(did) };
+  });
+  const udsPr = { ok: new Set(), elm: null };
   CAT.coolant2 = { key: 'coolant2', name: 'Płyn za chłodnicą (czujnik 2)', unit: '°C', d: 0, min: -10, max: 130, g: 'chlodzenie', special: true, when: () => c2.sel != null };
 
   const store = {
@@ -3766,6 +3934,9 @@ function createBridge(api) {
         if (keys.includes('adapterV') && (cycle % 10 === 0 || vals.adapterV == null)) { const v = await e.op(() => e.voltage()); if (v != null) res.adapterV = v; }
         /* Czujnik 2 płynu: wybrany numer co 2. cykl, a w trakcie szukania kandydaci co 3. cykl (bajt − 40 °C). */
         if (c2.sel != null && keys.includes('coolant2') && cycle % 2 === 0) { const b = await e.op(() => e.readDidRaw(C2MOD, c2.sel)); if (b && b.length === 1) res.coolant2 = b[0] - 40; }
+        if (udsPr.elm !== e) { udsPr.ok.clear(); udsPr.elm = e; }
+        { const uk = keys.filter(k => CAT[k] && CAT[k].uds != null && udsPr.ok.has(CAT[k].uds));
+          if (uk.length) { const m = await e.op(() => e.readDidsRaw(C2MOD, uk.map(k => CAT[k].uds))); for (const k of uk) { const def = SIMOS18_DIDS.find(d => d.did === CAT[k].uds), v = m[CAT[k].uds] && decodeSimosDid(def, m[CAT[k].uds]); if (v != null) res[k] = v; } } }
         if (c2.probe && c2.sel == null && cycle % 3 === 0) for (const d of c2.cands) { if (e !== elm) break; const b = await e.op(() => e.readDidRaw(C2MOD, d)); if (b && b.length === 1) c2.vals[d] = b[0] - 40; }
         if (run !== pollRun || e !== elm) break;
         Object.assign(vals, res);
@@ -4302,8 +4473,18 @@ function createBridge(api) {
     logLine(`— szukanie czujnika 2: ${found.length} DID, ${cand.length} kandydatów`);
     return { total: found.length, cand, ect };
   }
+  /* Sprawdza, które ciśnienia Simos18 sterownik podaje (jednorazowo), i zwraca ich liczbę. */
+  async function udsProbe() {
+    const e = elm; if (!e) return 0;
+    const dids = Object.values(CAT).filter(c => c.uds != null).map(c => c.uds);
+    const m = await e.op(() => e.readDidsRaw(C2MOD, dids));
+    if (e !== elm) return 0;
+    udsPr.elm = e; udsPr.ok.clear(); for (const d of dids) if (m[d]) udsPr.ok.add(d);
+    if (udsPr.ok.size) { buildTiles(); }
+    return udsPr.ok.size;
+  }
   panels = createPanels({
-    saveLog, c2, c2Scan,
+    saveLog, c2, c2Scan, udsProbe,
     vals: () => vals, avail, stateOf, tokens, store, CAT, DTC_DESC, MODULES, modules, brand,
     esc, fmtNum, fmtVal, plural, copyText, logLine,
     elm: () => elm, mode: () => mode, sup: () => sup, report: () => report,
