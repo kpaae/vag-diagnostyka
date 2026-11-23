@@ -3,9 +3,9 @@
   const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
   const GROUPS = [['silnik', 'Silnik'], ['chlodzenie', 'Chłodzenie i temperatury'], ['doladowanie', 'Doładowanie'], ['mieszanka', 'Mieszanka']];
   const ORDER = {
-    silnik: ['rpm', 'speed', 'load', 'absload', 'tps', 'pedal', 'pedalRel', 'timing', 'tqDem', 'tqAct', 'fuelRate', 'fuelLvl', 'ecuV', 'adapterV', 'runTime'],
+    silnik: ['rpm', 'speed', 'load', 'absload', 'tps', 'pedal', 'pedalRel', 'timing', 'tqDem', 'tqAct', 'tqU', 'tqUsp', 'fuelRate', 'fuelLvl', 'ecuV', 'adapterV', 'runTime'],
     chlodzenie: ['coolant', 'coolant2', 'oil', 'iat', 'iatRise', 'ambient', 'cat1', 'cat2'],
-    doladowanie: ['boost', 'boostTarget', 'boostDev', 'wgCmd', 'wgAct', 'map', 'mapX', 'boostCmdAbs', 'boostActAbs', 'baro', 'baroU', 'mapU', 'mapUsp', 'chgU', 'chgUsp', 'compIn', 'maf'],
+    doladowanie: ['boost', 'boostTarget', 'boostDev', 'wgCmd', 'wgAct', 'map', 'mapX', 'boostCmdAbs', 'boostActAbs', 'baro', 'baroU', 'mapU', 'mapUsp', 'chgU', 'chgUsp', 'wgU', 'wgUsp', 'turboU', 'compIn', 'maf'],
     mieszanka: ['lambdaA', 'lambdaV', 'lambdaCmd', 'lambdaDev', 'trimTotal', 'stft1', 'ltft1', 'stft2', 'ltft2', 'fuelSys', 'railP', 'railPabs', 'injTiming', 'o2s2', 'o2s2trim', 'lambdaI', 'lambdaVv']
   };
   const WIDE = { rpm: {}, coolant: {}, boost: { target: 'boostTarget' }, lambdaA: { target: 'lambdaCmd' }, lambdaV: { target: 'lambdaCmd' }, trimTotal: { zero: true } };
@@ -18,9 +18,12 @@
      szuka go sama (panel Ogrzewanie), a dopiero potwierdzony na danych z testu staje się kanałem na żywo. */
   /* Ciśnienia ze sterownika Simos18 (UDS 0x22), których OBD nie podaje albo podaje inaczej: kolektor (MAP) i ciśnienie
      przed przepustnicą, każde rzeczywiste i zadane, oraz atmosferyczne. Kanał działa dopiero po tym, jak sterownik odpowie. */
-  [['baroU', 0x13CA, 'Atmosferyczne (sterownik)'], ['mapU', 0x39C0, 'Kolektor (MAP), rzeczywiste'], ['mapUsp', 0x39C1, 'Kolektor (MAP), zadane'],
-   ['chgU', 0x202A, 'Przed przepustnicą, rzeczywiste'], ['chgUsp', 0x2029, 'Przed przepustnicą, zadane']].forEach(([key, did, name]) => {
-    CAT[key] = { key, name, unit: 'kPa', d: 1, min: key === 'baroU' ? 80 : 0, max: key === 'baroU' ? 110 : 300, g: 'doladowanie', special: true, uds: did, when: () => udsPr.ok.has(did) };
+  [['baroU', 0x13CA, 'Atmosferyczne (sterownik)', 'kPa', 1, 80, 110, 'doladowanie'], ['mapU', 0x39C0, 'Kolektor (MAP), rzeczywiste', 'kPa', 1, 0, 300, 'doladowanie'], ['mapUsp', 0x39C1, 'Kolektor (MAP), zadane', 'kPa', 1, 0, 300, 'doladowanie'],
+   ['chgU', 0x202A, 'Przed przepustnicą, rzeczywiste', 'kPa', 1, 0, 300, 'doladowanie'], ['chgUsp', 0x2029, 'Przed przepustnicą, zadane', 'kPa', 1, 0, 300, 'doladowanie'],
+   ['wgU', 0x39A2, 'Wastegate, położenie rzeczywiste', '%', 1, 0, 100, 'doladowanie'], ['wgUsp', 0x39A3, 'Wastegate, położenie zadane', '%', 1, 0, 100, 'doladowanie'],
+   ['turboU', 0x1040, 'Obroty turbosprężarki', 'tys. obr/min', 0, 0, 250, 'doladowanie'],
+   ['tqU', 0x437C, 'Moment rzeczywisty', 'Nm', 0, 0, 400, 'silnik'], ['tqUsp', 0x4380, 'Moment żądany', 'Nm', 0, 0, 400, 'silnik']].forEach(([key, did, name, unit, d, min, max, g]) => {
+    CAT[key] = { key, name, unit, d, min, max, g, special: true, uds: did, when: () => udsPr.ok.has(did) };
   });
   const udsPr = { ok: new Set(), elm: null };
   CAT.coolant2 = { key: 'coolant2', name: 'Płyn za chłodnicą (czujnik 2)', unit: '°C', d: 0, min: -10, max: 130, g: 'chlodzenie', special: true, when: () => c2.sel != null };
