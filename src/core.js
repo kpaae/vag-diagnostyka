@@ -845,16 +845,28 @@ class ELM {
       this.st = '64'; await this.send('ATST64');
     }
   }
-  /* Kilka identyfikatorów 22 naraz: przez most jedna wysyłka zbiorcza, bezpośrednio kolejno. Zwraca {did: bajty}. */
+  /* Kilka identyfikatorów 22 naraz: przez most jedna wysyłka zbiorcza, bezpośrednio kolejno. Zwraca {did: bajty}.
+     Odpowiedzi 22 mieszczą się w jednej ramce, więc dopisujemy cyfrę liczby odpowiedzi: adapter oddaje wynik od razu,
+     zamiast czekać pełny czas oczekiwania (na tym adapterze ok. 0,45 s na każde zapytanie). */
   async readDidsRaw(mod, dids) {
     const out = {};
-    if (this.t.batch && dids.length > 1 && mod.bmw == null) {
-      await this.select(mod.tx, mod.rx);
-      const reqs = dids.map(d => '22' + hex4(d)), res = await this.sendMany(reqs);
-      dids.forEach((d, i) => { const r = res ? this.resultOf(reqs[i], res[i]) : { err: 'brak' }; if (!r.err && r.data.startsWith('62' + hex4(d))) out[d] = bytesOf(r.data).slice(3); });
-      return out;
+    if (mod.bmw != null) { for (const d of dids) { const b = await this.readDidRaw(mod, d); if (b) out[d] = b; } return out; }
+    await this.select(mod.tx, mod.rx);
+    const cnt = () => this.fastCount !== false && this.countOk !== false;
+    const grab = (d, r) => { if (!r.err && r.data.startsWith('62' + hex4(d))) { out[d] = bytesOf(r.data).slice(3); return true; } return false; };
+    let todo = dids;
+    for (let pass = 0; pass < 2 && todo.length; pass++) {
+      const useCount = cnt(), failed = [];
+      const reqs = todo.map(d => '22' + hex4(d) + (useCount ? '1' : ''));
+      if (this.t.batch && todo.length > 1) {
+        const res = await this.sendMany(reqs);
+        todo.forEach((d, i) => { const r = res ? this.resultOf(reqs[i], res[i]) : { err: 'brak' }; if (!grab(d, r)) failed.push([d, r]); });
+      } else {
+        for (let i = 0; i < todo.length; i++) { const r = await this.request(reqs[i], { attempts: 1 }); if (!grab(todo[i], r)) failed.push([todo[i], r]); }
+      }
+      /* '?' po dopisaniu cyfry: ten adapter jej nie zna. Wyłączamy ją i ponawiamy nieudane bez niej. */
+      if (useCount && failed.some(([, r]) => r.err === '?')) { this.countOk = false; todo = failed.map(x => x[0]); } else break;
     }
-    for (const d of dids) { const b = await this.readDidRaw(mod, d); if (b) out[d] = b; }
     return out;
   }
   async readDidRaw(mod, did) {

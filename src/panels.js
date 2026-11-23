@@ -311,7 +311,7 @@ function createPanels(api) {
       if (c != null && b != null) out.checks.push(V(lv3(Math.abs(c - b), 6, 12), 'Bieg jałowy: przed przepustnicą', `Ciśnienie przed przepustnicą ${f(c, 0)} kPa przy atmosferycznym ${f(b, 0)} kPa. Na biegu jałowym powinny być prawie równe (różnica do ok. 6 kPa z filtra i rur).`));
     } else out.checks.push(V('na', 'Bieg jałowy', 'Za mało próbek na biegu jałowym (potrzeba kilkunastu sekund po uruchomieniu silnika).'));
     // C. Pełny gaz: zadane i rzeczywiste.
-    if (wot.length >= 4) {
+    if (wot.length >= 3) {
       const gap = (key, spKey) => { const d = wot.filter(s => s[key] != null && s[spKey] != null).map(s => s[spKey] - s[key]); return d.length >= 3 ? { avg: avg(d), max: mx(d), n: d.length } : null; };
       const gm = gap('map', 'mapSp'), gc = gap('chg', 'chgSp');
       for (const [g, name] of [[gm, 'kolektor (MAP)'], [gc, 'przed przepustnicą']]) {
@@ -348,7 +348,7 @@ function createPanels(api) {
         if (d > 8 && !bad) bad = 'wg';
       }
       if (rC >= 25 && rA < 5) { out.checks.push(V('crit', 'Wastegate się nie rusza', `Zadane zmieniało się o ${f(rC, 0)} punktów procentowych, a rzeczywiste tylko o ${f(rA, 1)}. Siłownik nie podąża za sterowaniem albo czujnik położenia podaje stałą wartość.`)); bad = 'wg'; }
-      else if (wotW.length >= 4) {
+      else if (wotW.length >= 3) {
         const d = wotW.map(s => s.wgC - s.wgA), am = avg(d.map(Math.abs)), lvl = lv3(am, 6, 12);
         out.checks.push(V(lvl, 'Wastegate pod obciążeniem: zadane i rzeczywiste', `Średnia różnica położenia ${f(am, 1)} punktu procentowego, najwięcej ${f(mx(d.map(Math.abs)), 0)} (${wotW.length} próbek). ${lvl === 'ok' ? 'Siłownik podąża za sterowaniem.' : 'Siłownik nie nadąża za zadaniem albo czujnik położenia podaje niewiarygodną wartość. To zgodne z błędem P2563.'}`));
         if (lvl !== 'ok' && !bad) bad = 'wg';
@@ -356,12 +356,12 @@ function createPanels(api) {
     } else if (S.some(s => s.wgA != null || s.wgC != null)) out.checks.push(V('na', 'Wastegate', 'Za mało próbek położenia wastegate (rzeczywistego i zadanego jednocześnie).'));
     // E. Moment: czy sterownik ogranicza moc (typowy skutek EPC).
     const tqS = wot.filter(s => s.tq != null && s.tqSp != null && s.tqSp > 50);
-    if (tqS.length >= 4) {
+    if (tqS.length >= 3) {
       const r = avg(tqS.map(s => s.tq / s.tqSp));
       out.checks.push(V(r >= 0.9 ? 'ok' : r >= 0.75 ? 'warn' : 'crit', 'Moment pod obciążeniem', `Rzeczywisty moment to średnio ${f(r * 100, 0)}% żądanego. ${r >= 0.9 ? 'Sterownik nie ogranicza mocy.' : 'Sterownik realizuje wyraźnie mniej, niż żąda kierowca: ograniczenie mocy (tryb awaryjny, EPC) albo brak doładowania.'}`));
     }
     const tb = col(wot, 'turbo');
-    if (tb.length >= 4) out.checks.push(V('info', 'Obroty turbosprężarki', `Pod pełnym gazem do ${f(mx(tb), 0)} tys. obr/min (średnio ${f(avg(tb), 0)}). Niskie obroty przy braku doładowania wskazują, że turbina nie dostaje energii (np. wastegate otwarty), wysokie przy braku doładowania szukaj nieszczelności za sprężarką.`));
+    if (tb.length >= 3) out.checks.push(V('info', 'Obroty turbosprężarki', `Pod pełnym gazem do ${f(mx(tb), 0)} tys. obr/min (średnio ${f(avg(tb), 0)}). Niskie obroty przy braku doładowania wskazują, że turbina nie dostaje energii (np. wastegate otwarty), wysokie przy braku doładowania szukaj nieszczelności za sprężarką.`));
     // Kody czujników w pamięci.
     const cs = engineCodes().list.filter(h => /^P010[6-9]$|^P023[6-9]$|^P0069$|^P2227$|^P2228$|^P2229$/.test(h.code));
     if (cs.length) out.checks.push(V('crit', 'Błędy czujników ciśnienia w pamięci', `${cs.map(h => h.code).join(', ')}: sterownik sam zgłasza usterkę czujnika ciśnienia w kolektorze albo doładowania.`));
@@ -820,7 +820,7 @@ function createPanels(api) {
      następny. Odcinek bez przyspieszenia z pełnym gazem nie daje logu doładowania ani MAP, bo nie ma czego oceniać. */
   const AUTO_DELAY = 3 * 60000, AUTO_SEG = 10 * 60000;
   const auto = { on: api.store.get('autoTests', '1') !== '0', elm: null, since: 0, segAt: 0, off: false, active: false, shown: 0 };
-  const hasPlateau = S => S.filter(x => (x.rpm ?? 0) >= 2800 && (x.pedal != null ? x.pedal >= 50 : (x.load ?? 0) >= 85)).length >= 4;
+  const hasPlateau = S => S.filter(x => (x.rpm ?? 0) >= 2800 && (x.pedal != null ? x.pedal >= 50 : (x.load ?? 0) >= 85)).length >= 3;
   const worthBoost = () => bt.samples.length >= 10 && findPulls(bt.samples).length >= 1;
   const worthHeat = () => ht.samples.length >= 60;
   const worthMap = () => mt.samples.length >= 20 && hasPlateau(mt.samples);
