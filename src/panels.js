@@ -712,6 +712,12 @@ function createPanels(api) {
         <p class="small muted">Silnik ma dwa czujniki płynu: na wyjściu z silnika (ten widzisz wszędzie) i drugi, za chłodnicą. Drugi pokazuje, kiedy otwiera się obieg radiatora, więc najlepiej ocenia termostat. Jego numeru nie ma w otwartych bazach, dlatego aplikacja szuka go sama. Zrób to raz, przy uruchomionym silniku (ok. 1–3 minuty). Potem test nagrzewania sprawdzi, który z kandydatów zachowuje się jak czujnik za chłodnicą.</p>
         <p class="small" id="hC2St"></p>
         <div class="actions"><button class="btn small" id="hC2Go" type="button">Znajdź czujnik 2</button><button class="btn small ghost" id="hC2Clr" type="button" hidden>Zapomnij wynik</button></div></div>
+      <div class="card" id="kCard"><h3 class="sect">Climatronic: temperatura nawiewu i klapa</h3>
+        <p class="small muted">Numerów odczytów tego modułu nie ma w otwartych źródłach, więc aplikacja dobiera je z danych. Krok 1 zbiera wszystko, co Climatronic podaje (najlepiej przy pracującym silniku, do ok. 10 minut; przerwanie zachowuje to, co już znaleziono). Krok 2 nagrywa te odczyty, gdy zmieniasz pokrętło temperatury: to, co skacze razem z pokrętłem, to klapa albo temperatura zadana, a to, co narasta powoli, to temperatura nawiewu. Krok 2 rób na rozgrzanym silniku (płyn od 80 °C), z nawiewem na średnim biegu, bez AUTO, bez A/C i bez obiegu wewnętrznego.</p>
+        <p class="small" id="kSt"></p>
+        <p class="kphase" id="kPhase" hidden></p>
+        <div class="actions"><button class="btn small" id="kScan" type="button">Krok 1: szukaj odczytów</button><button class="btn small" id="kTest" type="button">Krok 2: test pokrętłem (3 min)</button><button class="btn small ghost" id="kStop" type="button" hidden>Przerwij</button></div>
+        <div id="kRes"></div></div>
       <div class="card ptest"><h3 class="sect">Test nagrzewania</h3>
         <ol class="steps"><li>Najlepiej po kilku godzinach postoju, na zimnym silniku.</li><li>Połącz się, naciśnij Start i uruchom silnik.</li><li>Jedź normalnie 15–20 minut. Ekran telefonu musi zostać włączony, aplikacja sama go podtrzymuje.</li><li>Naciśnij Zakończ.</li></ol>
         <div id="hLive">${minis(HEAT_LIVE)}</div>
@@ -736,6 +742,7 @@ function createPanels(api) {
     $('#hC2Go').onclick = findC2;
     $('#hC2Clr').onclick = () => { c2.choose(null); c2.setCands([]); c2.vals = {}; c2Status(); reMinis(); };
     c2Status();
+    $('#kScan').onclick = climaScanUi; $('#kTest').onclick = climaTest; $('#kStop').onclick = climaStop; climaStatus();
     $('#hRead').onclick = e => readCodes(e.currentTarget, ['01', '08']);
     renderHeatCodes(); syncHeat(); updMinis('hLive'); renderHeatResult();
   }
@@ -748,6 +755,94 @@ function createPanels(api) {
     el.textContent = txt;
     if (go) go.disabled = !api.elm() || ht.running || !!c2.scanning;
     if (clr) clr.hidden = c2.sel == null && !c2.cands.length;
+  }
+  /* ---------- Climatronic: dobór odczytów z danych ---------- */
+  const KPH = [['LO', 45, 'Ustaw pokrętło temperatury na LO (najzimniej)'], ['HI', 75, 'Ustaw pokrętło temperatury na HI (najcieplej)'], ['LO', 60, 'Ustaw pokrętło temperatury z powrotem na LO']];
+  const kt = { running: false, rounds: [], t0: 0, res: null };
+  const kHex = d => '0x' + d.toString(16).toUpperCase().padStart(4, '0');
+  function climaStatus(msg) {
+    const el = $('#kSt'); if (!el) return;
+    const C = api.clima || { found: [] }, busy = C.scanning || kt.running, n = C.found.filter(x => x.b.length <= 8).length;
+    if (msg !== undefined) el.textContent = msg;
+    else if (!busy) el.textContent = C.found.length ? `Zapamiętane odczyty: ${C.found.length} (do testu: ${n}). ${kt.res ? '' : 'Teraz krok 2 na rozgrzanym silniku.'}` : 'Jeszcze nie szukano.';
+    const s = $('#kScan'), t = $('#kTest'), p = $('#kStop');
+    if (s) { s.disabled = !api.elm() || busy || ht.running; t.disabled = !api.elm() || busy || !n || ht.running; p.hidden = !busy; }
+  }
+  async function climaScanUi() {
+    if (!api.climaScan || !api.elm()) return;
+    climaStatus('Szukam…'); $('#kScan').disabled = true; $('#kStop').hidden = false;
+    const t0 = performance.now();
+    const r = await api.climaScan((did, n, tot, fc) => { const el = $('#kSt'); if (el) el.textContent = `Sprawdzam ${kHex(did)} · ${n} z ${tot} · znaleziono ${fc} · ${Math.round((performance.now() - t0) / 1000)} s`; });
+    climaStatus(!r ? 'Szukanie przerwane albo adapter jest zajęty.' : `${r.stopped ? 'Przerwano' : 'Gotowe'}: Climatronic odpowiada na ${r.n} numerów${r.err ? ` (${r.err})` : ''}. Lista poszła do logu. Teraz krok 2 na rozgrzanym silniku.`);
+  }
+  function climaStop() { if (api.clima && api.clima.scanning) api.clima.stopReq = true; if (kt.running) kt.stopReq = true; }
+  async function climaTest() {
+    if (!api.climaRound || !api.elm() || kt.running) return;
+    Object.assign(kt, { running: true, stopReq: false, rounds: [], t0: performance.now(), res: null });
+    $('#kRes').innerHTML = ''; climaStatus('Nagrywam…');
+    const total = KPH.reduce((a, p) => a + p[1], 0), ph = $('#kPhase'); ph.hidden = false;
+    const resume = api.pause();
+    try {
+      while (!kt.stopReq && api.elm()) {
+        const el = (performance.now() - kt.t0) / 1000; if (el >= total) break;
+        let acc = 0, pi = 0; while (pi < KPH.length - 1 && el >= acc + KPH[pi][1]) { acc += KPH[pi][1]; pi++; }
+        const left = Math.ceil(acc + KPH[pi][1] - el);
+        ph.textContent = `${KPH[pi][2]} · jeszcze ${left} s`;
+        const r = await api.climaRound(); if (!r) break;
+        const t = (performance.now() - kt.t0) / 1000;
+        let acc2 = 0, pj = 0; while (pj < KPH.length - 1 && t >= acc2 + KPH[pj][1]) { acc2 += KPH[pj][1]; pj++; }
+        kt.rounds.push({ t, ph: pj, ect: r.ect, m: r.m });
+        climaStatus(`Nagrywam: runda ${kt.rounds.length}, płyn ${r.ect ?? '—'} °C`);
+      }
+    } finally { resume(); }
+    kt.running = false; ph.hidden = true;
+    if (kt.rounds.length >= 4) { kt.res = climaAnalyze(); renderClima(); api.saveLog('test-klima', `Climatronic: test pokrętłem (${kt.res.react.length} reagujących)`, climaLog()); climaStatus(`Zakończono: ${kt.rounds.length} rund. Wynik poniżej i w logu.`); }
+    else climaStatus('Za mało rund do oceny. Powtórz krok 2.');
+  }
+  /* Każdy odczyt rozkładamy na bajty, a 2-bajtowy także na liczbę 16-bitową. Średnie liczymy z drugiej połowy każdej fazy. */
+  function climaSeries() {
+    const S = {};
+    const add = (name, i, v) => { (S[name] = S[name] || new Array(kt.rounds.length).fill(null))[i] = v; };
+    kt.rounds.forEach((r, i) => { for (const d in r.m) { const b = r.m[d], D = +d; b.forEach((x, k) => add(`${kHex(D)}${b.length > 1 ? ' bajt ' + (k + 1) : ''}`, i, x)); if (b.length === 2) add(`${kHex(D)} (16 bit)`, i, b[0] * 256 + b[1]); } });
+    return S;
+  }
+  function climaAnalyze() {
+    const S = climaSeries(), R = kt.rounds, out = { react: [], changed: [], fixed: 0 };
+    const phMean = (s, p) => { const ix = R.map((r, i) => i).filter(i => R[i].ph === p && s[i] != null); const h = ix.slice(Math.floor(ix.length / 2)); return h.length ? h.reduce((a, i) => a + s[i], 0) / h.length : null; };
+    for (const [name, s] of Object.entries(S)) {
+      const v = s.filter(x => x != null); if (!v.length) continue;
+      if (Math.min(...v) === Math.max(...v)) { out.fixed++; continue; }
+      const m0 = phMean(s, 0), m1 = phMean(s, 1), m2 = phMean(s, 2);
+      const row = { name, lo1: m0, hi: m1, lo2: m2, min: Math.min(...v), max: Math.max(...v) };
+      const ok = m0 != null && m1 != null && m2 != null && Math.sign(m1 - m0) === Math.sign(m1 - m2) && Math.min(Math.abs(m1 - m0), Math.abs(m1 - m2)) >= 3;
+      if (ok) {
+        /* Czas dojścia do 63% zmiany po przełączeniu na HI: klapa przestawia się w kilka sekund, nawiew nagrzewa się dziesiątki sekund. */
+        const hs = KPH[0][1], hiIx = R.map((r, i) => i).filter(i => R[i].ph === 1 && s[i] != null);
+        const hit = hiIx.find(i => (s[i] - m0) / (m1 - m0) >= 0.63);
+        row.t63 = hit != null ? R[hit].t - hs : null;
+        row.kind = row.t63 != null && row.t63 <= 12 ? 'skok razem z pokrętłem: klapa albo temperatura zadana' : 'zmienia się powoli: możliwa temperatura nawiewu';
+        row.size = Math.min(Math.abs(m1 - m0), Math.abs(m1 - m2)); out.react.push(row);
+      } else out.changed.push(row);
+    }
+    out.react.sort((a, b) => b.size - a.size);
+    return out;
+  }
+  function renderClima() {
+    const el = $('#kRes'); if (!el || !kt.res) return; const r = kt.res, n1 = v => v == null ? '—' : f(v, 1);
+    el.innerHTML = r.react.length ? `<table class="tbl"><thead><tr><th>Odczyt</th><th class="num">LO</th><th class="num">HI</th><th class="num">LO</th><th>Zachowanie</th></tr></thead><tbody>${r.react.slice(0, 12).map(x => `<tr><td class="mono">${esc(x.name)}</td><td class="num">${n1(x.lo1)}</td><td class="num">${n1(x.hi)}</td><td class="num">${n1(x.lo2)}</td><td class="small">${esc(x.kind)}</td></tr>`).join('')}</tbody></table><p class="small muted">Wartości surowe (bez skali). Zmienia się też ${r.changed.length} innych odczytów bez związku z pokrętłem, stałych jest ${r.fixed}. Skalę i opis dobiorę z logu.</p>` : `<p class="small">Żaden odczyt nie zareagował na pokrętło. Zmienia się ${r.changed.length}, stałych jest ${r.fixed}. Możliwe, że ten moduł podaje te wartości tylko w sesji rozszerzonej albo pod numerami spoza zakresu.</p>`;
+  }
+  function climaLog() {
+    const r = kt.res, R = kt.rounds, S = climaSeries(), n1 = v => v == null ? '' : String(+(+v).toFixed(2)).replace('.', ',');
+    const L = ['== Climatronic: test pokrętłem temperatury ==', `Fazy: ${KPH.map(p => `${p[0]} ${p[1]} s`).join(' → ')} · rund: ${R.length} · płyn: ${R[0].ect ?? '—'} → ${R[R.length - 1].ect ?? '—'} °C`, '', '== Reagują na pokrętło (średnie z drugiej połowy faz, wartości surowe) =='];
+    for (const x of r.react) L.push(`${x.name}: LO ${n1(x.lo1)} · HI ${n1(x.hi)} · LO ${n1(x.lo2)} · zakres ${x.min}–${x.max} · 63% zmiany po ${x.t63 == null ? '—' : n1(x.t63) + ' s'} · ${x.kind}`);
+    if (!r.react.length) L.push('brak');
+    L.push('', '== Zmienne bez związku z pokrętłem ==');
+    for (const x of r.changed) L.push(`${x.name}: LO ${n1(x.lo1)} · HI ${n1(x.hi)} · LO ${n1(x.lo2)} · zakres ${x.min}–${x.max}`);
+    const keys = [...r.react, ...r.changed].map(x => x.name);
+    L.push('', `Stałych odczytów: ${r.fixed}`, '', '== Rundy (CSV) ==', ['czas [s]', 'faza', 'płyn [°C]', ...keys].join(';'));
+    const step = Math.max(1, Math.ceil(R.length / 600));
+    R.forEach((x, i) => i % step === 0 && L.push([n1(x.t), KPH[x.ph][0], x.ect ?? '', ...keys.map(k => S[k][i] ?? '')].join(';')));
+    return L.join('\n');
   }
   async function findC2() {
     if (!api.elm() || ht.running || c2.scanning || !api.c2Scan) return;

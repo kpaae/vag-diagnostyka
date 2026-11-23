@@ -835,6 +835,42 @@
     if (!p2.id) p2.id = `${p2.t0}-p2563`;
     saveLog('test-p2563', p2.ev.length ? `P2563: test nie przeszedł (${p2.ev.length}×)` : 'P2563: status bez usterki', L.join('\n'), { id: p2.id, quiet: !p2.ev.length });
   }
+  /* ---------- Climatronic: szukanie temperatur nawiewu i klapy ----------
+     Brak otwartej dokumentacji numerów 0x22 tego modułu, więc najpierw zbieramy, co moduł podaje, a potem
+     nagrywamy te odczyty przy zmianach pokrętła temperatury. Wybór odczytów wynika z danych, nie z dokumentacji. */
+  const CLIMA = { tx: 0x746, rx: 0x7B0 };
+  const climaRanges = () => {
+    const out = [];
+    for (const part of String(store.get('climaRanges', '0100-2FFF')).split(/[,;\s]+/).filter(Boolean)) {
+      const m = part.match(/^([0-9a-f]{1,4})(?:-([0-9a-f]{1,4}))?$/i); if (!m) continue;
+      const lo = parseInt(m[1], 16), hi = parseInt(m[2] || m[1], 16); if (hi >= lo) out.push([lo, hi]);
+    }
+    return out.length ? out : [[0x0100, 0x2FFF]];
+  };
+  const clima = { scanning: false, found: (() => { try { return JSON.parse(store.get('climaFound', '[]')); } catch (e) { return []; } })() };
+  async function climaScan(onProg) {
+    const e = elm; if (!e || clima.scanning || (tools && tools.busy())) return null;
+    clima.scanning = true; const resume = pause(); const found = []; let err = null, stopped = false;
+    try {
+      await e.op(() => e.scanDidsFast(CLIMA, climaRanges(), { stop: () => (stopped = clima.stopReq || e !== elm), onProgress: (did, n, tot) => onProg && onProg(did, n, tot, found.length), onFound: fd => found.push(fd) }));
+    } catch (x) { err = x.message; logLine('! Climatronic, szukanie odczytów: ' + err); }
+    clima.scanning = false; clima.stopReq = false; resume();
+    if (e !== elm) return null;
+    clima.found = found.map(fd => ({ did: fd.did, b: fd.bytes }));
+    try { store.set('climaFound', JSON.stringify(clima.found)); } catch (x) {}
+    const hx = b => b.map(x => x.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+    saveLog('test-klima', `Climatronic: wyszukane odczyty (${found.length})`, ['== Climatronic (moduł 08): numery 0x22, które odpowiadają ==', `Zakres: ${climaRanges().map(([a, b]) => a.toString(16).toUpperCase() + '–' + b.toString(16).toUpperCase()).join(', ')}${stopped ? ' (przerwane)' : ''}${err ? ' · błąd: ' + err : ''}`, `Płyn silnika: ${vals.coolant ?? '—'} °C, otoczenie: ${vals.ambient ?? '—'} °C`, '', ...found.map(fd => `${fd.did.toString(16).toUpperCase().padStart(4, '0')} (${fd.bytes.length} B): ${hx(fd.bytes)}`)].join('\n'));
+    return { n: found.length, err, stopped };
+  }
+  /* Jedna runda odczytu: krótkie odczyty Climatronica (do 8 bajtów) i temperatura płynu ze sterownika silnika. */
+  async function climaRound() {
+    const e = elm; if (!e) return null;
+    const dids = clima.found.filter(x => x.b.length <= 8).slice(0, 250).map(x => x.did);
+    const m = await e.op(() => e.readDidsRaw(CLIMA, dids));
+    const c = await e.op(() => e.readDidsRaw(C2MOD, [0x11CD])).catch(() => ({}));
+    if (e !== elm) return null;
+    return { m, ect: c[0x11CD] ? c[0x11CD][0] - 40 : vals.coolant };
+  }
   /* Sprawdza, które ciśnienia Simos18 sterownik podaje (jednorazowo), i zwraca ich liczbę. */
   async function udsProbe() {
     const e = elm; if (!e) return 0;
@@ -846,7 +882,7 @@
     return udsPr.ok.size;
   }
   panels = createPanels({
-    saveLog, c2, c2Scan, udsProbe,
+    saveLog, c2, c2Scan, udsProbe, clima, climaScan, climaRound, pause,
     vals: () => vals, avail, stateOf, tokens, store, CAT, DTC_DESC, MODULES, modules, brand,
     esc, fmtNum, fmtVal, plural, copyText, logLine,
     elm: () => elm, mode: () => mode, sup: () => sup, report: () => report,

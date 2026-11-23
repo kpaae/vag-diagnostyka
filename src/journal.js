@@ -7,7 +7,7 @@ function createJournal(api) {
   const dstamp = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
   const tstamp = d => `${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
   const KINDS = {
-    raport: 'Raport', nagranie: 'Nagranie parametrów', rejestr: 'Rejestr jazdy', 'test-p0299': 'Test doładowania (P0299)', 'test-ogrzewanie': 'Test nagrzewania', 'test-map': 'Czujnik MAP (ciśnienia)', 'test-p2563': 'Strażnik P2563 (zimny start)',
+    raport: 'Raport', nagranie: 'Nagranie parametrów', rejestr: 'Rejestr jazdy', 'test-p0299': 'Test doładowania (P0299)', 'test-ogrzewanie': 'Test nagrzewania', 'test-map': 'Czujnik MAP (ciśnienia)', 'test-p2563': 'Strażnik P2563 (zimny start)', 'test-klima': 'Climatronic (nawiew i klapa)',
     'testy-obd': 'Testy sterownika (tryb 06)', skaner: 'Skaner pomiarów VAG', podsluch: 'Podsłuch magistrali', konsola: 'Konsola UDS', komunikacja: 'Log komunikacji'
   };
 

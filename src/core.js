@@ -846,6 +846,30 @@ class ELM {
       this.st = '64'; await this.send('ATST64');
     }
   }
+  /* Szybkie przeszukanie numerów 0x22: z cyfrą liczby odpowiedzi odmowa wraca od razu (ok. 50 ms zamiast 200–400 ms).
+     Znalezione numery czytamy jeszcze raz bez cyfry, bo dłuższa odpowiedź (kilka ramek) mogłaby zostać ucięta.
+     Gdy adapter nie zna cyfry albo moduł przestaje odpowiadać, przechodzimy na zwykłe zapytania albo kończymy. */
+  async scanDidsFast(mod, ranges, { onProgress, onFound, stop } = {}) {
+    if (mod.bmw != null) return this.scanDids(mod, ranges, { onProgress, onFound, stop });
+    const found = []; let n = 0, silent = 0; const total = ranges.reduce((a, [lo, hi]) => a + hi - lo + 1, 0);
+    await this.select(mod.tx, mod.rx);
+    let cnt = this.fastCount !== false && this.countOk !== false;
+    for (const [lo, hi] of ranges) for (let did = lo; did <= hi; did++) {
+      if (stop && stop()) return found;
+      n++; if (n % 16 === 0 && onProgress) onProgress(did, n, total);
+      const q = '22' + hex4(did);
+      let r = await this.request(cnt ? q + '1' : q, { attempts: 2 });
+      if (cnt && r.err === '?') { cnt = false; this.countOk = false; r = await this.request(q, { attempts: 2 }); }
+      if (r.err === 'NO DATA' || (r.err && !r.nrc && /brak|pusta/.test(r.err))) { if (++silent >= 40) throw new Error('moduł przestał odpowiadać (zapłon wyłączony albo moduł uśpiony)'); continue; }
+      silent = 0;
+      if (r.err || !r.data.startsWith('62' + hex4(did))) continue;
+      let use = r;
+      if (cnt) { const full = await this.request(q, { attempts: 2 }); if (!full.err && full.data.startsWith('62' + hex4(did))) use = full; }
+      const f = { did, bytes: bytesOf(use.data).slice(3) };
+      found.push(f); onFound && onFound(f);
+    }
+    return found;
+  }
   /* Kilka identyfikatorów 22 naraz: przez most jedna wysyłka zbiorcza, bezpośrednio kolejno. Zwraca {did: bajty}.
      Odpowiedzi 22 mieszczą się w jednej ramce, więc dopisujemy cyfrę liczby odpowiedzi: adapter oddaje wynik od razu,
      zamiast czekać pełny czas oczekiwania (na tym adapterze ok. 0,45 s na każde zapytanie). */
