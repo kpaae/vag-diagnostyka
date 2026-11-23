@@ -25,7 +25,7 @@
    ['tqU', 0x437C, 'Moment rzeczywisty', 'Nm', 0, 0, 400, 'silnik'], ['tqUsp', 0x4380, 'Moment żądany', 'Nm', 0, 0, 400, 'silnik']].forEach(([key, did, name, unit, d, min, max, g]) => {
     CAT[key] = { key, name, unit, d, min, max, g, special: true, uds: did, when: () => udsPr.ok.has(did) };
   });
-  const udsPr = { ok: new Set(), elm: null };
+  const udsPr = { ok: new Set(), elm: null, tried: null };
   CAT.coolant2 = { key: 'coolant2', name: 'Płyn za chłodnicą (czujnik 2)', unit: '°C', d: 0, min: -10, max: 130, g: 'chlodzenie', special: true, when: () => c2.sel != null };
 
   const store = {
@@ -243,7 +243,9 @@
         if (keys.includes('adapterV') && (cycle % 10 === 0 || vals.adapterV == null)) { const v = await e.op(() => e.voltage()); if (v != null) res.adapterV = v; }
         /* Czujnik 2 płynu: wybrany numer co 2. cykl, a w trakcie szukania kandydaci co 3. cykl (bajt − 40 °C). */
         if (c2.sel != null && keys.includes('coolant2') && cycle % 2 === 0) { const b = await e.op(() => e.readDidRaw(C2MOD, c2.sel)); if (b && b.length === 1) res.coolant2 = b[0] - 40; }
-        if (udsPr.elm !== e) { udsPr.ok.clear(); udsPr.elm = e; }
+        /* Nowe połączenie: stare odczyty Simos18 nie mogą trafić do rejestru, a dostępność sprawdzamy od razu, nie dopiero w karcie MAP. */
+        if (udsPr.elm !== e) { udsPr.ok.clear(); udsPr.elm = e; for (const c of Object.values(CAT)) if (c.uds != null) delete vals[c.key]; }
+        if (udsPr.tried !== e && cycle >= 2) { udsPr.tried = e; await udsProbe(); }
         { const uk = keys.filter(k => CAT[k] && CAT[k].uds != null && udsPr.ok.has(CAT[k].uds));
           if (uk.length) { const m = await e.op(() => e.readDidsRaw(C2MOD, uk.map(k => CAT[k].uds))); for (const k of uk) { const def = SIMOS18_DIDS.find(d => d.did === CAT[k].uds), v = m[CAT[k].uds] && decodeSimosDid(def, m[CAT[k].uds]); if (v != null) res[k] = v; } } }
         if (c2.probe && c2.sel == null && cycle % 3 === 0) for (const d of c2.cands) { if (e !== elm) break; const b = await e.op(() => e.readDidRaw(C2MOD, d)); if (b && b.length === 1) c2.vals[d] = b[0] - 40; }

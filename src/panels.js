@@ -274,7 +274,8 @@ function createPanels(api) {
     const hasMap = S.some(s => s.map != null), hasChg = S.some(s => s.chg != null);
     if (!hasMap) { out.checks.push(V('na', 'Czujnik MAP', 'Sterownik nie podaje ciśnienia w kolektorze.')); return out; }
     const pMax = mx(col(S, 'pedal')) ?? 0, wotT = Math.min(80, Math.max(60, pMax * 0.9));
-    const off = S.filter(s => (s.rpm ?? 1) < 100), idle = S.filter(s => (s.rpm ?? 0) >= 600 && (s.rpm ?? 0) <= 1300 && (s.speed ?? 0) < 3);
+    const pMin = Math.min(...S.map(s => s.pedal).filter(x => x != null)), off = S.filter(s => (s.rpm ?? 1) < 100),
+      idle = S.filter(s => (s.rpm ?? 0) >= 600 && (s.rpm ?? 0) <= 1300 && (s.speed ?? 0) < 3 && (s.pedal == null || s.pedal < pMin + 3));
     /* Pełny gaz oceniamy na plateau: od 2800 obr/min i bez pierwszej sekundy, bo na początku przyspieszenia doładowanie
        dopiero narasta i brak do zadanego jest wtedy normalny. */
     const wot = []; { let segT = null, lastT = null;

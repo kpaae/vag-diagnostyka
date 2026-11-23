@@ -252,7 +252,8 @@ const DERIVED = [
     key: 'lambdaDev', g: 'mieszanka', name: 'Odchyłka lambdy', unit: 'λ', d: 3, min: -0.15, max: 0.15,
     deps: [0x44, 0x34, 0x24, 0x03], needs: s => s.has(0x44) && (s.has(0x34) || s.has(0x24)),
     calc: s => { const a = s.lambdaA ?? s.lambdaV; return (a == null || s.lambdaCmd == null) ? null : a - s.lambdaCmd; },
-    check: (v, s) => s.fuelSys !== 2 ? 'ok' : lvlAbs(v, 0.05, 0.1)
+    /* Odcięcie paliwa przy hamowaniu silnikiem: sonda pokazuje ubogo (lambda ok. 2), to nie usterka. */
+    check: (v, s) => s.fuelSys !== 2 || (s.load != null && s.load < 1) || (s.lambdaA ?? s.lambdaV ?? 0) >= 1.9 ? 'ok' : lvlAbs(v, 0.05, 0.1)
   },
   {
     key: 'trimTotal', g: 'mieszanka', name: 'Korekta łączna', unit: '%', d: 1, min: -30, max: 30,
