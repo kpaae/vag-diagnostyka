@@ -7,7 +7,7 @@ function createJournal(api) {
   const dstamp = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
   const tstamp = d => `${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
   const KINDS = {
-    raport: 'Raport', nagranie: 'Nagranie parametrów', rejestr: 'Rejestr jazdy', 'test-p0299': 'Test doładowania (P0299)', 'test-ogrzewanie': 'Test nagrzewania', 'test-map': 'Czujnik MAP (ciśnienia)',
+    raport: 'Raport', nagranie: 'Nagranie parametrów', rejestr: 'Rejestr jazdy', 'test-p0299': 'Test doładowania (P0299)', 'test-ogrzewanie': 'Test nagrzewania', 'test-map': 'Czujnik MAP (ciśnienia)', 'test-p2563': 'Strażnik P2563 (zimny start)',
     'testy-obd': 'Testy sterownika (tryb 06)', skaner: 'Skaner pomiarów VAG', podsluch: 'Podsłuch magistrali', konsola: 'Konsola UDS', komunikacja: 'Log komunikacji'
   };
 
@@ -75,7 +75,7 @@ function createJournal(api) {
     const sess = session || `${dstamp(d)}_bez-polaczenia`;
     let e = opt.id ? (await all()).find(x => x.id === opt.id) : null;
     const body = (ext === 'csv' ? '' : header(kind, title)) + text;
-    if (e) Object.assign(e, { ts: d.getTime(), text: body, synced: false, err: null });
+    if (e) Object.assign(e, { ts: d.getTime(), title: title || e.title, text: body, synced: false, err: null });
     else e = { id: opt.id || `${d.getTime()}-${kind}`, ts: d.getTime(), session: sess, kind, title: title || KINDS[kind] || kind, ext, text: body, synced: false, err: null, sha: {}, file: `${sess}/${tstamp(d)}-${kind}` };
     await put(e);
     await trim();

@@ -825,6 +825,7 @@ function createPanels(api) {
   const worthBoost = () => bt.samples.length >= 10 && findPulls(bt.samples).length >= 1;
   const worthHeat = () => ht.samples.length >= 60;
   const worthMap = () => mt.samples.length >= 20 && hasPlateau(mt.samples);
+  const coldNow = () => { const c = api.vals().coolant; return c != null && c < 60; };
   function autoStart() {
     auto.active = true; auto.segAt = performance.now();
     if (!bt.running) { startBoost(); bt.auto = true; }
@@ -845,13 +846,14 @@ function createPanels(api) {
     const el = document.querySelector('#autoSt'); if (!el) return;
     const now = performance.now(); if (!force && now - auto.shown < 900) return; auto.shown = now;
     const mmss = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
-    el.textContent = !auto.on || !api.elm() ? '' : auto.off ? 'auto-testy wyłączone do ponownego połączenia' : auto.active ? `auto-testy nagrywają ${mmss(now - auto.segAt)}` : `auto-testy ruszą za ${mmss(Math.max(0, AUTO_DELAY - (now - auto.since)))}`;
+    el.textContent = !auto.on || !api.elm() ? '' : auto.off ? 'auto-testy wyłączone do ponownego połączenia' : auto.active ? `auto-testy nagrywają ${mmss(now - auto.segAt)}` : coldNow() ? 'zimny silnik: auto-testy ruszają od razu' : `auto-testy ruszą za ${mmss(Math.max(0, AUTO_DELAY - (now - auto.since)))}`;
   }
   function autoTick() {
     const e = api.elm(), now = performance.now();
     if (e !== auto.elm) { auto.elm = e; auto.since = now; auto.off = false; auto.active = false; }
     if (auto.on && e && !auto.off) {
-      if (!auto.active) { if (now - auto.since >= AUTO_DELAY) autoStart(); }
+      /* Zimny silnik: testy od razu, bo usterka wastegate tego auta pojawia się tylko po zimnym starcie. */
+      if (!auto.active) { if (now - auto.since >= AUTO_DELAY || (coldNow() && now - auto.since >= 3000)) autoStart(); }
       else if (now - auto.segAt >= AUTO_SEG) autoCycle(true);
     }
     autoStatus();

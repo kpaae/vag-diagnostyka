@@ -254,6 +254,7 @@
         for (const d of DERIVED) { const v = d.calc(vals); if (v != null && isFinite(v)) { vals[d.key] = v; res[d.key] = v; } }
         take(res);
         journal && journal.regTick(vals, CAT);
+        await p2Tick(e);
         if (rec) { const row = { t: (Date.now() - rec.t0) / 1000 }; for (const k of wanted) if (vals[k] != null && seen[k] === cycle) { row[k] = vals[k]; rec.keys.add(k); } rec.rows.push(row); $('#btnRec').textContent = `Zatrzymaj · ${rec.rows.length}`; }
         /* Ekran odświeżamy rzadziej niż dane, gdy telefon nie nadąża: dane i nagranie idą w pełnym tempie. */
         const tn = performance.now();
@@ -783,6 +784,56 @@
     c2.choose(null); c2.vals = {}; c2.setCands(cand.map(c => c.did));
     logLine(`— szukanie czujnika 2: ${found.length} DID, ${cand.length} kandydatów`);
     return { total: found.length, cand, ect };
+  }
+  /* ---------- strażnik P2563 (zimny start) ----------
+     Usterka wastegate pojawia się u tego auta tylko po zimnym starcie. Co 30 s czytamy status P2563 ze sterownika
+     (jedna krótka odpowiedź 19 02) i trzymamy ostatnie 5 minut wszystkich odczytów. Każda zmiana statusu trafia do logu,
+     a gdy test sterownika nie przejdzie, log dostaje okno danych sprzed błędu i 90 s po nim (wastegate rzeczywisty i zadany). */
+  const P2_RAW = '0039FE', P2_EVERY = 30000, P2_AFTER = 90000;
+  const p2 = { elm: null };
+  const p2Bits = st => [st & 0x01 ? 'test nie przechodzi teraz' : 'test przechodzi', st & 0x02 ? 'nie przeszedł w tym cyklu' : '', st & 0x40 ? 'test w tym cyklu jeszcze nie wykonany' : 'test w tym cyklu wykonany', st & 0x08 ? 'potwierdzony' : '', st & 0x80 ? 'kontrolka' : ''].filter(Boolean).join(', ');
+  async function p2Tick(e) {
+    const now = Date.now();
+    if (p2.elm !== e) Object.assign(p2, { elm: e, t0: now, at: 0, st: undefined, hist: [], buf: [], last: 0, ect0: null, run0: null, ev: [], id: null });
+    if (brand() !== 'vag') return;
+    if (now - p2.last >= 1000) {
+      p2.last = now; const row = { t: now };
+      for (const k in vals) if (CAT[k] && !CAT[k].text && isFinite(vals[k])) row[k] = vals[k];
+      p2.buf.push(row); while (p2.buf.length && now - p2.buf[0].t > 300000) p2.buf.shift();
+      if (p2.ect0 == null && vals.coolant != null) { p2.ect0 = vals.coolant; p2.run0 = vals.runTime; }
+    }
+    for (const v of p2.ev) if (!v.done && now - v.at >= P2_AFTER) { v.done = true; p2Save(); }
+    if (now - p2.at < P2_EVERY) return;
+    p2.at = now;
+    const d = await e.op(() => e.readModuleDtcs(C2MOD)).catch(() => null);
+    if (!d || d.err || e !== elm) return;
+    const x = d.dtcs.find(z => z.raw === P2_RAW), st = x ? x.status : 0, prev = p2.st;
+    if (st === prev) return;
+    p2.st = st;
+    p2.hist.push({ t: now, st, ect: vals.coolant, iat: vals.iat, amb: vals.ambient, run: vals.runTime, rpm: vals.rpm, v: vals.speed });
+    /* Zdarzenie: test właśnie nie przeszedł (bit 0x01 albo 0x02 pojawił się względem poprzedniego odczytu). */
+    const fail = prev !== undefined ? ((st & 0x01) && !(prev & 0x01)) || ((st & 0x02) && !(prev & 0x02)) : !!(st & 0x02);
+    if (fail) { p2.ev.push({ at: now, st, first: prev === undefined }); logLine(`— P2563: test nie przeszedł (status 0x${st.toString(16).toUpperCase()})`); }
+    p2Save();
+  }
+  function p2Save() {
+    const ts = t => new Date(t).toLocaleTimeString('pl-PL'), rel = t => `${Math.round((t - p2.t0) / 1000)} s`, f1 = v => v == null ? '—' : String(+(+v).toFixed(1)).replace('.', ',');
+    const L = ['== Strażnik P2563 (wastegate) ==', `Połączenie: ${ts(p2.t0)}, płyn chłodzący na początku: ${p2.ect0 ?? '—'} °C, czas pracy silnika: ${p2.run0 ?? '—'} s`, ''];
+    L.push(p2.ev.length ? `Test sterownika NIE PRZESZEDŁ ${p2.ev.length}×: ${p2.ev.map(v => `${ts(v.at)} (${rel(v.at)} od połączenia${v.first ? ', już przy pierwszym odczycie' : ''})`).join(', ')}.` : 'W tym połączeniu test P2563 nie zgłosił usterki.');
+    L.push('', '== Zmiany statusu P2563 (odczyt co 30 s) ==');
+    for (const h of p2.hist) L.push(`${ts(h.t)} (+${rel(h.t)}) · status 0x${h.st.toString(16).toUpperCase().padStart(2, '0')}: ${p2Bits(h.st)} · płyn ${f1(h.ect)} °C, dolot ${f1(h.iat)} °C, otoczenie ${f1(h.amb)} °C, silnik pracuje ${h.run ?? '—'} s, ${f1(h.rpm)} obr/min, ${f1(h.v)} km/h`);
+    const win = p2.ev.length ? p2.buf.filter(r => p2.ev.some(v => r.t >= v.at - 240000 && r.t <= v.at + P2_AFTER)) : [];
+    if (win.length) {
+      const keys = [...new Set(win.flatMap(r => Object.keys(r)))].filter(k => k !== 't' && CAT[k]);
+      const pri = ['rpm', 'speed', 'pedal', 'coolant', 'iat', 'ambient', 'wgU', 'wgUsp', 'chgU', 'chgUsp', 'mapU', 'mapUsp', 'turboU', 'tqU', 'tqUsp'];
+      keys.sort((a, b) => (pri.indexOf(a) + 1 || 99) - (pri.indexOf(b) + 1 || 99));
+      L.push('', '== Dane wokół błędu (4 min przed, 90 s po; czas względem pierwszego błędu) ==');
+      L.push(['czas [s]', ...keys.map(k => `${CAT[k].name}${CAT[k].unit ? ' [' + CAT[k].unit + ']' : ''}`)].join(';'));
+      const at0 = p2.ev[0].at;
+      for (const r of win) L.push([f1((r.t - at0) / 1000), ...keys.map(k => r[k] == null ? '' : String(+(+r[k]).toFixed(3)).replace('.', ','))].join(';'));
+    }
+    if (!p2.id) p2.id = `${p2.t0}-p2563`;
+    saveLog('test-p2563', p2.ev.length ? `P2563: test nie przeszedł (${p2.ev.length}×)` : 'P2563: status bez usterki', L.join('\n'), { id: p2.id, quiet: !p2.ev.length });
   }
   /* Sprawdza, które ciśnienia Simos18 sterownik podaje (jednorazowo), i zwraca ich liczbę. */
   async function udsProbe() {
