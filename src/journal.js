@@ -229,11 +229,12 @@ function createJournal(api) {
   /* ---------- rejestr jazdy (automatyczny) ---------- */
   const reg = { id: null, keys: [], rows: [], t0: 0, last: 0, saved: 0 };
   function regStart() { Object.assign(reg, { id: null, keys: [], rows: [], t0: Date.now(), last: 0, saved: Date.now() }); }
-  function regTick(vals, CAT) {
+  function regTick(vals, CAT, fresh) {
     if (!reg.t0) return;
     const now = Date.now(); if (now - reg.last < 1000) return; reg.last = now;
     const row = { t: (now - reg.t0) / 1000 };
-    for (const k in vals) if (CAT[k] && !CAT[k].text && isFinite(vals[k])) { row[k] = vals[k]; if (!reg.keys.includes(k)) reg.keys.push(k); }
+    /* Tylko świeże odczyty: wartość, której w tym cyklu nie czytano, zostaje pusta, zamiast powtarzać starą. */
+    for (const k in vals) if (CAT[k] && !CAT[k].text && isFinite(vals[k]) && (!fresh || fresh(k))) { row[k] = vals[k]; if (!reg.keys.includes(k)) reg.keys.push(k); }
     reg.rows.push(row); if (reg.rows.length > 4 * 3600) reg.rows.shift();
     if (now - reg.saved > 5 * 60000) regSave(CAT, true);
   }
