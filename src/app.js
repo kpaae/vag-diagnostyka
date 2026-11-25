@@ -44,7 +44,7 @@
   };
 
   let elm = null, tr = null, mode = null, sup = new Set();
-  let panels = null, tools = null, bridge = null, currentTab = 'live';
+  let panels = null, tools = null, batt = null, bridge = null, currentTab = 'live';
   let vals = {}, seen = {}, hist = {}, mm = {}, tiles = [];
   let polling = false, pollRun = 0, cycle = 0, rec = null, wake = null, scanning = false, connecting = false;
   let view = store.get('group', 'silnik'); if (!['silnik', 'chlodzenie', 'doladowanie', 'mieszanka', 'all'].includes(view)) view = 'silnik';
@@ -102,11 +102,12 @@
   /* ---------- zakładki ---------- */
   $$('.tabs button').forEach(b => b.addEventListener('click', () => {
     $$('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b ? 'true' : 'false'));
-    ['live', 'boost', 'heat', 'errors', 'tools', 'state', 'log'].forEach(t => { $('#tab-' + t).hidden = t !== b.dataset.tab; });
+    ['live', 'boost', 'heat', 'batt', 'errors', 'tools', 'state', 'log'].forEach(t => { $('#tab-' + t).hidden = t !== b.dataset.tab; });
     currentTab = b.dataset.tab;
     if (b.dataset.tab === 'log') { renderLog(); journal && journal.render(); }
     if (b.dataset.tab === 'live') { sizeSparks(); updateTiles(); }
     panels && panels.onTab(currentTab);
+    batt && batt.onTab(currentTab);
   }));
 
   /* ---------- grupy i kafelki ---------- */
@@ -197,7 +198,7 @@
 
   /* ---------- odczyt na żywo ---------- */
   function activeKeys() {
-    const pk = panels && panels.keysFor(currentTab);
+    const pk = (panels && panels.keysFor(currentTab)) || (batt && batt.keysFor(currentTab));
     if (pk) return pk.filter(avail);
     return (view === 'all' ? GROUPS.map(g => g[0]) : [view]).flatMap(g => ORDER[g]).filter(avail); }
   function allKeys() { return GROUPS.flatMap(g => ORDER[g[0]]).filter(avail); }
@@ -240,7 +241,7 @@
       const t0 = performance.now(); const wanted = activeKeys(); const e = elm;
       /* Zaraz po włączeniu zapłonu (silnik stoi) czytamy tylko to, co pokazuje test wastegate sterownika: wtedy ok. 2–3 odczyty na sekundę zamiast jednego co 2 s. */
       const keyOn = p2KeyOn();
-      const keys = keyOn ? P2_FAST.filter(avail) : (cycle % R.full === 0 && !(panels && panels.busy())) ? allKeys() : wanted;
+      const keys = keyOn ? P2_FAST.filter(avail) : (cycle % R.full === 0 && !(panels && panels.busy()) && !(batt && batt.busy())) ? allKeys() : wanted;
       try {
         const res = await e.op(() => e.readLive(defsFor(keys)));
         if (keys.includes('adapterV') && (cycle % (keyOn ? 4 : 10) === 0 || vals.adapterV == null)) { const v = await e.op(() => e.voltage()); if (v != null) res.adapterV = v; }
@@ -267,6 +268,7 @@
           if (!$('#tab-live').hidden) updateTiles();
           updateAlerts();
         }
+        batt && batt.tick();
         panels && panels.tick();   // testy w panelach zbierają próbki z każdego cyklu
       } catch (err) { logLine('! ' + err.message); }
       cycle++;
@@ -450,7 +452,7 @@
       logLine('— most: adapter rozłączony'); chip('Połączenie przerwane', '');
       banner('Most: połączenie z adapterem zostało przerwane. Sprawdź adapter i włącz most ponownie.', 'warn'); return;
     }
-    panels && panels.stopAll(); tools && tools.stopAll();
+    panels && panels.stopAll(); batt && batt.stopAll(); tools && tools.stopAll();
     stopPolling(); elm = null; mode = null;
     const t = tr; tr = null; if (t && msg) { try { t.close(); } catch (e) {} }
     setButtons();
@@ -905,6 +907,13 @@
     elm: () => elm, esc, fmtNum, plural, copyText, download, stamp, framed, logLine, store, MODULES, modules, brand,
     report: () => report, pause, saveLog
   });
+  batt = createBatt({
+    elm: () => elm, vals: () => vals, fresh: k => cycle - (seen[k] ?? -99) <= 1, CAT, avail, fmtVal, stateOf, esc, fmtNum,
+    saveLog, store, pause, logLine, report: () => report, toolsBusy: () => !!(tools && tools.busy()),
+    p2Info: () => { const h = (p2.hist || []).find(x => !x.note && x.u != null && (x.rpm ?? 0) < 100); return h ? { u: h.u, ect: h.ect } : null; },
+    ensurePolling: () => { if (!polling) startPolling(); }
+  });
+  batt.render();
   tools.render();
   bridge = createBridge({
     esc, store, logLine, copyText, banner, chip, devName: () => journal.devName(),

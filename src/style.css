@@ -313,3 +313,9 @@ details.help a { color: var(--accent); }
 #bCodes .codeline .cz { margin: 2px 0 0; }
 .tips { margin: 10px 0 0 18px; padding: 0; }
 .tips li { margin: 4px 0; }
+
+.fl2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px 14px; margin: 10px 0; }
+.fl2 .fl { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.fl2 .fl .inp { width: 100%; }
+.steps li span { display: block; color: var(--muted); }
+.steps li b { font-weight: 600; }
