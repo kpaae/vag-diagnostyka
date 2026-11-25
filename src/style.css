@@ -319,3 +319,6 @@ details.help a { color: var(--accent); }
 .fl2 .fl .inp { width: 100%; }
 .steps li span { display: block; color: var(--muted); }
 .steps li b { font-weight: 600; }
+
+.kphase.akgo { font-size: 18px; font-weight: 600; text-align: center; padding: 14px; }
+.kphase.akgo[data-go='1'] { background: color-mix(in srgb, var(--ok) 18%, var(--surface)); border-color: var(--ok); font-size: 24px; }

@@ -46,7 +46,7 @@
   let elm = null, tr = null, mode = null, sup = new Set();
   let panels = null, tools = null, batt = null, bridge = null, currentTab = 'live';
   let vals = {}, seen = {}, hist = {}, mm = {}, tiles = [];
-  let polling = false, pollRun = 0, cycle = 0, rec = null, wake = null, scanning = false, connecting = false;
+  let polling = false, pollRun = 0, cycle = 0, rec = null, wake = null, scanning = false, connecting = false, scanAfterMorning = false;
   let view = store.get('group', 'silnik'); if (!['silnik', 'chlodzenie', 'doladowanie', 'mieszanka', 'all'].includes(view)) view = 'silnik';
   let report = blankReport();
   const logBuf = []; let logTimer = null;
@@ -241,17 +241,18 @@
       const t0 = performance.now(); const wanted = activeKeys(); const e = elm;
       /* Zaraz po włączeniu zapłonu (silnik stoi) czytamy tylko to, co pokazuje test wastegate sterownika: wtedy ok. 2–3 odczyty na sekundę zamiast jednego co 2 s. */
       const keyOn = p2KeyOn();
-      const keys = keyOn ? P2_FAST.filter(avail) : (cycle % R.full === 0 && !(panels && panels.busy()) && !(batt && batt.busy())) ? allKeys() : wanted;
+      const fk = batt && batt.fastKeys();
+      const keys = fk ? fk.filter(avail) : keyOn ? P2_FAST.filter(avail) : (cycle % R.full === 0 && !(panels && panels.busy()) && !(batt && batt.busy())) ? allKeys() : wanted;
       try {
         const res = await e.op(() => e.readLive(defsFor(keys)));
         if (keys.includes('adapterV') && (cycle % (keyOn ? 4 : 10) === 0 || vals.adapterV == null)) { const v = await e.op(() => e.voltage()); if (v != null) res.adapterV = v; }
         /* Czujnik 2 płynu: wybrany numer co 2. cykl, a w trakcie szukania kandydaci co 3. cykl (bajt − 40 °C). */
-        if (c2.sel != null && keys.includes('coolant2') && cycle % 2 === 0) { const b = await e.op(() => e.readDidRaw(C2MOD, c2.sel)); if (b && b.length === 1) res.coolant2 = b[0] - 40; }
+        if (c2.sel != null && keys.includes('coolant2') && cycle % 2 === 0) { const m = await e.op(() => e.readDidsRaw(C2MOD, [c2.sel])), b = m[c2.sel]; if (b && b.length === 1) res.coolant2 = b[0] - 40; }
         /* Nowe połączenie: stare odczyty Simos18 nie mogą trafić do rejestru, a dostępność sprawdzamy od razu, nie dopiero w karcie MAP. */
         if (udsPr.elm !== e) { udsPr.ok.clear(); udsPr.elm = e; for (const c of Object.values(CAT)) if (c.uds != null) delete vals[c.key]; }
         /* Przy wyłączonym zapłonie sterownik nie odpowie, więc pusty wynik sprawdzamy ponownie co 10 s. */
         if ((udsPr.tried !== e || (!udsPr.ok.size && Date.now() - (udsPr.at || 0) > 10000)) && cycle >= 2) { udsPr.tried = e; udsPr.at = Date.now(); await udsProbe(); }
-        { const uk = keys.filter(k => CAT[k] && CAT[k].uds != null && udsPr.ok.has(CAT[k].uds));
+        { const uk = keys.filter(k => CAT[k] && CAT[k].uds != null && udsPr.ok.has(CAT[k].uds) && (k !== 'baroU' || cycle % 10 === 0 || vals.baroU == null));
           if (uk.length) { const m = await e.op(() => e.readDidsRaw(C2MOD, uk.map(k => CAT[k].uds))); for (const k of uk) { const def = SIMOS18_DIDS.find(d => d.did === CAT[k].uds), v = m[CAT[k].uds] && decodeSimosDid(def, m[CAT[k].uds]); if (v != null) res[k] = v; } } }
         if (c2.probe && c2.sel == null && cycle % 3 === 0) for (const d of c2.cands) { if (e !== elm) break; const b = await e.op(() => e.readDidRaw(C2MOD, d)); if (b && b.length === 1) c2.vals[d] = b[0] - 40; }
         if (run !== pollRun || e !== elm) break;
@@ -536,7 +537,9 @@
       chip(`${t.name} · ${id}`, 'on');
       $('#banner').hidden = true;
       connecting = false; tools && tools.onConnect(); setButtons(); buildTiles(); renderState(); startPolling();
-      refreshState().then(() => { tools && !tools.busy() && tools.render(); renderModules(); runScan(false); });
+      /* Poranny start: skan modułów czeka, aż skończy się nagrywanie rozruchu. */
+      const deferScan = !!(batt && batt.onConnect()); scanAfterMorning = deferScan;
+      refreshState().then(() => { tools && !tools.busy() && tools.render(); renderModules(); if (!deferScan) runScan(false); });
     } catch (err) {
       connecting = false;
       const msg = friendly(err);
@@ -820,6 +823,7 @@
     }
     for (const v of p2.ev) if (!v.done && now - v.at >= P2_AFTER) { v.done = true; p2Save(); }
     /* Odczyt statusu trwa u Simos18 ok. 1,5 s (sterownik odpowiada „czekaj”), więc szybko czytamy tylko do chwili, gdy test w tym cyklu się wykona. */
+    if (batt && batt.hold() && p2.st !== undefined) return;
     const cyNow = p2.cyc[p2.cyc.length - 1];
     if (now - p2.at < (p2Early() && !(cyNow && cyNow.done != null) ? P2_FASTEVERY : P2_EVERY)) return;
     p2.at = now;
@@ -840,6 +844,12 @@
     const fail = prev !== undefined ? ((st & 0x01) && !(prev & 0x01)) || ((st & 0x02) && !(prev & 0x02)) : !!(st & 0x02);
     if (fail) { p2.ev.push({ at: now, st, first: prev === undefined }); logLine(`— P2563: test nie przeszedł (status 0x${st.toString(16).toUpperCase()})`); }
     p2Save();
+  }
+  function p2Mark(txt) {
+    const cy = p2.cyc && p2.cyc[p2.cyc.length - 1];
+    const rel = cy ? ` (${p2Dur(Date.now() - cy.wake)} ${cy.conn ? 'od połączenia' : 'od zapłonu'})` : '';
+    if (p2.elm === elm && p2.hist) { p2.hist.push({ t: Date.now(), note: txt.toUpperCase() + rel }); p2Save(); }
+    logLine('— ' + txt + rel);
   }
   function p2Dur(ms) { const s = Math.round(ms / 1000); return s < 120 ? `${s} s` : s < 7200 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1).replace('.', ',')} h`; }
   function p2CycText(c) {
@@ -929,6 +939,10 @@
   batt = createBatt({
     elm: () => elm, vals: () => vals, fresh: k => cycle - (seen[k] ?? -99) <= 1, CAT, avail, fmtVal, stateOf, esc, fmtNum,
     saveLog, store, pause, logLine, report: () => report, toolsBusy: () => !!(tools && tools.busy()),
+    p2Ready: () => p2.elm === elm && p2.st !== undefined,
+    mark: txt => p2Mark(txt),
+    showTab: t => { const b = $(`.tabs button[data-tab="${t}"]`); if (b && currentTab !== t) b.click(); },
+    afterMorning: () => { if (scanAfterMorning && elm) { scanAfterMorning = false; runScan(false); } },
     p2Info: () => { const h = (p2.hist || []).find(x => !x.note && x.u != null && (x.rpm ?? 0) < 100); return h ? { u: h.u, ect: h.ect } : null; },
     ensurePolling: () => { if (!polling) startPolling(); }
   });

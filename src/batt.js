@@ -22,7 +22,7 @@ function createBatt(api) {
 
   const TESTS = {
     ign: { name: 'Napięcie przy włączonym zapłonie', phases: [['Zapłon włączony, silnik nie pracuje. Nie włączaj dodatkowych odbiorników i niczego nie dotykaj.', 45]] },
-    crank: { name: 'Rozruch', max: 150, phases: [['Zapłon włączony. Za chwilę uruchom silnik.', 150]] },
+    crank: { name: 'Rozruch', max: 180, phases: [['Zapłon włączony. Za chwilę uruchom silnik.', 150]] },
     charge: {
       name: 'Ładowanie (alternator)',
       phases: [
@@ -38,7 +38,8 @@ function createBatt(api) {
     run: null, t0: 0, samples: [], res: null, msg: '', busy: false, crankAt: null, startAt: null,
     scan: { running: false, stopReq: false, msg: '', last: null },
     form: (() => { try { return Object.assign({ cap: '70', en: '760', tech: '', man: '', ser: '' }, JSON.parse(api.store.get('battForm', '{}'))); } catch (e) { return { cap: '70', en: '760', tech: '', man: '', ser: '' }; } })(),
-    probe: null
+    probe: null, auto: false, waitAt: 0,
+    armed: api.store.get('battMorning', '') === '1', marks: []
   };
   const saveForm = () => { try { api.store.set('battForm', JSON.stringify(st.form)); } catch (e) {} };
   const now = () => performance.now();
@@ -114,10 +115,21 @@ function createBatt(api) {
   const analyze = () => st.run === 'ign' ? analyzeIgn() : st.run === 'crank' ? analyzeCrank() : analyzeCharge();
 
   /* ---------- test ---------- */
-  function start(kind) {
+  function start(kind, auto) {
     if (!api.elm() || st.run) return;
-    Object.assign(st, { run: kind, t0: now(), samples: [], res: null, msg: '', crankAt: null, startAt: null, lostConn: false, kind });
+    Object.assign(st, { run: kind, t0: now(), samples: [], res: null, msg: '', crankAt: null, startAt: null, lostConn: false, kind, auto: !!auto });
     api.ensurePolling(); ui();
+  }
+  /* Poranny start: rano po połączeniu test rozruchu rusza sam, skan modułów czeka na jego koniec, a przed rozruchem
+     i tuż po nim aplikacja czyta tylko obroty i napięcie, żeby złapać jak najwięcej odczytów w czasie kręcenia rozrusznikiem. */
+  function onConnect() {
+    if (!st.armed || st.run) return false;
+    st.marks = []; start('crank', true); api.showTab('batt'); setTimeout(() => { const g = $('#akGo'); if (g) g.scrollIntoView({ block: 'center' }); }, 300); return true;
+  }
+  function finishAuto() { if (st.auto) { st.auto = false; api.afterMorning(); } }
+  function mark(what) {
+    const t = new Date(), txt = what === 'epc' ? 'znacznik: EPC się zapaliło' : 'znacznik: czuję ograniczenie mocy';
+    st.marks.push({ t, txt }); api.mark(txt); ui();
   }
   function stop(manual) {
     if (!st.run) return;
@@ -126,9 +138,9 @@ function createBatt(api) {
     if (st.samples.length >= 5) {
       const csv = ['czas [s];napięcie sterownika [V];napięcie z adaptera [V];obroty [obr/min];płyn [°C]', ...st.samples.map(s => [f(s.t, 2), s.u ?? '', s.a ?? '', s.rpm ?? '', s.ect ?? ''].join(';').replace(/\./g, ','))].join('\n');
       const txt = [`== Akumulator: ${T.name} ==`, ...st.res.map(c => `[${LV[c.lvl]}] ${c.title}: ${c.text}`), '', '== Próbki (CSV) ==', csv].join('\n');
-      api.saveLog('test-akumulator', `Akumulator: ${T.name}`, txt);
+      api.saveLog('test-akumulator', `Akumulator: ${T.name}${st.auto ? ' (poranny start)' : ''}`, txt);
     }
-    ui();
+    finishAuto(); ui();
   }
   function tick() {
     if (!st.run) return;
@@ -137,8 +149,12 @@ function createBatt(api) {
     const fresh = api.fresh;
     st.samples.push({ t, u: fresh('ecuV') ? v.ecuV : null, a: v.adapterV, rpm: fresh('rpm') ? v.rpm : null, ect: v.coolant });
     if (st.run === 'crank') {
+      /* Poranny start, a silnik już pracował przy połączeniu: to nie pierwszy start, nic nie zapisujemy. */
+      if (st.auto && st.startAt == null && fresh('rpm') && (v.rpm ?? 0) >= 400 && !st.samples.slice(0, -1).some(x => x.rpm != null)) {
+        st.run = null; st.res = null; st.msg = ''; st.morMsg = 'Silnik już pracował przy połączeniu, więc poranny test pominięty. Zostaje włączony na następny start.'; finishAuto(); ui(); return;
+      }
       if (st.startAt == null && (v.rpm ?? 0) >= 600 && fresh('rpm')) st.startAt = t;
-      if (st.startAt != null && t - st.startAt >= 25) { stop(false); return; }
+      if (st.startAt != null && t - st.startAt >= 30) { stop(false); return; }
     }
     if (t >= total(T)) { stop(false); return; }
     ui(true);
@@ -146,9 +162,11 @@ function createBatt(api) {
   function phaseInfo() {
     const T = TESTS[st.run], t = (now() - st.t0) / 1000;
     if (st.run === 'crank') {
-      if (st.startAt != null) return { text: 'Silnik pracuje. Nagrywam jeszcze chwilę.', left: Math.max(0, 25 - (t - st.startAt)) };
+      if (st.startAt != null) return { text: 'Silnik pracuje. Nagrywam jeszcze chwilę.', left: Math.max(0, 30 - (t - st.startAt)) };
       const crk = st.samples.some(s => (s.rpm ?? 0) > 0);
-      return { text: crk ? 'Rozruch trwa…' : TESTS.crank.phases[0][0] + ' Czekam na rozruch.', left: Math.max(0, T.max - t) };
+      if (crk) return { text: 'Rozruch trwa…', left: Math.max(0, T.max - t) };
+      if (st.auto && !ready()) return { text: 'Czekam na pierwszy odczyt statusu P2563, jeszcze nie odpalaj…', left: Math.max(0, T.max - t), wait: true };
+      return { text: st.auto ? 'ODPAL TERAZ' : TESTS.crank.phases[0][0] + ' Czekam na rozruch.', left: Math.max(0, T.max - t), go: st.auto };
     }
     let acc = 0; for (const p of T.phases) { if (t < acc + p[1]) return { text: p[0], left: acc + p[1] - t }; acc += p[1]; }
     return { text: T.phases[T.phases.length - 1][0], left: 0 };
@@ -232,7 +250,19 @@ function createBatt(api) {
     const row = (ok, t) => `<li><span class="vd ${ok == null ? 'na' : ok ? 'ok' : 'warn'}">${ok == null ? '?' : ok ? 'OK' : 'Nie'}</span><div><b>${esc(t)}</b></div></li>`;
     return `<ul class="checks">${row(on ? true : false, 'Adapter połączony')}${row(rpm == null ? null : rpm < 100, 'Silnik nie pracuje, zapłon włączony' + (rpm != null ? ` (${f(rpm, 0)} obr/min)` : ''))}${row(u == null ? null : u >= 12.5, `Napięcie sterownika co najmniej 12,5 V${u != null ? ` (teraz ${f(u, 2)} V)` : ''}. Przy niższym podłącz prostownik.`)}</ul>`;
   }
+  const ready = () => api.p2Ready() || (now() - st.t0) / 1000 > 8;
+  function morningUi() {
+    const a = $('#akArm'); if (!a) return;
+    a.textContent = st.armed ? 'Poranny start: włączony (wyłącz)' : 'Przygotuj na rano';
+    a.classList.toggle('primary', !st.armed);
+    const m = $('#akMorSt');
+    if (m) m.textContent = st.run === 'crank' && st.auto ? '' : st.morMsg || (st.armed ? 'Gotowe. Rano po połączeniu test ruszy sam.' : 'Wyłączony.');
+    const g = $('#akGo'); if (g) { const on = st.run === 'crank' && st.auto; g.hidden = !on; if (on) { const p = phaseInfo(); g.textContent = p.text; g.dataset.go = p.go ? '1' : ''; } }
+    const on = !!api.elm(); for (const id of ['#akMarkEpc', '#akMarkLim']) { const b = $(id); if (b) b.disabled = !on; }
+    const k = $('#akMarks'); if (k) k.textContent = st.marks.length ? 'Zapisane znaczniki: ' + st.marks.map(x => `${x.t.toLocaleTimeString('pl-PL')} ${x.txt.replace('znacznik: ', '')}`).join(' · ') : '';
+  }
   function ui(light) {
+    morningUi();
     const s = $('#akStatus'); if (!s) return;
     if (st.run) { const p = phaseInfo(), n = st.samples.length; s.textContent = `${TESTS[st.run].name}: ${p.text} · jeszcze ${mmss(p.left)} · ${n} próbek`; }
     else s.textContent = st.res ? `${TESTS[st.kind].name}: ${st.msg}` : '';
@@ -267,6 +297,15 @@ function createBatt(api) {
     host.innerHTML = `
       <div class="panel-intro"><h2 class="ptitle">Akumulator</h2>
         <p class="muted">Napięcia na żywo, testy rozruchu i ładowania, odczyt danych akumulatora z auta i przewodnik wymiany. Oceny napięć to ogólne progi dla akumulatorów 12 V, nie dane producenta tego modelu.</p></div>
+      <div class="card ptest" id="akMorning"><h3 class="sect">Poranny start</h3>
+        <p class="small muted">Nagrywa pierwszy start dnia: napięcie przy zapłonie, w czasie rozruchu i po nim, moment testu P2563 oraz Twoje znaczniki EPC. Włącz wieczorem. Rano po połączeniu test ruszy sam, a skan modułów poczeka, aż się skończy.</p>
+        <div class="actions"><button class="btn" id="akArm" type="button"></button></div>
+        <p class="small" id="akMorSt"></p>
+        <p class="kphase akgo" id="akGo" aria-live="assertive" hidden></p>
+        <div class="actions"><button class="btn" id="akMarkEpc" type="button">EPC się zapaliło</button><button class="btn" id="akMarkLim" type="button">Czuję ograniczenie mocy</button></div>
+        <p class="small" id="akMarks"></p>
+        <ol class="steps" style="margin-top:8px"><li><b>Wieczorem</b><span>Naciśnij „Przygotuj na rano”. Ustawienie zostaje w telefonie.</span></li><li><b>Rano</b><span>Wepnij adapter, włącz zapłon bez odpalania i od razu „Port COM”.</span></li><li><b>Start</b><span>Aplikacja sama otworzy tę zakładkę. Poczekaj na „ODPAL TERAZ” (kilka sekund) i odpal jak zwykle.</span></li><li><b>Jazda</b><span>Telefon zostaje połączony, z włączonym ekranem. Gdy zapali się EPC albo poczujesz ograniczenie, naciśnij przycisk niżej, ale tylko wtedy, gdy to bezpieczne (np. na światłach). Wystarczy przybliżony czas.</span></li><li><b>Po jeździe</b><span>Poczekaj, aż logi wyślą się na GitHub (zakładka Logi).</span></li></ol>
+      </div>
       <div class="card"><h3 class="sect">Teraz</h3><div id="akLive">${minisHtml()}</div>
         <p class="small muted" id="akLastKey"></p></div>
       <div class="card ptest"><h3 class="sect">Testy</h3>
@@ -310,6 +349,8 @@ function createBatt(api) {
     $('#akScan_before').onclick = () => scanGw('before'); $('#akScan_after').onclick = () => scanGw('after'); $('#akScan_now').onclick = () => scanGw('now');
     $('#akScanStop').onclick = () => { st.scan.stopReq = true; };
     $('#akCmp').onclick = compare;
+    $('#akArm').onclick = () => { st.armed = !st.armed; st.morMsg = ''; api.store.set('battMorning', st.armed ? '1' : ''); ui(); };
+    $('#akMarkEpc').onclick = () => mark('epc'); $('#akMarkLim').onclick = () => mark('lim');
     lastKey(); ui();
   }
   function lastKey() {
@@ -318,7 +359,12 @@ function createBatt(api) {
   }
   /* ---------- API ---------- */
   const keysFor = tab => (tab === 'batt' || st.run) ? KEYS : null;
+  const tNow = () => (now() - st.t0) / 1000;
+  /* Przed rozruchem i 3 s po nim: tylko obroty i napięcie (jedno krótkie zapytanie, kilka odczytów na sekundę). */
+  const fastKeys = () => st.run === 'crank' && (st.startAt == null || tNow() - st.startAt < 3) ? ['rpm', 'ecuV'] : null;
+  /* Wolne odczyty (status błędu ok. 1,5 s, skan) wstrzymane od gotowości do rozruchu do 10 s po uruchomieniu silnika. */
+  const hold = () => st.run === 'crank' && (st.startAt == null || tNow() - st.startAt < 10);
   function onTab(t) { if (t === 'batt') { lastKey(); ui(); } }
-  function stopAll() { if (st.run) { st.lostConn = !api.elm(); stop(false); } if (st.scan.running) st.scan.stopReq = true; }
-  return { render, tick, keysFor, onTab, stopAll, busy: () => !!st.run || st.busy };
+  function stopAll() { if (st.run) { st.lostConn = !api.elm(); stop(false); } st.auto = false; if (st.scan.running) st.scan.stopReq = true; }
+  return { render, tick, keysFor, onTab, stopAll, onConnect, fastKeys, hold, busy: () => !!st.run || st.busy };
 }
