@@ -342,7 +342,7 @@ details.help a { color: var(--accent); }
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-25 14:47 UTC</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-25 14:57 UTC</p>
       </div>
     </div>
     <div class="conn">
@@ -505,7 +505,7 @@ details.help a { color: var(--accent); }
 </main>
 
 <script>
-const APP_VERSION = '2026-11-25 14:47 UTC';
+const APP_VERSION = '2026-11-25 14:57 UTC';
 /* ===== VAG Diagnostyka – rdzeń: ELM327 / OBD-II / UDS / symulator ===== */
 'use strict';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -917,7 +917,7 @@ class ELM {
     this.t = transport; this.log = log || (() => {});
     this.buf = ''; this.waiter = null; this.q = Promise.resolve(); this.opq = Promise.resolve();
     this.fcOk = true; this.cur = null; this.multiPid = true; this.onWarn = null; this.ident = '';
-    this.st = '64'; this.countOk = true; this.mon = null; this.stale = false; this.multiFail = 0;
+    this.st = '64'; this.countOk = true; this.mon = null; this.stale = false; this.multiFail = 0; this.multiDidFail = 0;
     transport.onData(s => {
       if (this.mon) { this.mon(s); return; }
       this.buf += s;
@@ -1156,8 +1156,10 @@ class ELM {
       const n = this.multiPid ? Math.min(6, queue.length) : 1;
       const ch = queue.splice(0, n);
       const key = ch.map(d => d.pid).join(','), known = this.respLen[key];
-      const useCount = this.fastCount !== false && this.countOk && known != null && (known <= 7 || this.countMulti !== false);
-      return { n, ch, key, known, useCount, req: '01' + ch.map(d => hex2(d.pid)).join('') + (useCount ? '1' : '') };
+      /* Cyfra liczy ramki CAN, nie całe odpowiedzi: przy odpowiedzi wieloramkowej podajemy liczbę ramek (pierwsza 6 bajtów, kolejne po 7). */
+      const frames = known == null ? 0 : known <= 7 ? 1 : 1 + Math.ceil((known - 6) / 7);
+      const useCount = this.fastCount !== false && this.countOk && known != null && frames <= 15 && (known <= 7 || this.countMulti !== false);
+      return { n, ch, key, known, useCount, req: '01' + ch.map(d => hex2(d.pid)).join('') + (useCount ? frames.toString(16).toUpperCase() : '') };
     };
     const handle = ({ n, ch, key, known, useCount }, r) => {
       if (r.err && useCount && (r.err === '?' || r.err === 'NO DATA')) { if (r.err === '?') this.countOk = false; else if (known > 7) this.countMulti = false; else if ((this.countFails = (this.countFails || 0) + 1) >= 3) this.fastCount = false; delete this.respLen[key]; queue.unshift(...ch); return; }
@@ -1386,8 +1388,31 @@ class ELM {
     if (mod.bmw != null) { for (const d of dids) { const b = await this.readDidRaw(mod, d); if (b) out[d] = b; } return out; }
     await this.select(mod.tx, mod.rx);
     const cnt = () => this.fastCount !== false && this.countOk !== false;
-    const grab = (d, r) => { if (!r.err && r.data.startsWith('62' + hex4(d))) { out[d] = bytesOf(r.data).slice(3); return true; } return false; };
-    let todo = dids;
+    const grab = (d, r) => { if (!r.err && r.data.startsWith('62' + hex4(d))) { out[d] = bytesOf(r.data).slice(3); this.didLen[mod.tx + ':' + d] = out[d].length; return true; } return false; };
+    this.didLen = this.didLen || {}; this.multiDid = this.multiDid || {};
+    /* Do trzech numerów w jednym zapytaniu (22 + 3 × 2 bajty mieści się w jednej ramce). Sterownik odpowiada jednym komunikatem
+       62 DID dane DID dane…, a znając długość każdego numeru z wcześniejszego odczytu, dzielimy go na części. Gdy sterownik
+       tego nie obsługuje (błąd albo inna odpowiedź), wracamy do pojedynczych zapytań dla tego modułu. */
+    if (!this.t.batch && this.multiDid[mod.tx] !== false) {
+      const ready = dids.filter(d => this.didLen[mod.tx + ':' + d] != null);
+      for (let i = 0; i + 1 < ready.length && this.multiDid[mod.tx] !== false; i += 3) {
+        const g = ready.slice(i, i + 3); if (g.length < 2) break;
+        const tot = 1 + g.reduce((a, d) => a + 2 + this.didLen[mod.tx + ':' + d], 0), frames = tot <= 7 ? 1 : 1 + Math.ceil((tot - 6) / 7);
+        const useCount = cnt() && frames <= 15;
+        const r = await this.request('22' + g.map(hex4).join('') + (useCount ? frames.toString(16).toUpperCase() : ''), { attempts: 1 });
+        if (r.err === '?') { this.countOk = false; break; }
+        let ok = !r.err;
+        if (ok) {
+          const b = bytesOf(r.data); let k = 1; const part = {};
+          if (b[0] !== 0x62) ok = false;
+          for (const d of g) { if (!ok) break; const L = this.didLen[mod.tx + ':' + d]; if (b[k] !== (d >> 8) || b[k + 1] !== (d & 255) || k + 2 + L > b.length) { ok = false; break; } part[d] = b.slice(k + 2, k + 2 + L); k += 2 + L; }
+          if (ok && k === b.length) { Object.assign(out, part); this.multiDidFail = 0; continue; }
+          ok = false;
+        }
+        if (r.nrc || ++this.multiDidFail >= 2) this.multiDid[mod.tx] = false;
+      }
+    }
+    let todo = dids.filter(d => !(d in out));
     for (let pass = 0; pass < 2 && todo.length; pass++) {
       const useCount = cnt(), failed = [];
       const reqs = todo.map(d => '22' + hex4(d) + (useCount ? '1' : ''));
@@ -5042,12 +5067,12 @@ function createBridge(api) {
      Usterka wastegate pojawia się u tego auta tylko po zimnym starcie. Co 30 s czytamy status P2563 ze sterownika
      (jedna krótka odpowiedź 19 02) i trzymamy ostatnie 5 minut wszystkich odczytów. Każda zmiana statusu trafia do logu,
      a gdy test sterownika nie przejdzie, log dostaje okno danych sprzed błędu i 90 s po nim (wastegate rzeczywisty i zadany). */
-  const P2_RAW = '0039FE', P2_EVERY = 30000, P2_FASTEVERY = 2000, P2_AFTER = 90000, P2_WIN = 180000;
+  const P2_RAW = '0039FE', P2_EVERY = 30000, P2_FASTEVERY = 4000, P2_AFTER = 90000, P2_WIN = 180000;
   const P2_FAST = ['rpm', 'ecuV', 'adapterV', 'coolant', 'wgU', 'wgUsp', 'baroU', 'mapU', 'chgU'];
   const p2 = { elm: null };
   /* Okno po włączeniu zapłonu: silnik stoi, a od połączenia albo od ponownego włączenia zapłonu minęły najwyżej 3 minuty. */
   const p2KeyOn = () => brand() === 'vag' && p2.elm === elm && !!p2.wakeAt && Date.now() - p2.wakeAt < P2_WIN && (vals.rpm ?? 0) < 100 && !p2.ignOff;
-  /* Status P2563 czytamy co 2 s przez 3 min po zapłonie także po uruchomieniu silnika: tak widać, kiedy w danym cyklu sterownik wykonał test. */
+  /* Status P2563 czytamy co 4 s przez najwyżej 3 min po zapłonie, także po uruchomieniu silnika, aż test się wykona: tak widać, kiedy w danym cyklu sterownik wykonał test. */
   const p2Early = () => p2.elm === elm && !!p2.wakeAt && Date.now() - p2.wakeAt < P2_WIN && !p2.ignOff;
   const p2Bits = st => [st & 0x01 ? 'test nie przechodzi teraz' : 'test przechodzi', st & 0x02 ? 'nie przeszedł w tym cyklu' : '', st & 0x40 ? 'test w tym cyklu jeszcze nie wykonany' : 'test w tym cyklu wykonany', st & 0x08 ? 'potwierdzony' : '', st & 0x80 ? 'kontrolka' : ''].filter(Boolean).join(', ');
   async function p2Tick(e) {
@@ -5057,7 +5082,7 @@ function createBridge(api) {
     /* Zapłon: 3 kolejne cykle bez obrotów to wyłączony zapłon, pierwsza odpowiedź potem to ponowne włączenie. */
     const fresh = k => cycle - (seen[k] ?? -99) <= 1;
     if (!fresh('rpm')) { if (++p2.miss >= 3 && !p2.ignOff) { p2.ignOff = true; p2.offAt = now; p2.hist.push({ t: now, note: 'zapłon wyłączony (sterownik nie odpowiada)' }); p2Save(); } }
-    else { p2.miss = 0; if (p2.ignOff) { const off = p2.offAt ? now - p2.offAt : null; p2.ignOff = false; p2.wakeAt = now; p2.at = 0; p2.cyc.push({ wake: now, off }); p2.hist.push({ t: now, note: `zapłon włączony ponownie${off != null ? ` po ${p2Dur(off)} postoju` : ''}` }); logLine('— zapłon włączony: strażnik P2563 czyta status co 2 s przez 3 min'); } }
+    else { p2.miss = 0; if (p2.ignOff) { const off = p2.offAt ? now - p2.offAt : null; p2.ignOff = false; p2.wakeAt = now; p2.at = 0; p2.cyc.push({ wake: now, off }); p2.hist.push({ t: now, note: `zapłon włączony ponownie${off != null ? ` po ${p2Dur(off)} postoju` : ''}` }); logLine('— zapłon włączony: strażnik P2563 czyta status co 4 s, aż sterownik wykona test (najdłużej 3 min)'); } }
     if (p2.ignOff) return;
     if (now - p2.last >= (p2KeyOn() ? 250 : 1000)) {
       p2.last = now; const row = { t: now };
@@ -5066,7 +5091,9 @@ function createBridge(api) {
       if (p2.ect0 == null && vals.coolant != null) { p2.ect0 = vals.coolant; p2.run0 = vals.runTime; }
     }
     for (const v of p2.ev) if (!v.done && now - v.at >= P2_AFTER) { v.done = true; p2Save(); }
-    if (now - p2.at < (p2Early() ? P2_FASTEVERY : P2_EVERY)) return;
+    /* Odczyt statusu trwa u Simos18 ok. 1,5 s (sterownik odpowiada „czekaj”), więc szybko czytamy tylko do chwili, gdy test w tym cyklu się wykona. */
+    const cyNow = p2.cyc[p2.cyc.length - 1];
+    if (now - p2.at < (p2Early() && !(cyNow && cyNow.done != null) ? P2_FASTEVERY : P2_EVERY)) return;
     p2.at = now;
     const d = await e.op(() => e.readModuleDtcs(C2MOD)).catch(() => null);
     if (!d || d.err || e !== elm) return;
@@ -5098,7 +5125,7 @@ function createBridge(api) {
     L.push(p2.ev.length ? `Test sterownika NIE PRZESZEDŁ ${p2.ev.length}×: ${p2.ev.map(v => `${ts(v.at)} (${rel(v.at)} od połączenia${v.first ? ', już przy pierwszym odczycie' : ''})`).join(', ')}.` : 'W tym połączeniu test P2563 nie zgłosił usterki.');
     const cs = p2.cyc.filter(c => c.done != null);
     if (cs.length) { L.push('', '== Kiedy sterownik wykonał test w kolejnych cyklach zapłonu =='); for (const c of cs) L.push(`${ts(c.wake)} · ${p2CycText(c)}`); }
-    L.push('', '== Zmiany statusu P2563 (co 2 s przez 3 min po zapłonie, potem co 30 s) ==');
+    L.push('', '== Zmiany statusu P2563 (co 4 s po zapłonie, aż test się wykona, potem co 30 s) ==');
     for (const h of p2.hist) if (h.note) L.push(`${ts(h.t)} (+${rel(h.t)}) · ${h.note}`); else L.push(`${ts(h.t)} (+${rel(h.t)}) · status 0x${h.st.toString(16).toUpperCase().padStart(2, '0')}: ${p2Bits(h.st)} · płyn ${f1(h.ect)} °C, dolot ${f1(h.iat)} °C, otoczenie ${f1(h.amb)} °C, silnik pracuje ${h.run ?? '—'} s, ${f1(h.rpm)} obr/min, ${f1(h.v)} km/h, napięcie sterownika ${h.u == null ? '—' : f1(h.u) + ' V'}`);
     const win = p2.ev.length ? p2.buf.filter(r => p2.ev.some(v => r.t >= v.at - 240000 && r.t <= v.at + P2_AFTER)) : [];
     if (win.length) {

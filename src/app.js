@@ -795,12 +795,12 @@
      Usterka wastegate pojawia się u tego auta tylko po zimnym starcie. Co 30 s czytamy status P2563 ze sterownika
      (jedna krótka odpowiedź 19 02) i trzymamy ostatnie 5 minut wszystkich odczytów. Każda zmiana statusu trafia do logu,
      a gdy test sterownika nie przejdzie, log dostaje okno danych sprzed błędu i 90 s po nim (wastegate rzeczywisty i zadany). */
-  const P2_RAW = '0039FE', P2_EVERY = 30000, P2_FASTEVERY = 2000, P2_AFTER = 90000, P2_WIN = 180000;
+  const P2_RAW = '0039FE', P2_EVERY = 30000, P2_FASTEVERY = 4000, P2_AFTER = 90000, P2_WIN = 180000;
   const P2_FAST = ['rpm', 'ecuV', 'adapterV', 'coolant', 'wgU', 'wgUsp', 'baroU', 'mapU', 'chgU'];
   const p2 = { elm: null };
   /* Okno po włączeniu zapłonu: silnik stoi, a od połączenia albo od ponownego włączenia zapłonu minęły najwyżej 3 minuty. */
   const p2KeyOn = () => brand() === 'vag' && p2.elm === elm && !!p2.wakeAt && Date.now() - p2.wakeAt < P2_WIN && (vals.rpm ?? 0) < 100 && !p2.ignOff;
-  /* Status P2563 czytamy co 2 s przez 3 min po zapłonie także po uruchomieniu silnika: tak widać, kiedy w danym cyklu sterownik wykonał test. */
+  /* Status P2563 czytamy co 4 s przez najwyżej 3 min po zapłonie, także po uruchomieniu silnika, aż test się wykona: tak widać, kiedy w danym cyklu sterownik wykonał test. */
   const p2Early = () => p2.elm === elm && !!p2.wakeAt && Date.now() - p2.wakeAt < P2_WIN && !p2.ignOff;
   const p2Bits = st => [st & 0x01 ? 'test nie przechodzi teraz' : 'test przechodzi', st & 0x02 ? 'nie przeszedł w tym cyklu' : '', st & 0x40 ? 'test w tym cyklu jeszcze nie wykonany' : 'test w tym cyklu wykonany', st & 0x08 ? 'potwierdzony' : '', st & 0x80 ? 'kontrolka' : ''].filter(Boolean).join(', ');
   async function p2Tick(e) {
@@ -810,7 +810,7 @@
     /* Zapłon: 3 kolejne cykle bez obrotów to wyłączony zapłon, pierwsza odpowiedź potem to ponowne włączenie. */
     const fresh = k => cycle - (seen[k] ?? -99) <= 1;
     if (!fresh('rpm')) { if (++p2.miss >= 3 && !p2.ignOff) { p2.ignOff = true; p2.offAt = now; p2.hist.push({ t: now, note: 'zapłon wyłączony (sterownik nie odpowiada)' }); p2Save(); } }
-    else { p2.miss = 0; if (p2.ignOff) { const off = p2.offAt ? now - p2.offAt : null; p2.ignOff = false; p2.wakeAt = now; p2.at = 0; p2.cyc.push({ wake: now, off }); p2.hist.push({ t: now, note: `zapłon włączony ponownie${off != null ? ` po ${p2Dur(off)} postoju` : ''}` }); logLine('— zapłon włączony: strażnik P2563 czyta status co 2 s przez 3 min'); } }
+    else { p2.miss = 0; if (p2.ignOff) { const off = p2.offAt ? now - p2.offAt : null; p2.ignOff = false; p2.wakeAt = now; p2.at = 0; p2.cyc.push({ wake: now, off }); p2.hist.push({ t: now, note: `zapłon włączony ponownie${off != null ? ` po ${p2Dur(off)} postoju` : ''}` }); logLine('— zapłon włączony: strażnik P2563 czyta status co 4 s, aż sterownik wykona test (najdłużej 3 min)'); } }
     if (p2.ignOff) return;
     if (now - p2.last >= (p2KeyOn() ? 250 : 1000)) {
       p2.last = now; const row = { t: now };
@@ -819,7 +819,9 @@
       if (p2.ect0 == null && vals.coolant != null) { p2.ect0 = vals.coolant; p2.run0 = vals.runTime; }
     }
     for (const v of p2.ev) if (!v.done && now - v.at >= P2_AFTER) { v.done = true; p2Save(); }
-    if (now - p2.at < (p2Early() ? P2_FASTEVERY : P2_EVERY)) return;
+    /* Odczyt statusu trwa u Simos18 ok. 1,5 s (sterownik odpowiada „czekaj”), więc szybko czytamy tylko do chwili, gdy test w tym cyklu się wykona. */
+    const cyNow = p2.cyc[p2.cyc.length - 1];
+    if (now - p2.at < (p2Early() && !(cyNow && cyNow.done != null) ? P2_FASTEVERY : P2_EVERY)) return;
     p2.at = now;
     const d = await e.op(() => e.readModuleDtcs(C2MOD)).catch(() => null);
     if (!d || d.err || e !== elm) return;
@@ -851,7 +853,7 @@
     L.push(p2.ev.length ? `Test sterownika NIE PRZESZEDŁ ${p2.ev.length}×: ${p2.ev.map(v => `${ts(v.at)} (${rel(v.at)} od połączenia${v.first ? ', już przy pierwszym odczycie' : ''})`).join(', ')}.` : 'W tym połączeniu test P2563 nie zgłosił usterki.');
     const cs = p2.cyc.filter(c => c.done != null);
     if (cs.length) { L.push('', '== Kiedy sterownik wykonał test w kolejnych cyklach zapłonu =='); for (const c of cs) L.push(`${ts(c.wake)} · ${p2CycText(c)}`); }
-    L.push('', '== Zmiany statusu P2563 (co 2 s przez 3 min po zapłonie, potem co 30 s) ==');
+    L.push('', '== Zmiany statusu P2563 (co 4 s po zapłonie, aż test się wykona, potem co 30 s) ==');
     for (const h of p2.hist) if (h.note) L.push(`${ts(h.t)} (+${rel(h.t)}) · ${h.note}`); else L.push(`${ts(h.t)} (+${rel(h.t)}) · status 0x${h.st.toString(16).toUpperCase().padStart(2, '0')}: ${p2Bits(h.st)} · płyn ${f1(h.ect)} °C, dolot ${f1(h.iat)} °C, otoczenie ${f1(h.amb)} °C, silnik pracuje ${h.run ?? '—'} s, ${f1(h.rpm)} obr/min, ${f1(h.v)} km/h, napięcie sterownika ${h.u == null ? '—' : f1(h.u) + ' V'}`);
     const win = p2.ev.length ? p2.buf.filter(r => p2.ev.some(v => r.t >= v.at - 240000 && r.t <= v.at + P2_AFTER)) : [];
     if (win.length) {

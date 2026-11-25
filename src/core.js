@@ -409,7 +409,7 @@ class ELM {
     this.t = transport; this.log = log || (() => {});
     this.buf = ''; this.waiter = null; this.q = Promise.resolve(); this.opq = Promise.resolve();
     this.fcOk = true; this.cur = null; this.multiPid = true; this.onWarn = null; this.ident = '';
-    this.st = '64'; this.countOk = true; this.mon = null; this.stale = false; this.multiFail = 0;
+    this.st = '64'; this.countOk = true; this.mon = null; this.stale = false; this.multiFail = 0; this.multiDidFail = 0;
     transport.onData(s => {
       if (this.mon) { this.mon(s); return; }
       this.buf += s;
@@ -648,8 +648,10 @@ class ELM {
       const n = this.multiPid ? Math.min(6, queue.length) : 1;
       const ch = queue.splice(0, n);
       const key = ch.map(d => d.pid).join(','), known = this.respLen[key];
-      const useCount = this.fastCount !== false && this.countOk && known != null && (known <= 7 || this.countMulti !== false);
-      return { n, ch, key, known, useCount, req: '01' + ch.map(d => hex2(d.pid)).join('') + (useCount ? '1' : '') };
+      /* Cyfra liczy ramki CAN, nie całe odpowiedzi: przy odpowiedzi wieloramkowej podajemy liczbę ramek (pierwsza 6 bajtów, kolejne po 7). */
+      const frames = known == null ? 0 : known <= 7 ? 1 : 1 + Math.ceil((known - 6) / 7);
+      const useCount = this.fastCount !== false && this.countOk && known != null && frames <= 15 && (known <= 7 || this.countMulti !== false);
+      return { n, ch, key, known, useCount, req: '01' + ch.map(d => hex2(d.pid)).join('') + (useCount ? frames.toString(16).toUpperCase() : '') };
     };
     const handle = ({ n, ch, key, known, useCount }, r) => {
       if (r.err && useCount && (r.err === '?' || r.err === 'NO DATA')) { if (r.err === '?') this.countOk = false; else if (known > 7) this.countMulti = false; else if ((this.countFails = (this.countFails || 0) + 1) >= 3) this.fastCount = false; delete this.respLen[key]; queue.unshift(...ch); return; }
@@ -878,8 +880,31 @@ class ELM {
     if (mod.bmw != null) { for (const d of dids) { const b = await this.readDidRaw(mod, d); if (b) out[d] = b; } return out; }
     await this.select(mod.tx, mod.rx);
     const cnt = () => this.fastCount !== false && this.countOk !== false;
-    const grab = (d, r) => { if (!r.err && r.data.startsWith('62' + hex4(d))) { out[d] = bytesOf(r.data).slice(3); return true; } return false; };
-    let todo = dids;
+    const grab = (d, r) => { if (!r.err && r.data.startsWith('62' + hex4(d))) { out[d] = bytesOf(r.data).slice(3); this.didLen[mod.tx + ':' + d] = out[d].length; return true; } return false; };
+    this.didLen = this.didLen || {}; this.multiDid = this.multiDid || {};
+    /* Do trzech numerów w jednym zapytaniu (22 + 3 × 2 bajty mieści się w jednej ramce). Sterownik odpowiada jednym komunikatem
+       62 DID dane DID dane…, a znając długość każdego numeru z wcześniejszego odczytu, dzielimy go na części. Gdy sterownik
+       tego nie obsługuje (błąd albo inna odpowiedź), wracamy do pojedynczych zapytań dla tego modułu. */
+    if (!this.t.batch && this.multiDid[mod.tx] !== false) {
+      const ready = dids.filter(d => this.didLen[mod.tx + ':' + d] != null);
+      for (let i = 0; i + 1 < ready.length && this.multiDid[mod.tx] !== false; i += 3) {
+        const g = ready.slice(i, i + 3); if (g.length < 2) break;
+        const tot = 1 + g.reduce((a, d) => a + 2 + this.didLen[mod.tx + ':' + d], 0), frames = tot <= 7 ? 1 : 1 + Math.ceil((tot - 6) / 7);
+        const useCount = cnt() && frames <= 15;
+        const r = await this.request('22' + g.map(hex4).join('') + (useCount ? frames.toString(16).toUpperCase() : ''), { attempts: 1 });
+        if (r.err === '?') { this.countOk = false; break; }
+        let ok = !r.err;
+        if (ok) {
+          const b = bytesOf(r.data); let k = 1; const part = {};
+          if (b[0] !== 0x62) ok = false;
+          for (const d of g) { if (!ok) break; const L = this.didLen[mod.tx + ':' + d]; if (b[k] !== (d >> 8) || b[k + 1] !== (d & 255) || k + 2 + L > b.length) { ok = false; break; } part[d] = b.slice(k + 2, k + 2 + L); k += 2 + L; }
+          if (ok && k === b.length) { Object.assign(out, part); this.multiDidFail = 0; continue; }
+          ok = false;
+        }
+        if (r.nrc || ++this.multiDidFail >= 2) this.multiDid[mod.tx] = false;
+      }
+    }
+    let todo = dids.filter(d => !(d in out));
     for (let pass = 0; pass < 2 && todo.length; pass++) {
       const useCount = cnt(), failed = [];
       const reqs = todo.map(d => '22' + hex4(d) + (useCount ? '1' : ''));
