@@ -824,7 +824,7 @@
     const x = d.dtcs.find(z => z.raw === P2_RAW), st = x ? x.status : 0, prev = p2.st;
     if (st === prev) return;
     p2.st = st;
-    p2.hist.push({ t: now, st, ect: vals.coolant, iat: vals.iat, amb: vals.ambient, run: vals.runTime, rpm: vals.rpm, v: vals.speed, u: vals.ecuV });
+    p2.hist.push({ t: now, st, ect: vals.coolant, iat: vals.iat, amb: vals.ambient, run: vals.runTime, rpm: vals.rpm, v: vals.speed, u: cycle - (seen.ecuV ?? -99) <= 3 ? vals.ecuV : null });
     /* Zdarzenie: test właśnie nie przeszedł (bit 0x01 albo 0x02 pojawił się względem poprzedniego odczytu). */
     const fail = prev !== undefined ? ((st & 0x01) && !(prev & 0x01)) || ((st & 0x02) && !(prev & 0x02)) : !!(st & 0x02);
     if (fail) { p2.ev.push({ at: now, st, first: prev === undefined }); logLine(`— P2563: test nie przeszedł (status 0x${st.toString(16).toUpperCase()})`); }
