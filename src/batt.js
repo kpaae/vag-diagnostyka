@@ -143,6 +143,7 @@ function createBatt(api) {
     finishAuto(); ui();
   }
   function tick() {
+    misAuto(curTab);
     if (!st.run) return;
     const T = TESTS[st.run], t = (now() - st.t0) / 1000, v = api.vals();
     if (!api.elm()) { st.lostConn = true; stop(false); return; }
@@ -293,28 +294,35 @@ function createBatt(api) {
   }
   function render() {
     const host = $('#battPanel'); if (!host) return;
+    const vag = api.brand() === 'vag';
     const g = (() => { const m = api.report().modules.find(x => x.addr === '19'); return m && m.ident ? `${m.ident['Nr części'] || ''} ${m.ident['System'] || ''} (plik ODX: ${m.ident['Plik ODX'] || '—'})`.trim() : null; })();
     host.innerHTML = `
-      <div class="panel-intro"><h2 class="ptitle">Akumulator</h2>
-        <p class="muted">Napięcia na żywo, testy rozruchu i ładowania, odczyt danych akumulatora z auta i przewodnik wymiany. Oceny napięć to ogólne progi dla akumulatorów 12 V, nie dane producenta tego modelu.</p></div>
+      <div class="panel-intro"><h2 class="ptitle">Start</h2>
+        <p class="muted">Najważniejsze przy uruchamianiu auta: napięcia, błędy zapisane w sterownikach, wypadanie zapłonów oraz testy akumulatora. Oceny napięć to ogólne progi dla akumulatorów 12 V, nie dane producenta tego modelu.</p></div>
+      <div class="card"><h3 class="sect">Napięcia teraz</h3><div id="akLive">${minisHtml()}</div>
+        <p class="small muted" id="akLastKey"></p></div>
+      <div class="card"><h3 class="sect">Błędy na start</h3><div id="akErr"></div>
+        <div class="actions"><button class="btn small" id="akErrScan" type="button">Skanuj ponownie</button><button class="btn small ghost" id="akErrGo" type="button">Szczegóły w zakładce Błędy</button></div></div>
+      <div class="card"><h3 class="sect">Wypadanie zapłonów</h3>
+        <p class="small muted">Liczniki sterownika silnika z trybu 06 OBD: bieżący cykl jazdy i średnia z ostatnich 10 cykli. Przy pracującym silniku aplikacja odświeża je co minutę.</p>
+        <div id="akMis"></div>
+        <div class="actions"><button class="btn small" id="akMisGo" type="button">Odczytaj teraz</button></div></div>
       <div class="card ptest" id="akMorning"><h3 class="sect">Poranny start</h3>
-        <p class="small muted">Nagrywa pierwszy start dnia: napięcie przy zapłonie, w czasie rozruchu i po nim, moment testu P2563 oraz Twoje znaczniki EPC. Włącz wieczorem. Rano po połączeniu test ruszy sam, a skan modułów poczeka, aż się skończy.</p>
+        <p class="small muted">Nagrywa pierwszy start dnia: napięcie przy zapłonie, w czasie rozruchu i po nim, Twoje znaczniki EPC, a w autach VAG także moment testu P2563. Włącz wieczorem. Rano po połączeniu test ruszy sam, a skan modułów poczeka, aż się skończy.</p>
         <div class="actions"><button class="btn" id="akArm" type="button"></button></div>
         <p class="small" id="akMorSt"></p>
         <p class="kphase akgo" id="akGo" aria-live="assertive" hidden></p>
         <div class="actions"><button class="btn" id="akMarkEpc" type="button">EPC się zapaliło</button><button class="btn" id="akMarkLim" type="button">Czuję ograniczenie mocy</button></div>
         <p class="small" id="akMarks"></p>
-        <ol class="steps" style="margin-top:8px"><li><b>Wieczorem</b><span>Naciśnij „Przygotuj na rano”. Ustawienie zostaje w telefonie.</span></li><li><b>Rano</b><span>Wepnij adapter, włącz zapłon bez odpalania i od razu „Port COM”.</span></li><li><b>Start</b><span>Aplikacja sama otworzy tę zakładkę. Poczekaj na „ODPAL TERAZ” (kilka sekund) i odpal jak zwykle.</span></li><li><b>Jazda</b><span>Telefon zostaje połączony, z włączonym ekranem. Gdy zapali się EPC albo poczujesz ograniczenie, naciśnij przycisk niżej, ale tylko wtedy, gdy to bezpieczne (np. na światłach). Wystarczy przybliżony czas.</span></li><li><b>Po jeździe</b><span>Poczekaj, aż logi wyślą się na GitHub (zakładka Logi).</span></li></ol>
+        <details class="tgroup"><summary><span>Jak to działa</span></summary><ol class="steps" style="margin-top:8px"><li><b>Wieczorem</b><span>Naciśnij „Przygotuj na rano”. Ustawienie zostaje w telefonie.</span></li><li><b>Rano</b><span>Wepnij adapter, włącz zapłon bez odpalania i od razu „Port COM”.</span></li><li><b>Start</b><span>Aplikacja sama otworzy tę zakładkę. Poczekaj na „ODPAL TERAZ” (kilka sekund) i odpal jak zwykle.</span></li><li><b>Jazda</b><span>Telefon zostaje połączony, z włączonym ekranem. Gdy zapali się EPC albo poczujesz ograniczenie, naciśnij przycisk niżej, ale tylko wtedy, gdy to bezpieczne (np. na światłach). Wystarczy przybliżony czas.</span></li><li><b>Po jeździe</b><span>Poczekaj, aż logi wyślą się na GitHub (zakładka Logi).</span></li></ol></details>
       </div>
-      <div class="card"><h3 class="sect">Teraz</h3><div id="akLive">${minisHtml()}</div>
-        <p class="small muted" id="akLastKey"></p></div>
       <div class="card ptest"><h3 class="sect">Testy</h3>
         <p class="small muted">Każdy test zapisuje wynik i próbki do logu (idzie na GitHub). Wynik oceniam po napięciu ze sterownika silnika, nie z adaptera.</p>
         <ol class="steps"><li><b>Zapłon</b><span>45 s przy stojącym silniku. Rób rano na zimno, przed uruchomieniem.</span></li><li><b>Rozruch</b><span>Zapłon włączony, start, uruchomienie silnika. Rejestruje najniższe napięcie i czas dojścia do ładowania.</span></li><li><b>Ładowanie</b><span>Trzy fazy na pracującym silniku: jałowy, jałowy z odbiornikami, 2500 obr/min z odbiornikami.</span></li></ol>
         <p class="kphase" id="akStatus" aria-live="polite"></p>
         <div class="actions"><button class="btn" id="akT_ign" type="button">Test: zapłon</button><button class="btn" id="akT_crank" type="button">Test: rozruch</button><button class="btn" id="akT_charge" type="button">Test: ładowanie</button><button class="btn small ghost" id="akStop" type="button" hidden>Zakończ</button></div></div>
       <div class="card" id="akRes" hidden><div class="rbody"></div></div>
-      <div class="card"><h3 class="sect">Dane akumulatora w aucie (odczyt)</h3>
+      <div class="card"${vag ? '' : ' hidden'}><h3 class="sect">Dane akumulatora w aucie (odczyt)</h3>
         <p class="small muted">Auta VAG z monitorem akumulatora trzymają jego dane (pojemność, technologia, producent, numer seryjny) w module 61 albo w gatewayu (19). Według źródeł o MQB adaptację robi się w gatewayu. Dla Twojego auta nie ma otwartych danych, więc aplikacja tylko odczytuje, co moduły podają, a numery wskaże porównanie przed i po wymianie.</p>
         <p class="small">${g ? `Gateway: ${esc(g)}.` : 'Gateway jeszcze nie odczytany: zrób skan modułów.'}</p>
         <p class="small" id="akProbeSt"></p>
@@ -325,7 +333,7 @@ function createBatt(api) {
         <div class="actions"><button class="btn small" id="akScan_before" type="button">Zapisz stan przed wymianą</button><button class="btn small" id="akScan_after" type="button">Zapisz stan po wymianie</button><button class="btn small ghost" id="akScan_now" type="button">Odczyt bieżący</button><button class="btn small" id="akCmp" type="button">Porównaj</button><button class="btn small ghost" id="akScanStop" type="button" hidden>Przerwij</button></div>
         <p class="small muted">Przed: <span id="akSavedBefore"></span><br>Po: <span id="akSavedAfter"></span></p>
         <div id="akDiff"></div></div>
-      <div class="card"><h3 class="sect">Wymiana akumulatora: rejestracja w aucie</h3>
+      <div class="card"${vag ? '' : ' hidden'}><h3 class="sect">Wymiana akumulatora: rejestracja w aucie</h3>
         <p class="small muted">Zapisu do auta z aplikacji jeszcze nie ma. W źródłach nie znalazłem numerów ani formatu danych dla gatewaya tego auta, a zapis w ciemno mógłby uszkodzić adaptacje gatewaya. Rejestrację zrób w VCDS albo OBDeleven. Aplikacja przygotuje wartości, sprawdzi napięcie i zapisze stan przed i po, żeby następnym krokiem dało się zrobić zapis na sprawdzonych numerach.</p>
         <div class="fl2"><label class="fl">Pojemność [Ah] <input id="akCap" class="inp mono" inputmode="numeric" value="${esc(st.form.cap)}"></label>
         <label class="fl">Prąd rozruchowy [A, EN] <input id="akEn" class="inp mono" inputmode="numeric" value="${esc(st.form.en)}"></label>
@@ -351,11 +359,65 @@ function createBatt(api) {
     $('#akCmp').onclick = compare;
     $('#akArm').onclick = () => { st.armed = !st.armed; st.morMsg = ''; api.store.set('battMorning', st.armed ? '1' : ''); ui(); };
     $('#akMarkEpc').onclick = () => mark('epc'); $('#akMarkLim').onclick = () => mark('lim');
+    $('#akErrScan').onclick = () => api.rescan(); $('#akErrGo').onclick = () => api.showTab('errors');
+    $('#akMisGo').onclick = () => readMis(true);
+    errorsUi(); misUi();
     lastKey(); ui();
   }
   function lastKey() {
     const el = $('#akLastKey'); if (!el) return; const k = api.p2Info && api.p2Info();
     el.textContent = k ? `Strażnik P2563 zapisał przy ostatnim włączeniu zapłonu: ${f(k.u, 2)} V (płyn ${f(k.ect, 0)} °C).` : '';
+  }
+  /* ---------- błędy na start ---------- */
+  function errorsUi() {
+    const h = $('#akErr'); if (!h) return;
+    const R = api.report(), on = !!api.elm(), scanning = api.scanning();
+    const b = $('#akErrScan'); if (b) b.disabled = !on || scanning;
+    if (!on) { h.innerHTML = '<p class="small muted">Połącz adapter. Skan błędów rusza sam po połączeniu.</p>'; return; }
+    const rd = R.readiness, o = R.obd, mods = R.modules || [];
+    const obdCodes = o ? [...(o.stored || []).map(c => ({ ...c, kind: 'zapisany' })), ...(o.pending || []).map(c => ({ ...c, kind: 'oczekujący' }))] : [];
+    const modCodes = mods.flatMap(m => (m.dtcs || []).map(d => ({ m, d })));
+    const lines = [];
+    lines.push(`<li><span class="vd ${rd ? (rd.mil ? 'crit' : 'ok') : 'na'}">${rd ? (rd.mil ? 'Świeci' : 'OK') : '?'}</span><div><b>Kontrolka silnika (MIL)</b><p>${rd ? (rd.mil ? `Włączona, kody emisyjne: ${rd.count}.` : 'Wyłączona.') : 'Jeszcze nie odczytano.'}</p></div></li>`);
+    lines.push(`<li><span class="vd ${o ? (obdCodes.length ? 'warn' : 'ok') : 'na'}">${o ? (obdCodes.length ? obdCodes.length : 'OK') : '?'}</span><div><b>Kody OBD silnika</b><p>${o ? (obdCodes.length ? obdCodes.map(c => `${esc(c.code)} (${c.kind})${c.desc ? ' – ' + esc(c.desc) : ''}`).join('<br>') : 'Brak zapisanych i oczekujących.') : scanning ? 'Odczyt w toku…' : 'Jeszcze nie odczytano.'}</p></div></li>`);
+    const top = modCodes.slice(0, 8).map(({ m, d }) => `[${esc(m.addr)}] ${esc(m.name)}: ${esc(d.full || d.code)}${d.desc ? ' – ' + esc(d.desc) : ''} <small class="muted">(${esc((d.flags || []).filter(x => !/^status/.test(x)).join(', '))})</small>`);
+    lines.push(`<li><span class="vd ${mods.length ? (modCodes.length ? 'warn' : 'ok') : 'na'}">${mods.length ? (modCodes.length ? modCodes.length : 'OK') : '?'}</span><div><b>Moduły ${esc(api.BRAND_NAMES[api.brand()] || '')}</b><p>${mods.length ? (modCodes.length ? top.join('<br>') + (modCodes.length > 8 ? `<br>i ${modCodes.length - 8} więcej w zakładce Błędy.` : '') : `Brak błędów w ${mods.length} odczytanych modułach.`) : ''}${scanning ? (mods.length ? '<br>' : '') + 'Skan modułów w toku…' : mods.length ? '' : 'Moduły jeszcze nie odczytane.'}</p></div></li>`);
+    h.innerHTML = `<ul class="checks">${lines.join('')}</ul>`;
+  }
+  /* ---------- wypadanie zapłonów (tryb 06) ---------- */
+  const mis = { res: null, at: 0, busy: false, msg: '' };
+  async function readMis(manual) {
+    const e = api.elm(); if (!e || mis.busy || st.run || api.toolsBusy()) return;
+    mis.busy = true; mis.msg = 'Odczyt…'; misUi();
+    try {
+      const r = await e.op(() => e.readMisfires());
+      mis.res = r; mis.at = Date.now(); mis.msg = r.ok ? '' : `Sterownik nie podał liczników (${r.err}).`;
+      if (r.ok && manual) api.logLine(`— wypadanie zapłonów: ${misRows().map(x => `c${x.c} ${x.cur ?? '—'}/${x.avg ?? '—'}`).join(', ') || 'brak liczników'}`);
+    } catch (x) { mis.msg = 'Nie udało się odczytać: ' + x.message; }
+    mis.busy = false; misUi();
+  }
+  function misRows() {
+    const T = (mis.res && mis.res.tests) || [], rows = [];
+    for (let c = 1; c <= 12; c++) { const L = T.filter(t => t.mid === 0xA1 + c); if (!L.length) continue; const cur = L.find(t => t.tid === 0x0C), avg = L.find(t => t.tid === 0x0B); rows.push({ c, cur: cur ? cur.value : null, avg: avg ? avg.value : null }); }
+    return rows;
+  }
+  function misUi() {
+    const h = $('#akMis'); if (!h) return;
+    const b = $('#akMisGo'); if (b) b.disabled = !api.elm() || mis.busy || !!st.run;
+    if (!mis.res) { h.innerHTML = `<p class="small muted">${esc(mis.msg || (api.elm() ? 'Odczytam po uruchomieniu silnika albo przyciskiem.' : 'Połącz adapter.'))}</p>`; return; }
+    const R = misRows();
+    if (!R.length) { h.innerHTML = `<p class="small">${esc(mis.msg || 'Sterownik nie podaje liczników wypadania zapłonów dla cylindrów (tryb 06, MID A2 i dalej).')}</p>`; return; }
+    const tot = R.reduce((a, r) => a + (r.cur || 0), 0), worst = R.reduce((a, r) => (r.cur || 0) > (a.cur || 0) ? r : a, R[0]), maxv = Math.max(1, ...R.map(r => Math.max(r.cur || 0, r.avg || 0)));
+    const lead = tot === 0 ? '<p class="codehead ok">Brak wypadania zapłonów w bieżącym cyklu jazdy.</p>' : `<p class="codehead ${tot >= 5 && worst.cur > tot * 0.6 ? 'crit' : ''}">${tot} w bieżącym cyklu${tot >= 5 && worst.cur > tot * 0.6 ? `, głównie cylinder ${worst.c}` : ''}.</p>`;
+    h.innerHTML = `${lead}<div class="tblwrap"><table class="tbl"><thead><tr><th>Cylinder</th><th class="num">Bieżący cykl</th><th class="num">Średnia 10 cykli</th><th class="barcol"></th></tr></thead><tbody>${R.map(r => `<tr><td>${r.c}</td><td class="num">${r.cur == null ? '—' : f(r.cur, 0)}</td><td class="num">${r.avg == null ? '—' : f(r.avg, 0)}</td><td class="barcol"><span class="bar" style="width:${Math.round((r.cur || 0) / maxv * 100)}%"></span></td></tr>`).join('')}</tbody></table></div>
+      <p class="small muted">Odczyt ${new Date(mis.at).toLocaleTimeString('pl-PL')}. Licznik bieżącego cyklu zeruje się po każdym uruchomieniu. Pojedyncze zliczenia na zimnym silniku są normalne. Przy kilku zliczeniach w jednym cylindrze zamień cewkę z sąsiednim cylindrem i sprawdź, czy błąd przejdzie razem z nią.</p>`;
+  }
+  /* Automatycznie: na zakładce Start, przy pracującym silniku, co minutę (nie w czasie testu rozruchu). */
+  let misCheck = 0;
+  function misAuto(tab) {
+    const t = Date.now(); if (t - misCheck < 5000) return; misCheck = t;
+    const v = api.vals();
+    if (tab === 'batt' && api.elm() && !st.run && (v.rpm ?? 0) >= 400 && t - mis.at > 60000) readMis(false);
   }
   /* ---------- API ---------- */
   const keysFor = tab => (tab === 'batt' || st.run) ? KEYS : null;
@@ -364,7 +426,8 @@ function createBatt(api) {
   const fastKeys = () => st.run === 'crank' && (st.startAt == null || tNow() - st.startAt < 3) ? ['rpm', 'ecuV'] : null;
   /* Wolne odczyty (status błędu ok. 1,5 s, skan) wstrzymane od gotowości do rozruchu do 10 s po uruchomieniu silnika. */
   const hold = () => st.run === 'crank' && (st.startAt == null || tNow() - st.startAt < 10);
-  function onTab(t) { if (t === 'batt') { lastKey(); ui(); } }
+  let curTab = 'batt';
+  function onTab(t) { curTab = t; if (t === 'batt') { lastKey(); ui(); errorsUi(); misUi(); } }
   function stopAll() { if (st.run) { st.lostConn = !api.elm(); stop(false); } st.auto = false; if (st.scan.running) st.scan.stopReq = true; }
-  return { render, tick, keysFor, onTab, stopAll, onConnect, fastKeys, hold, busy: () => !!st.run || st.busy };
+  return { render, tick, keysFor, onTab, stopAll, onConnect, fastKeys, hold, errorsUi, busy: () => !!st.run || st.busy };
 }

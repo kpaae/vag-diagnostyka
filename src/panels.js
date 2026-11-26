@@ -31,7 +31,7 @@ function createPanels(api) {
     });
   }
   /* Adresy modułów w panelach są podane po VAG-owsku (01 silnik, 08 klimatyzacja); dla BMW tłumaczymy je na adresy BMW. */
-  const mapAddr = a => api.brand() === 'bmw' ? ({ '01': '12', '08': '78' }[a] || a) : a;
+  const mapAddr = a => api.brand() === 'bmw' ? ({ '01': '12', '08': '78' }[a] || a) : api.brand() === 'mitsubishi' ? ({ '01': 'E0' }[a] || a) : a;
   const sameMod = (x, m) => (x.bmw != null || m.bmw != null) ? x.bmw === m.bmw : x.tx === m.tx;
   function codeHits(codes, addrs0) {
     const addrs = addrs0.map(mapAddr), ENG = mapAddr('01');
@@ -569,7 +569,8 @@ function createPanels(api) {
   }
 
   /* =================== Ogrzewanie =================== */
-  const HEAT_KEYS = ['coolant', 'coolant2', 'oil', 'ambient', 'iat', 'rpm', 'speed', 'runTime', 'load'];
+  const HEAT_KEYS = ['coolant', 'coolant2', 'oil', 'ambient', 'iat', 'cat1', 'cat2', 'rpm', 'speed', 'runTime', 'load'];
+  const TEMP_KEYS = ['coolant', 'coolant2', 'oil', 'iat', 'ambient', 'cat1', 'cat2'];
   const HEAT_LIVE = ['coolant', 'coolant2', 'oil', 'ambient', 'speed', 'runTime'];
   const HEAT_CODES = ['P0128', 'P0125', 'P0116', 'P0117', 'P0118', 'P0119', 'P2181', 'P0597', 'P0598', 'P0599', 'P0480', 'P0481', 'P0217'];
   const HEAT_COLS = [['ect', 'płyn [°C]'], ['ect2', 'płyn za chłodnicą [°C]'], ['oil', 'olej [°C]'], ['amb', 'otoczenie [°C]'], ['iat', 'dolot [°C]'], ['rpm', 'obroty [obr/min]'], ['speed', 'prędkość [km/h]'], ['run', 'od uruchomienia [s]']];
@@ -703,16 +704,17 @@ function createPanels(api) {
     const host = $('#heatPanel'); if (!host) return;
     const on = !!api.elm();
     host.innerHTML = `
-      <div class="panel-intro"><h2 class="ptitle">Ogrzewanie</h2>
+      <div class="panel-intro"><h2 class="ptitle">Klima i temperatury</h2>
         <p class="muted">Najpierw sprawdzamy, czy silnik dochodzi do temperatury roboczej. Jeśli tak, przyczyna leży po stronie nagrzewnicy i nawiewu. Jeśli nie, winny jest układ chłodzenia silnika, najczęściej termostat.</p></div>
+      <div class="card"><h3 class="sect">Temperatury</h3><div id="hTemps">${minis(TEMP_KEYS)}</div></div>
       <div class="card"><h3 class="sect">Objaw</h3>
         <div class="seg" id="hSym">${SYMPTOMS.map(([k, l]) => `<button type="button" data-k="${k}" aria-pressed="${k === ht.sym}">${l}</button>`).join('')}</div>
         <p class="small" id="hTip">${esc(SYM_TIP[ht.sym])}</p></div>
-      <div class="card" id="hC2Card"><h3 class="sect">Drugi czujnik temperatury płynu</h3>
+      <div class="card" id="hC2Card"${api.brand() === 'vag' ? '' : ' hidden'}><h3 class="sect">Drugi czujnik temperatury płynu</h3>
         <p class="small muted">Silnik ma dwa czujniki płynu: na wyjściu z silnika (ten widzisz wszędzie) i drugi, za chłodnicą. Drugi pokazuje, kiedy otwiera się obieg radiatora, więc najlepiej ocenia termostat. Jego numeru nie ma w otwartych bazach, dlatego aplikacja szuka go sama. Zrób to raz, przy uruchomionym silniku (ok. 1–3 minuty). Potem test nagrzewania sprawdzi, który z kandydatów zachowuje się jak czujnik za chłodnicą.</p>
         <p class="small" id="hC2St"></p>
         <div class="actions"><button class="btn small" id="hC2Go" type="button">Znajdź czujnik 2</button><button class="btn small ghost" id="hC2Clr" type="button" hidden>Zapomnij wynik</button></div></div>
-      <div class="card" id="kCard"><h3 class="sect">Climatronic: temperatura nawiewu i klapa</h3>
+      <div class="card" id="kCard"${api.brand() === 'vag' ? '' : ' hidden'}><h3 class="sect">Climatronic: temperatura nawiewu i klapa</h3>
         <p class="small muted">Numerów odczytów tego modułu nie ma w otwartych źródłach, więc aplikacja dobiera je z danych. Krok 1 zbiera wszystko, co Climatronic podaje (najlepiej przy pracującym silniku, do ok. 10 minut; przerwanie zachowuje to, co już znaleziono). Krok 2 nagrywa te odczyty, gdy zmieniasz pokrętło temperatury: to, co skacze razem z pokrętłem, to klapa albo temperatura zadana, a to, co narasta powoli, to temperatura nawiewu. Krok 2 rób na rozgrzanym silniku (płyn od 80 °C), z nawiewem na średnim biegu, bez AUTO, bez A/C i bez obiegu wewnętrznego.</p>
         <p class="small" id="kSt"></p>
         <p class="kphase" id="kPhase" hidden></p>
@@ -969,7 +971,7 @@ function createPanels(api) {
   function onTab(t) {
     cur = t;
     if (t === 'boost') { updMinis('bLive'); renderBoostResult(); }
-    if (t === 'heat') { updMinis('hLive'); renderHeatResult(); }
+    if (t === 'heat') { const h = $('#hTemps'); if (h) { h.innerHTML = minis(TEMP_KEYS); updMinis('hTemps'); } updMinis('hLive'); renderHeatResult(); }
   }
   function tick() {
     autoTick();
@@ -992,7 +994,7 @@ function createPanels(api) {
     }
     if (cur === 'boost' && (mt.running || mt.watch)) renderMapLive();
     if (cur === 'boost') updMinis('bLive');
-    if (cur === 'heat') updMinis('hLive');
+    if (cur === 'heat') { updMinis('hLive'); updMinis('hTemps'); }
   }
   function keysFor(tab) {
     const ks = [];

@@ -44,10 +44,12 @@
   };
 
   let elm = null, tr = null, mode = null, sup = new Set();
-  let panels = null, tools = null, batt = null, bridge = null, currentTab = 'live';
+  let panels = null, tools = null, batt = null, bridge = null, currentTab = 'batt', lastScanAt = 0;
   let vals = {}, seen = {}, hist = {}, mm = {}, tiles = [];
   let polling = false, pollRun = 0, cycle = 0, rec = null, wake = null, scanning = false, connecting = false, scanAfterMorning = false;
-  let view = store.get('group', 'silnik'); if (!['silnik', 'chlodzenie', 'doladowanie', 'mieszanka', 'all'].includes(view)) view = 'silnik';
+  /* „Wszystkie dane” bez temperatur: te są w zakładce „Klima i temperatury”. */
+  const LIVE_GROUPS = GROUPS.filter(g => g[0] !== 'chlodzenie');
+  let view = store.get('group', 'all'); if (!['silnik', 'doladowanie', 'mieszanka', 'all'].includes(view)) view = 'all';
   let report = blankReport();
   const logBuf = []; let logTimer = null;
   const sess = { on: false, log: [], id: null, ok: false };
@@ -68,8 +70,12 @@
   /* ---------- marka ---------- */
   const modKey = m => m.bmw != null ? 'b' + m.bmw : 'm' + m.tx;
   function brand() { const o = store.get('brand', 'auto'); return o !== 'auto' ? o : (brandOf(report.vin) || 'vag'); }
-  function modules() { return brand() === 'bmw' ? BMW_MODULES : MODULES; }
-  const BRAND_NAMES = { vag: 'VAG', bmw: 'BMW' };
+  function modules() {
+    const b = brand(); if (b === 'bmw') return BMW_MODULES; if (b !== 'mitsubishi') return MODULES;
+    let extra = []; try { extra = report.vin ? JSON.parse(store.get('mitMods.' + report.vin, '[]')) : []; } catch (x) {}
+    return [...MIT_MODULES, ...extra.filter(m => !MIT_MODULES.some(k => k.tx === m.tx))];
+  }
+  const BRAND_NAMES = { vag: 'VAG', bmw: 'BMW', mitsubishi: 'Mitsubishi' };
   function blankReport() { return { vin: null, calib: null, readiness: null, obd: null, freeze: null, modules: [], absent: [], adapter: null, at: null }; }
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -104,11 +110,24 @@
     $$('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b ? 'true' : 'false'));
     ['live', 'boost', 'heat', 'batt', 'errors', 'tools', 'state', 'log'].forEach(t => { $('#tab-' + t).hidden = t !== b.dataset.tab; });
     currentTab = b.dataset.tab;
+    /* Błędy: po wejściu w zakładkę od razu nowy skan (jeśli ostatni był ponad 20 s temu). */
+    if (b.dataset.tab === 'errors' && elm && !scanning && !(batt && batt.hold()) && Date.now() - lastScanAt > 20000) runScan(false);
     if (b.dataset.tab === 'log') { renderLog(); journal && journal.render(); }
     if (b.dataset.tab === 'live') { sizeSparks(); updateTiles(); }
     panels && panels.onTab(currentTab);
     batt && batt.onTab(currentTab);
   }));
+
+  /* Elementy tylko dla VAG (doładowanie EA888, Simos18, Climatronic, gateway) chowamy przy innych markach. */
+  function applyBrand() {
+    const b = brand(), vag = b === 'vag';
+    const bt = $('[data-tab=boost]'); if (bt) bt.hidden = !vag;
+    if (!vag && currentTab === 'boost') $('[data-tab=batt]').click();
+    const mk = $('.mark'); if (mk) mk.textContent = { vag: 'VAG', bmw: 'BMW', mitsubishi: 'MIT' }[b] || 'OBD';
+    if (document.body.dataset.brand === b) return;
+    document.body.dataset.brand = b;
+    panels && panels.render(); batt && batt.render(); tools && !tools.busy() && tools.render();
+  }
 
   /* ---------- grupy i kafelki ---------- */
   function avail(k) { const c = CAT[k]; if (!c || !elm) return false; if (c.special) return c.when ? c.when() : true; if (c.derived) return c.needs(sup); return sup.has(c.pid); }
@@ -120,7 +139,7 @@
     const host = $('#tiles'); host.innerHTML = ''; tiles = [];
     panels && panels.render();
     if (!elm) { host.innerHTML = '<p class="empty">Połącz adapter, żeby zobaczyć parametry.</p>'; return; }
-    const groups = view === 'all' ? GROUPS : GROUPS.filter(g => g[0] === view);
+    const groups = view === 'all' ? LIVE_GROUPS : LIVE_GROUPS.filter(g => g[0] === view);
     for (const [g, label] of groups) {
       const keys = ORDER[g].filter(avail);
       const sec = el('section', 'group');
@@ -200,7 +219,7 @@
   function activeKeys() {
     const pk = (panels && panels.keysFor(currentTab)) || (batt && batt.keysFor(currentTab));
     if (pk) return pk.filter(avail);
-    return (view === 'all' ? GROUPS.map(g => g[0]) : [view]).flatMap(g => ORDER[g]).filter(avail); }
+    return (view === 'all' ? LIVE_GROUPS.map(g => g[0]) : [view]).flatMap(g => ORDER[g]).filter(avail); }
   function allKeys() { return GROUPS.flatMap(g => ORDER[g[0]]).filter(avail); }
   function defsFor(keys) {
     const pids = new Set([0x0C, 0x04]);
@@ -248,11 +267,11 @@
         const res = await e.op(() => e.readLive(defsFor(keys)));
         if (keys.includes('adapterV') && (cycle % (keyOn ? 4 : 10) === 0 || vals.adapterV == null)) { const v = await e.op(() => e.voltage()); if (v != null) res.adapterV = v; }
         /* Czujnik 2 płynu: wybrany numer co 2. cykl, a w trakcie szukania kandydaci co 3. cykl (bajt − 40 °C). */
-        if (c2.sel != null && keys.includes('coolant2') && cycle % 2 === 0) { const m = await e.op(() => e.readDidsRaw(C2MOD, [c2.sel])), b = m[c2.sel]; if (b && b.length === 1) res.coolant2 = b[0] - 40; }
+        if (brand() === 'vag' && c2.sel != null && keys.includes('coolant2') && cycle % 2 === 0) { const m = await e.op(() => e.readDidsRaw(C2MOD, [c2.sel])), b = m[c2.sel]; if (b && b.length === 1) res.coolant2 = b[0] - 40; }
         /* Nowe połączenie: stare odczyty Simos18 nie mogą trafić do rejestru, a dostępność sprawdzamy od razu, nie dopiero w karcie MAP. */
         if (udsPr.elm !== e) { udsPr.ok.clear(); udsPr.elm = e; for (const c of Object.values(CAT)) if (c.uds != null) delete vals[c.key]; }
         /* Przy wyłączonym zapłonie sterownik nie odpowie, więc pusty wynik sprawdzamy ponownie co 10 s. */
-        if ((udsPr.tried !== e || (!udsPr.ok.size && Date.now() - (udsPr.at || 0) > 10000)) && cycle >= 2) { udsPr.tried = e; udsPr.at = Date.now(); await udsProbe(); }
+        if (brand() === 'vag' && (store.get('brand', 'auto') !== 'auto' || report.vin || cycle > 30) && (udsPr.tried !== e || (!udsPr.ok.size && Date.now() - (udsPr.at || 0) > 10000)) && cycle >= 2) { udsPr.tried = e; udsPr.at = Date.now(); await udsProbe(); }
         { const uk = keys.filter(k => CAT[k] && CAT[k].uds != null && udsPr.ok.has(CAT[k].uds) && (k !== 'baroU' || cycle % 10 === 0 || vals.baroU == null));
           if (uk.length) { const m = await e.op(() => e.readDidsRaw(C2MOD, uk.map(k => CAT[k].uds))); for (const k of uk) { const def = SIMOS18_DIDS.find(d => d.did === CAT[k].uds), v = m[CAT[k].uds] && decodeSimosDid(def, m[CAT[k].uds]); if (v != null) res[k] = v; } } }
         if (c2.probe && c2.sel == null && cycle % 3 === 0) for (const d of c2.cands) { if (e !== elm) break; const b = await e.op(() => e.readDidRaw(C2MOD, d)); if (b && b.length === 1) c2.vals[d] = b[0] - 40; }
@@ -564,6 +583,7 @@
       report.vin = await e.op(() => e.readVin());
       report.readiness = await e.op(() => e.readReadiness());
       report.calib = await e.op(() => e.readCalib());
+      applyBrand();
       const v = await e.op(() => e.voltage()); if (v != null) { vals.adapterV = v; }
     } catch (err) { logLine('! ' + err.message); }
     renderState(); setButtons();
@@ -612,6 +632,7 @@
   }
   function clearFoot(id, label) { return `<div class="cardfoot" data-foot="${id}"><button class="btn small" type="button" data-clear="${id}">${label}</button></div>`; }
   function renderObd() {
+    batt && batt.errorsUi();
     const o = report.obd, host = $('#obdDtc');
     if (!o) { host.innerHTML = `<p class="muted">${elm ? 'Odczyt w toku…' : 'Jeszcze nie odczytano.'}</p>`; return; }
     const sec = (label, list, note) => {
@@ -632,6 +653,7 @@
       ${total ? clearFoot('obd', 'Kasuj kody silnika (OBD)') : ''}`;
   }
   function renderModules() {
+    batt && batt.errorsUi();
     $('#modTitle').firstChild.textContent = `Moduły ${BRAND_NAMES[brand()]} `;
     const host = $('#modules');
     if (!report.modules.length) { host.innerHTML = `<p class="muted">${scanning ? 'Skanowanie…' : 'Jeszcze nie skanowano.'}</p>`; updateBadge(); return; }
@@ -673,20 +695,22 @@
         if (r) { report.modules.push(r); renderModules(); } else report.absent.push(m);
       }
       if (full && e === elm) {
-        const found = await e.op(() => e.findUnknown(tx => prog(`Szukam modułów: 0x${tx.toString(16).toUpperCase()}…`), brand() === 'bmw'));
+        const found = await e.op(() => e.findUnknown(tx => prog(`Szukam modułów: 0x${tx.toString(16).toUpperCase()}…`), brand() === 'bmw' ? 'bmw' : brand() === 'mitsubishi' ? 'mit' : 'vag'));
         for (const m of found) { prog(`Odczyt ${m.name}…`); const r = await e.op(() => e.scanModule(m, false)); if (r) { report.modules.push(r); renderModules(); } }
+        /* Mitsubishi: znalezione moduły zapamiętujemy dla tego VIN, żeby zwykły skan (np. po wejściu w Błędy) też je czytał. */
+        if (brand() === 'mitsubishi' && report.vin) try { store.set('mitMods.' + report.vin, JSON.stringify(found.map(m => ({ addr: m.addr, name: m.name, tx: m.tx, rx: m.rx, mit: true })))); } catch (x) {}
       }
       report.at = new Date();
       const n = report.modules.reduce((a, m) => a + m.dtcs.length, 0);
       prog(`Gotowe ${report.at.toLocaleTimeString('pl-PL')}: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}.`);
       journal && journal.add('raport', `Raport po skanie: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}`, buildReport());
     } catch (err) { prog('Skanowanie przerwane: ' + err.message); logLine('! ' + err.message); }
-    finally { scanning = false; renderModules(); setButtons(); tools && tools.onScan && tools.onScan(); }
+    finally { scanning = false; lastScanAt = Date.now(); renderModules(); setButtons(); tools && tools.onScan && tools.onScan(); }
   }
   $('#btnScan').onclick = () => runScan($('#fullScan').checked);
   $('#brandSel').value = store.get('brand', 'auto');
   $('#brandSel').onchange = e => {
-    store.set('brand', e.target.value); renderModules(); tools && tools.render();
+    store.set('brand', e.target.value); applyBrand(); renderModules(); tools && tools.render();
     if (elm && !scanning) runScan(false);
   };
 
@@ -957,7 +981,8 @@
   batt = createBatt({
     elm: () => elm, vals: () => vals, fresh: k => cycle - (seen[k] ?? -99) <= 1, CAT, avail, fmtVal, stateOf, esc, fmtNum,
     saveLog, store, pause, logLine, report: () => report, toolsBusy: () => !!(tools && tools.busy()),
-    p2Ready: () => p2.elm === elm && p2.st !== undefined,
+    p2Ready: () => brand() !== 'vag' || (p2.elm === elm && p2.st !== undefined),
+    brand: () => brand(), scanning: () => scanning, rescan: () => { if (elm && !scanning) runScan(false); }, BRAND_NAMES,
     mark: txt => p2Mark(txt),
     showTab: t => { const b = $(`.tabs button[data-tab="${t}"]`); if (b && currentTab !== t) b.click(); },
     afterMorning: () => { if (scanAfterMorning && elm) { scanAfterMorning = false; runScan(false); } },
@@ -966,6 +991,7 @@
   });
   batt.render();
   tools.render();
+  applyBrand();
   bridge = createBridge({
     esc, store, logLine, copyText, banner, chip, devName: () => journal.devName(),
     startBridgeHost, stopBridgeHost, connectRemote: code => connect('remote', code),

@@ -67,9 +67,16 @@ const BMW_MODULES = [
   { addr: '56', name: 'FZD – moduł dachu', bmw: 0x56 },
   { addr: '5D', name: 'KAFAS – kamera asystentów', bmw: 0x5D }
 ];
+/* Mitsubishi: silnik i skrzynia pod standardowymi adresami OBD (7E0/7E1, odpowiedź +8). Inne moduły szukamy skanem
+   z odpowiedzią na +8 (układ typowy dla aut japońskich, dla Mitsubishi niepotwierdzony), więc lista może być niepełna. */
+const MIT_MODULES = [
+  { addr: 'E0', name: 'Silnik (sterownik ECU)', tx: 0x7E0, rx: 0x7E8, mit: true },
+  { addr: 'E1', name: 'Skrzynia biegów (CVT / automat)', tx: 0x7E1, rx: 0x7E9, mit: true }
+];
 const BMW_IDENT_DIDS = [['F190', 'VIN'], ['F187', 'Nr części'], ['F189', 'Oprogramowanie'], ['F191', 'Nr części HW'], ['F18C', 'Nr seryjny'], ['F150', 'Wersja HW']];
 const BRAND_WMI = {
   bmw: ['WBA', 'WBS', 'WBY', 'WBX', 'WB1', 'WB3', 'WB4', 'WB5', 'WMW', '4US', '5UX', '5UM', '5YM', 'X4X', 'LBV', 'WBW'],
+  mitsubishi: ['JA3', 'JA4', 'JA7', 'JMB', 'JMY', '4A3', '4A4', 'MMB', 'MMC', 'MMT', 'ML3', 'XMC', '6MM'],
   vag: ['WVW', 'WV1', 'WV2', 'WV3', 'WVG', 'WAU', 'WUA', 'WA1', 'TRU', 'VSS', 'VS6', 'TMB', 'TMP', 'VWV', 'WP0', 'WP1', '3VW', '1VW', '9BW', 'AAV', 'LSV', 'LFV', 'XW8']
 };
 function brandOf(vin) {
@@ -1003,7 +1010,7 @@ class ELM {
     }
     const d = await this.readModuleDtcs(mod);
     info.dtcs = d.dtcs; info.untested = d.untested || 0; if (d.err) info.err = d.err;
-    if (mod.bmw == null) {
+    if (mod.bmw == null && !mod.mit) {
       /* VAG: numer błędu to własny numer producenta, nie kod SAE. Kod P i opis tylko z bazy znanego sterownika. */
       const engine = mod.tx === 0x7E0;
       if (engine) { const fam = vagEcuFamily(info.ident['Nr części']); if (fam) { info.family = fam; info.ident['Rodzina sterownika'] = fam; } }
@@ -1039,6 +1046,30 @@ class ELM {
     }
     return { err: r.err, dtcs: [], untested: 0 };
   }
+  async findUnknownMit(onProgress) {
+    const known = new Set(MIT_MODULES.map(m => m.tx)); const found = [];
+    await this.send('ATST32'); this.st = '32';
+    try {
+      for (let tx = 0x700; tx <= 0x7D7; tx++) {
+        if (known.has(tx)) continue;
+        onProgress && onProgress(tx);
+        const mod = { addr: hex3(tx), name: 'Moduł 0x' + hex3(tx), tx, rx: tx + 8, mit: true };
+        if (await this.probe(mod, false)) found.push(mod);
+      }
+    } finally { this.st = '64'; await this.send('ATST64'); }
+    return found;
+  }
+  /* Liczniki wypadania zapłonów z trybu 06 (MID A1 ogółem, A2… cylindry): tylko te numery, bez pełnego odczytu testów. */
+  async readMisfires() {
+    await this.selectObd();
+    const r = await this.request('06A0', { attempts: 2 });
+    if (r.err) return { ok: false, err: r.err, tests: [] };
+    const b = bytesOf(r.data).slice(2, 6); if (b.length < 4) return { ok: false, err: 'brak mapy', tests: [] };
+    const mids = []; for (let i = 0; i < 32; i++) if (b[i >> 3] & (0x80 >> (i & 7))) mids.push(0xA1 + i);
+    const tests = [];
+    for (const mid of mids.filter(m => m <= 0xAD)) { const q = await this.request('06' + hex2(mid), { attempts: 2 }); if (!q.err) parseMode06(q.data).forEach(t => tests.push(t)); }
+    return { ok: true, mids, tests };
+  }
   async findUnknownBmw(onProgress) {
     const known = new Set(BMW_MODULES.map(m => m.bmw)); const found = [];
     await this.send('ATST32'); this.st = '32';
@@ -1052,9 +1083,10 @@ class ELM {
     } finally { this.st = '64'; await this.send('ATST64'); }
     return found;
   }
-  async findUnknown(onProgress, bmw) {
+  async findUnknown(onProgress, kind) {
+    if (kind === 'bmw' || kind === true) return this.findUnknownBmw(onProgress);
+    if (kind === 'mit') return this.findUnknownMit(onProgress);
     const known = new Set(MODULES.map(m => m.tx)); const found = [];
-    if (bmw) return this.findUnknownBmw(onProgress);
     await this.send('ATST32'); this.st = '32';
     try {
       for (let tx = 0x700; tx < 0x775; tx++) {
@@ -1069,4 +1101,4 @@ class ELM {
   }
 }
 
-if (typeof module !== 'undefined') module.exports = { ELM, BMW_MODULES, brandOf, PIDS, DERIVED, MODULES, parseElm, saeCode, DTC_DESC, parseMode06, classifyCmd, createIsoTp, midName };
+if (typeof module !== 'undefined') module.exports = { ELM, BMW_MODULES, MIT_MODULES, brandOf, PIDS, DERIVED, MODULES, parseElm, saeCode, DTC_DESC, parseMode06, classifyCmd, createIsoTp, midName };

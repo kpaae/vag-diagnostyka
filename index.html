@@ -345,7 +345,7 @@ details.help a { color: var(--accent); }
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-26 09:31 UTC</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-26 23:06 UTC</p>
       </div>
     </div>
     <div class="conn">
@@ -363,24 +363,23 @@ details.help a { color: var(--accent); }
 <div class="tabbar">
   <div class="wrap">
     <nav class="tabs" role="tablist">
-      <button type="button" role="tab" data-tab="live" aria-selected="true">Na żywo</button>
-      <button type="button" role="tab" data-tab="boost" aria-selected="false">P0299 · EPC</button>
-      <button type="button" role="tab" data-tab="heat" aria-selected="false">Ogrzewanie</button>
-      <button type="button" role="tab" data-tab="batt" aria-selected="false">Akumulator</button>
+      <button type="button" role="tab" data-tab="batt" aria-selected="true">Start</button>
+      <button type="button" role="tab" data-tab="heat" aria-selected="false">Klima i temperatury</button>
+      <button type="button" role="tab" data-tab="live" aria-selected="false">Wszystkie dane</button>
       <button type="button" role="tab" data-tab="errors" aria-selected="false">Błędy<span id="errBadge" class="badge" hidden></span></button>
+      <button type="button" role="tab" data-tab="log" aria-selected="false">Logi</button>
+      <button type="button" role="tab" data-tab="boost" aria-selected="false">P0299 · EPC</button>
       <button type="button" role="tab" data-tab="tools" aria-selected="false">Narzędzia</button>
       <button type="button" role="tab" data-tab="state" aria-selected="false">Stan</button>
-      <button type="button" role="tab" data-tab="log" aria-selected="false">Logi</button>
     </nav>
   </div>
 </div>
 
 <main class="wrap">
-  <section id="tab-live">
+  <section id="tab-live" hidden>
     <div class="toolbar">
       <div class="seg" id="groupSeg">
         <button type="button" data-g="silnik">Silnik</button>
-        <button type="button" data-g="chlodzenie">Chłodzenie</button>
         <button type="button" data-g="doladowanie">Doładowanie</button>
         <button type="button" data-g="mieszanka">Mieszanka</button>
         <button type="button" data-g="all">Wszystko</button>
@@ -409,13 +408,13 @@ details.help a { color: var(--accent); }
 
   <section id="tab-heat" class="panel" hidden><div id="heatPanel" class="pstack"></div></section>
 
-  <section id="tab-batt" class="panel" hidden><div id="battPanel" class="pstack"></div></section>
+  <section id="tab-batt" class="panel"><div id="battPanel" class="pstack"></div></section>
 
   <section id="tab-errors" hidden>
     <div class="toolbar">
       <div class="actions">
         <button id="btnScan" class="btn primary" type="button" disabled>Skanuj wszystkie moduły</button>
-        <select id="brandSel" class="inp" aria-label="Marka"><option value="auto">Marka: z VIN</option><option value="vag">VAG (VW, Audi, Seat, Škoda)</option><option value="bmw">BMW / MINI</option></select>
+        <select id="brandSel" class="inp" aria-label="Marka"><option value="auto">Marka: z VIN</option><option value="vag">VAG (VW, Audi, Seat, Škoda)</option><option value="mitsubishi">Mitsubishi</option><option value="bmw">BMW / MINI</option></select>
         <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="fullScan"> Szukaj też modułów spoza listy (ok. 1 min)</label>
       </div>
       <div class="actions">
@@ -508,7 +507,7 @@ details.help a { color: var(--accent); }
 </main>
 
 <script>
-const APP_VERSION = '2026-11-26 09:31 UTC';
+const APP_VERSION = '2026-11-26 23:06 UTC';
 /* ===== VAG Diagnostyka – rdzeń: ELM327 / OBD-II / UDS / symulator ===== */
 'use strict';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -578,9 +577,16 @@ const BMW_MODULES = [
   { addr: '56', name: 'FZD – moduł dachu', bmw: 0x56 },
   { addr: '5D', name: 'KAFAS – kamera asystentów', bmw: 0x5D }
 ];
+/* Mitsubishi: silnik i skrzynia pod standardowymi adresami OBD (7E0/7E1, odpowiedź +8). Inne moduły szukamy skanem
+   z odpowiedzią na +8 (układ typowy dla aut japońskich, dla Mitsubishi niepotwierdzony), więc lista może być niepełna. */
+const MIT_MODULES = [
+  { addr: 'E0', name: 'Silnik (sterownik ECU)', tx: 0x7E0, rx: 0x7E8, mit: true },
+  { addr: 'E1', name: 'Skrzynia biegów (CVT / automat)', tx: 0x7E1, rx: 0x7E9, mit: true }
+];
 const BMW_IDENT_DIDS = [['F190', 'VIN'], ['F187', 'Nr części'], ['F189', 'Oprogramowanie'], ['F191', 'Nr części HW'], ['F18C', 'Nr seryjny'], ['F150', 'Wersja HW']];
 const BRAND_WMI = {
   bmw: ['WBA', 'WBS', 'WBY', 'WBX', 'WB1', 'WB3', 'WB4', 'WB5', 'WMW', '4US', '5UX', '5UM', '5YM', 'X4X', 'LBV', 'WBW'],
+  mitsubishi: ['JA3', 'JA4', 'JA7', 'JMB', 'JMY', '4A3', '4A4', 'MMB', 'MMC', 'MMT', 'ML3', 'XMC', '6MM'],
   vag: ['WVW', 'WV1', 'WV2', 'WV3', 'WVG', 'WAU', 'WUA', 'WA1', 'TRU', 'VSS', 'VS6', 'TMB', 'TMP', 'VWV', 'WP0', 'WP1', '3VW', '1VW', '9BW', 'AAV', 'LSV', 'LFV', 'XW8']
 };
 function brandOf(vin) {
@@ -1514,7 +1520,7 @@ class ELM {
     }
     const d = await this.readModuleDtcs(mod);
     info.dtcs = d.dtcs; info.untested = d.untested || 0; if (d.err) info.err = d.err;
-    if (mod.bmw == null) {
+    if (mod.bmw == null && !mod.mit) {
       /* VAG: numer błędu to własny numer producenta, nie kod SAE. Kod P i opis tylko z bazy znanego sterownika. */
       const engine = mod.tx === 0x7E0;
       if (engine) { const fam = vagEcuFamily(info.ident['Nr części']); if (fam) { info.family = fam; info.ident['Rodzina sterownika'] = fam; } }
@@ -1550,6 +1556,30 @@ class ELM {
     }
     return { err: r.err, dtcs: [], untested: 0 };
   }
+  async findUnknownMit(onProgress) {
+    const known = new Set(MIT_MODULES.map(m => m.tx)); const found = [];
+    await this.send('ATST32'); this.st = '32';
+    try {
+      for (let tx = 0x700; tx <= 0x7D7; tx++) {
+        if (known.has(tx)) continue;
+        onProgress && onProgress(tx);
+        const mod = { addr: hex3(tx), name: 'Moduł 0x' + hex3(tx), tx, rx: tx + 8, mit: true };
+        if (await this.probe(mod, false)) found.push(mod);
+      }
+    } finally { this.st = '64'; await this.send('ATST64'); }
+    return found;
+  }
+  /* Liczniki wypadania zapłonów z trybu 06 (MID A1 ogółem, A2… cylindry): tylko te numery, bez pełnego odczytu testów. */
+  async readMisfires() {
+    await this.selectObd();
+    const r = await this.request('06A0', { attempts: 2 });
+    if (r.err) return { ok: false, err: r.err, tests: [] };
+    const b = bytesOf(r.data).slice(2, 6); if (b.length < 4) return { ok: false, err: 'brak mapy', tests: [] };
+    const mids = []; for (let i = 0; i < 32; i++) if (b[i >> 3] & (0x80 >> (i & 7))) mids.push(0xA1 + i);
+    const tests = [];
+    for (const mid of mids.filter(m => m <= 0xAD)) { const q = await this.request('06' + hex2(mid), { attempts: 2 }); if (!q.err) parseMode06(q.data).forEach(t => tests.push(t)); }
+    return { ok: true, mids, tests };
+  }
   async findUnknownBmw(onProgress) {
     const known = new Set(BMW_MODULES.map(m => m.bmw)); const found = [];
     await this.send('ATST32'); this.st = '32';
@@ -1563,9 +1593,10 @@ class ELM {
     } finally { this.st = '64'; await this.send('ATST64'); }
     return found;
   }
-  async findUnknown(onProgress, bmw) {
+  async findUnknown(onProgress, kind) {
+    if (kind === 'bmw' || kind === true) return this.findUnknownBmw(onProgress);
+    if (kind === 'mit') return this.findUnknownMit(onProgress);
     const known = new Set(MODULES.map(m => m.tx)); const found = [];
-    if (bmw) return this.findUnknownBmw(onProgress);
     await this.send('ATST32'); this.st = '32';
     try {
       for (let tx = 0x700; tx < 0x775; tx++) {
@@ -1946,7 +1977,7 @@ function createPanels(api) {
     });
   }
   /* Adresy modułów w panelach są podane po VAG-owsku (01 silnik, 08 klimatyzacja); dla BMW tłumaczymy je na adresy BMW. */
-  const mapAddr = a => api.brand() === 'bmw' ? ({ '01': '12', '08': '78' }[a] || a) : a;
+  const mapAddr = a => api.brand() === 'bmw' ? ({ '01': '12', '08': '78' }[a] || a) : api.brand() === 'mitsubishi' ? ({ '01': 'E0' }[a] || a) : a;
   const sameMod = (x, m) => (x.bmw != null || m.bmw != null) ? x.bmw === m.bmw : x.tx === m.tx;
   function codeHits(codes, addrs0) {
     const addrs = addrs0.map(mapAddr), ENG = mapAddr('01');
@@ -2484,7 +2515,8 @@ function createPanels(api) {
   }
 
   /* =================== Ogrzewanie =================== */
-  const HEAT_KEYS = ['coolant', 'coolant2', 'oil', 'ambient', 'iat', 'rpm', 'speed', 'runTime', 'load'];
+  const HEAT_KEYS = ['coolant', 'coolant2', 'oil', 'ambient', 'iat', 'cat1', 'cat2', 'rpm', 'speed', 'runTime', 'load'];
+  const TEMP_KEYS = ['coolant', 'coolant2', 'oil', 'iat', 'ambient', 'cat1', 'cat2'];
   const HEAT_LIVE = ['coolant', 'coolant2', 'oil', 'ambient', 'speed', 'runTime'];
   const HEAT_CODES = ['P0128', 'P0125', 'P0116', 'P0117', 'P0118', 'P0119', 'P2181', 'P0597', 'P0598', 'P0599', 'P0480', 'P0481', 'P0217'];
   const HEAT_COLS = [['ect', 'płyn [°C]'], ['ect2', 'płyn za chłodnicą [°C]'], ['oil', 'olej [°C]'], ['amb', 'otoczenie [°C]'], ['iat', 'dolot [°C]'], ['rpm', 'obroty [obr/min]'], ['speed', 'prędkość [km/h]'], ['run', 'od uruchomienia [s]']];
@@ -2618,16 +2650,17 @@ function createPanels(api) {
     const host = $('#heatPanel'); if (!host) return;
     const on = !!api.elm();
     host.innerHTML = `
-      <div class="panel-intro"><h2 class="ptitle">Ogrzewanie</h2>
+      <div class="panel-intro"><h2 class="ptitle">Klima i temperatury</h2>
         <p class="muted">Najpierw sprawdzamy, czy silnik dochodzi do temperatury roboczej. Jeśli tak, przyczyna leży po stronie nagrzewnicy i nawiewu. Jeśli nie, winny jest układ chłodzenia silnika, najczęściej termostat.</p></div>
+      <div class="card"><h3 class="sect">Temperatury</h3><div id="hTemps">${minis(TEMP_KEYS)}</div></div>
       <div class="card"><h3 class="sect">Objaw</h3>
         <div class="seg" id="hSym">${SYMPTOMS.map(([k, l]) => `<button type="button" data-k="${k}" aria-pressed="${k === ht.sym}">${l}</button>`).join('')}</div>
         <p class="small" id="hTip">${esc(SYM_TIP[ht.sym])}</p></div>
-      <div class="card" id="hC2Card"><h3 class="sect">Drugi czujnik temperatury płynu</h3>
+      <div class="card" id="hC2Card"${api.brand() === 'vag' ? '' : ' hidden'}><h3 class="sect">Drugi czujnik temperatury płynu</h3>
         <p class="small muted">Silnik ma dwa czujniki płynu: na wyjściu z silnika (ten widzisz wszędzie) i drugi, za chłodnicą. Drugi pokazuje, kiedy otwiera się obieg radiatora, więc najlepiej ocenia termostat. Jego numeru nie ma w otwartych bazach, dlatego aplikacja szuka go sama. Zrób to raz, przy uruchomionym silniku (ok. 1–3 minuty). Potem test nagrzewania sprawdzi, który z kandydatów zachowuje się jak czujnik za chłodnicą.</p>
         <p class="small" id="hC2St"></p>
         <div class="actions"><button class="btn small" id="hC2Go" type="button">Znajdź czujnik 2</button><button class="btn small ghost" id="hC2Clr" type="button" hidden>Zapomnij wynik</button></div></div>
-      <div class="card" id="kCard"><h3 class="sect">Climatronic: temperatura nawiewu i klapa</h3>
+      <div class="card" id="kCard"${api.brand() === 'vag' ? '' : ' hidden'}><h3 class="sect">Climatronic: temperatura nawiewu i klapa</h3>
         <p class="small muted">Numerów odczytów tego modułu nie ma w otwartych źródłach, więc aplikacja dobiera je z danych. Krok 1 zbiera wszystko, co Climatronic podaje (najlepiej przy pracującym silniku, do ok. 10 minut; przerwanie zachowuje to, co już znaleziono). Krok 2 nagrywa te odczyty, gdy zmieniasz pokrętło temperatury: to, co skacze razem z pokrętłem, to klapa albo temperatura zadana, a to, co narasta powoli, to temperatura nawiewu. Krok 2 rób na rozgrzanym silniku (płyn od 80 °C), z nawiewem na średnim biegu, bez AUTO, bez A/C i bez obiegu wewnętrznego.</p>
         <p class="small" id="kSt"></p>
         <p class="kphase" id="kPhase" hidden></p>
@@ -2884,7 +2917,7 @@ function createPanels(api) {
   function onTab(t) {
     cur = t;
     if (t === 'boost') { updMinis('bLive'); renderBoostResult(); }
-    if (t === 'heat') { updMinis('hLive'); renderHeatResult(); }
+    if (t === 'heat') { const h = $('#hTemps'); if (h) { h.innerHTML = minis(TEMP_KEYS); updMinis('hTemps'); } updMinis('hLive'); renderHeatResult(); }
   }
   function tick() {
     autoTick();
@@ -2907,7 +2940,7 @@ function createPanels(api) {
     }
     if (cur === 'boost' && (mt.running || mt.watch)) renderMapLive();
     if (cur === 'boost') updMinis('bLive');
-    if (cur === 'heat') updMinis('hLive');
+    if (cur === 'heat') { updMinis('hLive'); updMinis('hTemps'); }
   }
   function keysFor(tab) {
     const ks = [];
@@ -3024,7 +3057,7 @@ function createTools(api) {
         <p class="tstatus" id="tScanSt"></p>
         <div id="tScanRes" class="tblwrap"></div></div>
 
-      ${api.brand() === 'bmw' ? '' : `<div class="card"><div class="card-h"><h3>Pomiary silnika Simos18</h3><span class="n">EA888 gen. 3 · 0x22</span></div>
+      ${api.brand() !== 'vag' ? '' : `<div class="card"><div class="card-h"><h3>Pomiary silnika Simos18</h3><span class="n">EA888 gen. 3 · 0x22</span></div>
         <p class="small muted">Gotowe pomiary sterowników Simos18 (auta MQB z silnikiem EA888 gen. 3, 1.8 i 2.0 TSI/TFSI): doładowanie rzeczywiste i zadane, wastegate, obroty turbosprężarki, korekty spalania stukowego na każdy cylinder, pozycje wałków, ciśnienia paliwa, temperatura oleju. Lista i przeliczniki pochodzą z projektu VW_Flash. <span id="tSimNote">${simNote()}</span></p>
         <div class="actions"><button class="btn small primary" id="tSimGo" type="button" ${on ? '' : 'disabled'}>Odczytaj</button>
           <button class="btn small" id="tSimLive" type="button" ${on ? '' : 'disabled'}>Odczyt ciągły</button>
@@ -3565,6 +3598,7 @@ function createBatt(api) {
     finishAuto(); ui();
   }
   function tick() {
+    misAuto(curTab);
     if (!st.run) return;
     const T = TESTS[st.run], t = (now() - st.t0) / 1000, v = api.vals();
     if (!api.elm()) { st.lostConn = true; stop(false); return; }
@@ -3715,28 +3749,35 @@ function createBatt(api) {
   }
   function render() {
     const host = $('#battPanel'); if (!host) return;
+    const vag = api.brand() === 'vag';
     const g = (() => { const m = api.report().modules.find(x => x.addr === '19'); return m && m.ident ? `${m.ident['Nr części'] || ''} ${m.ident['System'] || ''} (plik ODX: ${m.ident['Plik ODX'] || '—'})`.trim() : null; })();
     host.innerHTML = `
-      <div class="panel-intro"><h2 class="ptitle">Akumulator</h2>
-        <p class="muted">Napięcia na żywo, testy rozruchu i ładowania, odczyt danych akumulatora z auta i przewodnik wymiany. Oceny napięć to ogólne progi dla akumulatorów 12 V, nie dane producenta tego modelu.</p></div>
+      <div class="panel-intro"><h2 class="ptitle">Start</h2>
+        <p class="muted">Najważniejsze przy uruchamianiu auta: napięcia, błędy zapisane w sterownikach, wypadanie zapłonów oraz testy akumulatora. Oceny napięć to ogólne progi dla akumulatorów 12 V, nie dane producenta tego modelu.</p></div>
+      <div class="card"><h3 class="sect">Napięcia teraz</h3><div id="akLive">${minisHtml()}</div>
+        <p class="small muted" id="akLastKey"></p></div>
+      <div class="card"><h3 class="sect">Błędy na start</h3><div id="akErr"></div>
+        <div class="actions"><button class="btn small" id="akErrScan" type="button">Skanuj ponownie</button><button class="btn small ghost" id="akErrGo" type="button">Szczegóły w zakładce Błędy</button></div></div>
+      <div class="card"><h3 class="sect">Wypadanie zapłonów</h3>
+        <p class="small muted">Liczniki sterownika silnika z trybu 06 OBD: bieżący cykl jazdy i średnia z ostatnich 10 cykli. Przy pracującym silniku aplikacja odświeża je co minutę.</p>
+        <div id="akMis"></div>
+        <div class="actions"><button class="btn small" id="akMisGo" type="button">Odczytaj teraz</button></div></div>
       <div class="card ptest" id="akMorning"><h3 class="sect">Poranny start</h3>
-        <p class="small muted">Nagrywa pierwszy start dnia: napięcie przy zapłonie, w czasie rozruchu i po nim, moment testu P2563 oraz Twoje znaczniki EPC. Włącz wieczorem. Rano po połączeniu test ruszy sam, a skan modułów poczeka, aż się skończy.</p>
+        <p class="small muted">Nagrywa pierwszy start dnia: napięcie przy zapłonie, w czasie rozruchu i po nim, Twoje znaczniki EPC, a w autach VAG także moment testu P2563. Włącz wieczorem. Rano po połączeniu test ruszy sam, a skan modułów poczeka, aż się skończy.</p>
         <div class="actions"><button class="btn" id="akArm" type="button"></button></div>
         <p class="small" id="akMorSt"></p>
         <p class="kphase akgo" id="akGo" aria-live="assertive" hidden></p>
         <div class="actions"><button class="btn" id="akMarkEpc" type="button">EPC się zapaliło</button><button class="btn" id="akMarkLim" type="button">Czuję ograniczenie mocy</button></div>
         <p class="small" id="akMarks"></p>
-        <ol class="steps" style="margin-top:8px"><li><b>Wieczorem</b><span>Naciśnij „Przygotuj na rano”. Ustawienie zostaje w telefonie.</span></li><li><b>Rano</b><span>Wepnij adapter, włącz zapłon bez odpalania i od razu „Port COM”.</span></li><li><b>Start</b><span>Aplikacja sama otworzy tę zakładkę. Poczekaj na „ODPAL TERAZ” (kilka sekund) i odpal jak zwykle.</span></li><li><b>Jazda</b><span>Telefon zostaje połączony, z włączonym ekranem. Gdy zapali się EPC albo poczujesz ograniczenie, naciśnij przycisk niżej, ale tylko wtedy, gdy to bezpieczne (np. na światłach). Wystarczy przybliżony czas.</span></li><li><b>Po jeździe</b><span>Poczekaj, aż logi wyślą się na GitHub (zakładka Logi).</span></li></ol>
+        <details class="tgroup"><summary><span>Jak to działa</span></summary><ol class="steps" style="margin-top:8px"><li><b>Wieczorem</b><span>Naciśnij „Przygotuj na rano”. Ustawienie zostaje w telefonie.</span></li><li><b>Rano</b><span>Wepnij adapter, włącz zapłon bez odpalania i od razu „Port COM”.</span></li><li><b>Start</b><span>Aplikacja sama otworzy tę zakładkę. Poczekaj na „ODPAL TERAZ” (kilka sekund) i odpal jak zwykle.</span></li><li><b>Jazda</b><span>Telefon zostaje połączony, z włączonym ekranem. Gdy zapali się EPC albo poczujesz ograniczenie, naciśnij przycisk niżej, ale tylko wtedy, gdy to bezpieczne (np. na światłach). Wystarczy przybliżony czas.</span></li><li><b>Po jeździe</b><span>Poczekaj, aż logi wyślą się na GitHub (zakładka Logi).</span></li></ol></details>
       </div>
-      <div class="card"><h3 class="sect">Teraz</h3><div id="akLive">${minisHtml()}</div>
-        <p class="small muted" id="akLastKey"></p></div>
       <div class="card ptest"><h3 class="sect">Testy</h3>
         <p class="small muted">Każdy test zapisuje wynik i próbki do logu (idzie na GitHub). Wynik oceniam po napięciu ze sterownika silnika, nie z adaptera.</p>
         <ol class="steps"><li><b>Zapłon</b><span>45 s przy stojącym silniku. Rób rano na zimno, przed uruchomieniem.</span></li><li><b>Rozruch</b><span>Zapłon włączony, start, uruchomienie silnika. Rejestruje najniższe napięcie i czas dojścia do ładowania.</span></li><li><b>Ładowanie</b><span>Trzy fazy na pracującym silniku: jałowy, jałowy z odbiornikami, 2500 obr/min z odbiornikami.</span></li></ol>
         <p class="kphase" id="akStatus" aria-live="polite"></p>
         <div class="actions"><button class="btn" id="akT_ign" type="button">Test: zapłon</button><button class="btn" id="akT_crank" type="button">Test: rozruch</button><button class="btn" id="akT_charge" type="button">Test: ładowanie</button><button class="btn small ghost" id="akStop" type="button" hidden>Zakończ</button></div></div>
       <div class="card" id="akRes" hidden><div class="rbody"></div></div>
-      <div class="card"><h3 class="sect">Dane akumulatora w aucie (odczyt)</h3>
+      <div class="card"${vag ? '' : ' hidden'}><h3 class="sect">Dane akumulatora w aucie (odczyt)</h3>
         <p class="small muted">Auta VAG z monitorem akumulatora trzymają jego dane (pojemność, technologia, producent, numer seryjny) w module 61 albo w gatewayu (19). Według źródeł o MQB adaptację robi się w gatewayu. Dla Twojego auta nie ma otwartych danych, więc aplikacja tylko odczytuje, co moduły podają, a numery wskaże porównanie przed i po wymianie.</p>
         <p class="small">${g ? `Gateway: ${esc(g)}.` : 'Gateway jeszcze nie odczytany: zrób skan modułów.'}</p>
         <p class="small" id="akProbeSt"></p>
@@ -3747,7 +3788,7 @@ function createBatt(api) {
         <div class="actions"><button class="btn small" id="akScan_before" type="button">Zapisz stan przed wymianą</button><button class="btn small" id="akScan_after" type="button">Zapisz stan po wymianie</button><button class="btn small ghost" id="akScan_now" type="button">Odczyt bieżący</button><button class="btn small" id="akCmp" type="button">Porównaj</button><button class="btn small ghost" id="akScanStop" type="button" hidden>Przerwij</button></div>
         <p class="small muted">Przed: <span id="akSavedBefore"></span><br>Po: <span id="akSavedAfter"></span></p>
         <div id="akDiff"></div></div>
-      <div class="card"><h3 class="sect">Wymiana akumulatora: rejestracja w aucie</h3>
+      <div class="card"${vag ? '' : ' hidden'}><h3 class="sect">Wymiana akumulatora: rejestracja w aucie</h3>
         <p class="small muted">Zapisu do auta z aplikacji jeszcze nie ma. W źródłach nie znalazłem numerów ani formatu danych dla gatewaya tego auta, a zapis w ciemno mógłby uszkodzić adaptacje gatewaya. Rejestrację zrób w VCDS albo OBDeleven. Aplikacja przygotuje wartości, sprawdzi napięcie i zapisze stan przed i po, żeby następnym krokiem dało się zrobić zapis na sprawdzonych numerach.</p>
         <div class="fl2"><label class="fl">Pojemność [Ah] <input id="akCap" class="inp mono" inputmode="numeric" value="${esc(st.form.cap)}"></label>
         <label class="fl">Prąd rozruchowy [A, EN] <input id="akEn" class="inp mono" inputmode="numeric" value="${esc(st.form.en)}"></label>
@@ -3773,11 +3814,65 @@ function createBatt(api) {
     $('#akCmp').onclick = compare;
     $('#akArm').onclick = () => { st.armed = !st.armed; st.morMsg = ''; api.store.set('battMorning', st.armed ? '1' : ''); ui(); };
     $('#akMarkEpc').onclick = () => mark('epc'); $('#akMarkLim').onclick = () => mark('lim');
+    $('#akErrScan').onclick = () => api.rescan(); $('#akErrGo').onclick = () => api.showTab('errors');
+    $('#akMisGo').onclick = () => readMis(true);
+    errorsUi(); misUi();
     lastKey(); ui();
   }
   function lastKey() {
     const el = $('#akLastKey'); if (!el) return; const k = api.p2Info && api.p2Info();
     el.textContent = k ? `Strażnik P2563 zapisał przy ostatnim włączeniu zapłonu: ${f(k.u, 2)} V (płyn ${f(k.ect, 0)} °C).` : '';
+  }
+  /* ---------- błędy na start ---------- */
+  function errorsUi() {
+    const h = $('#akErr'); if (!h) return;
+    const R = api.report(), on = !!api.elm(), scanning = api.scanning();
+    const b = $('#akErrScan'); if (b) b.disabled = !on || scanning;
+    if (!on) { h.innerHTML = '<p class="small muted">Połącz adapter. Skan błędów rusza sam po połączeniu.</p>'; return; }
+    const rd = R.readiness, o = R.obd, mods = R.modules || [];
+    const obdCodes = o ? [...(o.stored || []).map(c => ({ ...c, kind: 'zapisany' })), ...(o.pending || []).map(c => ({ ...c, kind: 'oczekujący' }))] : [];
+    const modCodes = mods.flatMap(m => (m.dtcs || []).map(d => ({ m, d })));
+    const lines = [];
+    lines.push(`<li><span class="vd ${rd ? (rd.mil ? 'crit' : 'ok') : 'na'}">${rd ? (rd.mil ? 'Świeci' : 'OK') : '?'}</span><div><b>Kontrolka silnika (MIL)</b><p>${rd ? (rd.mil ? `Włączona, kody emisyjne: ${rd.count}.` : 'Wyłączona.') : 'Jeszcze nie odczytano.'}</p></div></li>`);
+    lines.push(`<li><span class="vd ${o ? (obdCodes.length ? 'warn' : 'ok') : 'na'}">${o ? (obdCodes.length ? obdCodes.length : 'OK') : '?'}</span><div><b>Kody OBD silnika</b><p>${o ? (obdCodes.length ? obdCodes.map(c => `${esc(c.code)} (${c.kind})${c.desc ? ' – ' + esc(c.desc) : ''}`).join('<br>') : 'Brak zapisanych i oczekujących.') : scanning ? 'Odczyt w toku…' : 'Jeszcze nie odczytano.'}</p></div></li>`);
+    const top = modCodes.slice(0, 8).map(({ m, d }) => `[${esc(m.addr)}] ${esc(m.name)}: ${esc(d.full || d.code)}${d.desc ? ' – ' + esc(d.desc) : ''} <small class="muted">(${esc((d.flags || []).filter(x => !/^status/.test(x)).join(', '))})</small>`);
+    lines.push(`<li><span class="vd ${mods.length ? (modCodes.length ? 'warn' : 'ok') : 'na'}">${mods.length ? (modCodes.length ? modCodes.length : 'OK') : '?'}</span><div><b>Moduły ${esc(api.BRAND_NAMES[api.brand()] || '')}</b><p>${mods.length ? (modCodes.length ? top.join('<br>') + (modCodes.length > 8 ? `<br>i ${modCodes.length - 8} więcej w zakładce Błędy.` : '') : `Brak błędów w ${mods.length} odczytanych modułach.`) : ''}${scanning ? (mods.length ? '<br>' : '') + 'Skan modułów w toku…' : mods.length ? '' : 'Moduły jeszcze nie odczytane.'}</p></div></li>`);
+    h.innerHTML = `<ul class="checks">${lines.join('')}</ul>`;
+  }
+  /* ---------- wypadanie zapłonów (tryb 06) ---------- */
+  const mis = { res: null, at: 0, busy: false, msg: '' };
+  async function readMis(manual) {
+    const e = api.elm(); if (!e || mis.busy || st.run || api.toolsBusy()) return;
+    mis.busy = true; mis.msg = 'Odczyt…'; misUi();
+    try {
+      const r = await e.op(() => e.readMisfires());
+      mis.res = r; mis.at = Date.now(); mis.msg = r.ok ? '' : `Sterownik nie podał liczników (${r.err}).`;
+      if (r.ok && manual) api.logLine(`— wypadanie zapłonów: ${misRows().map(x => `c${x.c} ${x.cur ?? '—'}/${x.avg ?? '—'}`).join(', ') || 'brak liczników'}`);
+    } catch (x) { mis.msg = 'Nie udało się odczytać: ' + x.message; }
+    mis.busy = false; misUi();
+  }
+  function misRows() {
+    const T = (mis.res && mis.res.tests) || [], rows = [];
+    for (let c = 1; c <= 12; c++) { const L = T.filter(t => t.mid === 0xA1 + c); if (!L.length) continue; const cur = L.find(t => t.tid === 0x0C), avg = L.find(t => t.tid === 0x0B); rows.push({ c, cur: cur ? cur.value : null, avg: avg ? avg.value : null }); }
+    return rows;
+  }
+  function misUi() {
+    const h = $('#akMis'); if (!h) return;
+    const b = $('#akMisGo'); if (b) b.disabled = !api.elm() || mis.busy || !!st.run;
+    if (!mis.res) { h.innerHTML = `<p class="small muted">${esc(mis.msg || (api.elm() ? 'Odczytam po uruchomieniu silnika albo przyciskiem.' : 'Połącz adapter.'))}</p>`; return; }
+    const R = misRows();
+    if (!R.length) { h.innerHTML = `<p class="small">${esc(mis.msg || 'Sterownik nie podaje liczników wypadania zapłonów dla cylindrów (tryb 06, MID A2 i dalej).')}</p>`; return; }
+    const tot = R.reduce((a, r) => a + (r.cur || 0), 0), worst = R.reduce((a, r) => (r.cur || 0) > (a.cur || 0) ? r : a, R[0]), maxv = Math.max(1, ...R.map(r => Math.max(r.cur || 0, r.avg || 0)));
+    const lead = tot === 0 ? '<p class="codehead ok">Brak wypadania zapłonów w bieżącym cyklu jazdy.</p>' : `<p class="codehead ${tot >= 5 && worst.cur > tot * 0.6 ? 'crit' : ''}">${tot} w bieżącym cyklu${tot >= 5 && worst.cur > tot * 0.6 ? `, głównie cylinder ${worst.c}` : ''}.</p>`;
+    h.innerHTML = `${lead}<div class="tblwrap"><table class="tbl"><thead><tr><th>Cylinder</th><th class="num">Bieżący cykl</th><th class="num">Średnia 10 cykli</th><th class="barcol"></th></tr></thead><tbody>${R.map(r => `<tr><td>${r.c}</td><td class="num">${r.cur == null ? '—' : f(r.cur, 0)}</td><td class="num">${r.avg == null ? '—' : f(r.avg, 0)}</td><td class="barcol"><span class="bar" style="width:${Math.round((r.cur || 0) / maxv * 100)}%"></span></td></tr>`).join('')}</tbody></table></div>
+      <p class="small muted">Odczyt ${new Date(mis.at).toLocaleTimeString('pl-PL')}. Licznik bieżącego cyklu zeruje się po każdym uruchomieniu. Pojedyncze zliczenia na zimnym silniku są normalne. Przy kilku zliczeniach w jednym cylindrze zamień cewkę z sąsiednim cylindrem i sprawdź, czy błąd przejdzie razem z nią.</p>`;
+  }
+  /* Automatycznie: na zakładce Start, przy pracującym silniku, co minutę (nie w czasie testu rozruchu). */
+  let misCheck = 0;
+  function misAuto(tab) {
+    const t = Date.now(); if (t - misCheck < 5000) return; misCheck = t;
+    const v = api.vals();
+    if (tab === 'batt' && api.elm() && !st.run && (v.rpm ?? 0) >= 400 && t - mis.at > 60000) readMis(false);
   }
   /* ---------- API ---------- */
   const keysFor = tab => (tab === 'batt' || st.run) ? KEYS : null;
@@ -3786,9 +3881,10 @@ function createBatt(api) {
   const fastKeys = () => st.run === 'crank' && (st.startAt == null || tNow() - st.startAt < 3) ? ['rpm', 'ecuV'] : null;
   /* Wolne odczyty (status błędu ok. 1,5 s, skan) wstrzymane od gotowości do rozruchu do 10 s po uruchomieniu silnika. */
   const hold = () => st.run === 'crank' && (st.startAt == null || tNow() - st.startAt < 10);
-  function onTab(t) { if (t === 'batt') { lastKey(); ui(); } }
+  let curTab = 'batt';
+  function onTab(t) { curTab = t; if (t === 'batt') { lastKey(); ui(); errorsUi(); misUi(); } }
   function stopAll() { if (st.run) { st.lostConn = !api.elm(); stop(false); } st.auto = false; if (st.scan.running) st.scan.stopReq = true; }
-  return { render, tick, keysFor, onTab, stopAll, onConnect, fastKeys, hold, busy: () => !!st.run || st.busy };
+  return { render, tick, keysFor, onTab, stopAll, onConnect, fastKeys, hold, errorsUi, busy: () => !!st.run || st.busy };
 }
 
 /* ===== Dziennik: zapis logów w telefonie (IndexedDB) i wysyłka do prywatnego repozytorium GitHub ===== */
@@ -3868,8 +3964,9 @@ function createJournal(api) {
     const sess = session || `${dstamp(d)}_bez-polaczenia`;
     let e = opt.id ? (await all()).find(x => x.id === opt.id) : null;
     const body = (ext === 'csv' ? '' : header(kind, title)) + text;
-    if (e) Object.assign(e, { ts: d.getTime(), title: title || e.title, text: body, synced: false, err: null });
-    else e = { id: opt.id || `${d.getTime()}-${kind}`, ts: d.getTime(), session: sess, kind, title: title || KINDS[kind] || kind, ext, text: body, synced: false, err: null, sha: {}, file: `${sess}/${tstamp(d)}-${kind}` };
+    const vin = cleanVin(api.vin());
+    if (e) Object.assign(e, { ts: d.getTime(), title: title || e.title, text: body, synced: false, err: null }, !e.vin && vin ? { vin } : {});
+    else e = { id: opt.id || `${d.getTime()}-${kind}`, ts: d.getTime(), session: sess, vin, kind, title: title || KINDS[kind] || kind, ext, text: body, synced: false, err: null, sha: {}, file: `${sess}/${tstamp(d)}-${kind}` };
     await put(e);
     await trim();
     render();
@@ -3890,9 +3987,11 @@ function createJournal(api) {
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     return btoa(bin);
   }
-  /* Ścieżka w repozytorium: <urządzenie>/<sesja>/<godzina>-<rodzaj>. Folder urządzenia ustalany przy pierwszej wysyłce wpisu. */
+  /* Ścieżka w repozytorium: <VIN>/<urządzenie>/<sesja>/<godzina>-<rodzaj>, osobny folder dla każdego auta.
+     Bez VIN (np. nieudane połączenie): folder „bez-VIN”. Ścieżka ustalana przy pierwszej wysyłce wpisu. */
+  function cleanVin(v) { const x = String(v || '').toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, ''); return x.length === 17 ? x : null; }
   function parts(e) {
-    if (!e.path) e.path = `${devSlug(devName())}/${e.file || e.session + '/' + e.id}`;
+    if (!e.path) e.path = `${e.vin || 'bez-VIN'}/${devSlug(devName())}/${e.file || e.session + '/' + e.id}`;
     if (e.text.length <= CHUNK) return [[`${e.path}.${e.ext}`, e.text]];
     const out = []; for (let i = 0, n = 1; i < e.text.length; i += CHUNK, n++) out.push([`${e.path}.cz${n}.${e.ext}`, e.text.slice(i, i + CHUNK)]);
     return out;
@@ -3920,9 +4019,17 @@ function createJournal(api) {
     if (!navigator.onLine) { lastErr = 'Brak internetu. Wyślę, gdy wróci połączenie.'; render(); return; }
     if (syncing) { again = true; return; }
     syncing = true; lastErr = ''; render();
+    let later = false;
     try {
-      const L = (await all()).filter(e => !e.synced).reverse();
+      const A = await all(), L = A.filter(e => !e.synced).reverse();
       for (const e of L) {
+        /* VIN wpisu: z samego wpisu, z innego wpisu tej sesji albo (bieżąca sesja) z auta. Wpis bieżącej sesji bez VIN czeka
+           do 2 min, bo VIN odczytuje się chwilę po połączeniu. */
+        if (!e.path && !e.vin) {
+          const sib = A.find(x => x.session === e.session && x.vin);
+          e.vin = sib ? sib.vin : e.session === session ? cleanVin(api.vin()) : null;
+          if (!e.vin && e.session === session && Date.now() - e.ts < 120000) { later = true; continue; }
+        }
         try {
           for (const [path, text] of parts(e)) {
             const body = { message: `${KINDS[e.kind] || e.kind}: ${e.title} (${e.session})`, content: b64(text) };
@@ -3944,7 +4051,7 @@ function createJournal(api) {
         }
         render();
       }
-    } finally { syncing = false; render(); if (again) { again = false; sync(force); } }
+    } finally { syncing = false; render(); if (again) { again = false; sync(force); } else if (later) setTimeout(() => sync(), 20000); }
   }
   let kickT = null;
   function kick() { clearTimeout(kickT); kickT = setTimeout(() => sync(false), 1500); }
@@ -3975,7 +4082,8 @@ function createJournal(api) {
     $('#jErr').textContent = lastErr; $('#jErr').hidden = !lastErr;
     $('#jSend').hidden = !(c.repo && c.token) || !pend;
     const by = {}; L.forEach(e => { (by[e.session] = by[e.session] || []).push(e); });
-    $('#jList').innerHTML = L.length ? Object.keys(by).sort().reverse().slice(0, 40).map(s => `<div class="jsess"><h4 class="sub">${esc(s.replace('_', ' · ').replace(/(\d\d)(\d\d)$/, '$1:$2'))}</h4>
+    const vinOf = s => { const x = by[s].find(e => e.vin); return x ? x.vin : null; };
+    $('#jList').innerHTML = L.length ? Object.keys(by).sort().reverse().slice(0, 40).map(s => `<div class="jsess"><h4 class="sub">${esc(s.replace('_', ' · ').replace(/(\d\d)(\d\d)$/, '$1:$2'))}${vinOf(s) ? ` <small class="mono">· VIN ${esc(vinOf(s))}</small>` : ''}</h4>
       ${by[s].map(e => `<div class="jrow"><div class="jmain"><b>${esc(e.title)}</b><span class="muted">${new Date(e.ts).toLocaleTimeString('pl-PL')} · ${kb(e.text.length)}</span></div>
         <span class="st ${e.synced ? 'ok' : e.err ? 'no' : ''}">${e.synced ? 'wysłane' : e.err ? 'błąd' : c.repo && c.token ? 'czeka' : 'w telefonie'}</span>
         <div class="jact"><button class="linkbtn" type="button" data-jc="${esc(e.id)}">Kopiuj</button>${api.framed ? '' : `<button class="linkbtn" type="button" data-jd="${esc(e.id)}">Pobierz</button>`}<button class="linkbtn" type="button" data-jx="${esc(e.id)}">Usuń</button></div></div>`).join('')}</div>`).join('')
@@ -3998,12 +4106,12 @@ function createJournal(api) {
         </ol>
         <div class="frow"><label class="fl">Repozytorium <input id="jRepo" class="inp mono" value="${esc(c.repo || 'kpaae/vag-logi')}" spellcheck="false" autocomplete="off" autocapitalize="off"></label></div>
         <div class="frow"><label class="fl">Urządzenie <input id="jDev" class="inp" value="${esc(api.store.get('devName', ''))}" placeholder="${esc(devName())}" spellcheck="false" autocomplete="off"></label></div>
-        <p class="small muted" id="jDevNote">Logi z tego urządzenia trafiają do folderu <code>${esc(devSlug(devName()))}/</code>. Zostaw puste, żeby użyć nazwy wykrytej automatycznie.</p>
+        <p class="small muted" id="jDevNote">Logi trafiają do folderu <code>VIN/${esc(devSlug(devName()))}/</code>, osobno dla każdego auta (bez odczytanego VIN: <code>bez-VIN/</code>). Zostaw puste, żeby użyć nazwy wykrytej automatycznie.</p>
         <div class="frow"><label class="fl">Token <input id="jTok" class="inp mono" type="password" value="${esc(c.token)}" placeholder="github_pat_…" spellcheck="false" autocomplete="off" autocapitalize="off"></label></div>
         <div class="frow"><label class="chk"><input type="checkbox" id="jAuto"${c.auto ? ' checked' : ''}> wysyłaj automatycznie</label>
           <button class="btn small primary" id="jSave" type="button">Zapisz i sprawdź</button><button class="btn small ghost" id="jForget" type="button">Usuń klucz</button></div>
         <p class="tstatus" id="jGhSt"></p></details>`;
-    $('#jDev').oninput = e => { api.store.set('devName', e.target.value.trim()); $('#jDevNote').querySelector('code').textContent = devSlug(devName()) + '/'; };
+    $('#jDev').oninput = e => { api.store.set('devName', e.target.value.trim()); $('#jDevNote').querySelector('code').textContent = 'VIN/' + devSlug(devName()) + '/'; };
     $('#jSave').onclick = () => { api.store.set('ghRepo', $('#jRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '')); api.store.set('ghToken', $('#jTok').value.trim()); api.store.set('ghAuto', $('#jAuto').checked ? '1' : '0'); testGh(); };
     $('#jForget').onclick = () => { api.store.set('ghToken', ''); $('#jTok').value = ''; $('#jGhSt').textContent = 'Klucz usunięty z tej przeglądarki.'; render(); };
     $('#jAuto').onchange = e => { api.store.set('ghAuto', e.target.checked ? '1' : '0'); };
@@ -4378,10 +4486,12 @@ function createBridge(api) {
   };
 
   let elm = null, tr = null, mode = null, sup = new Set();
-  let panels = null, tools = null, batt = null, bridge = null, currentTab = 'live';
+  let panels = null, tools = null, batt = null, bridge = null, currentTab = 'batt', lastScanAt = 0;
   let vals = {}, seen = {}, hist = {}, mm = {}, tiles = [];
   let polling = false, pollRun = 0, cycle = 0, rec = null, wake = null, scanning = false, connecting = false, scanAfterMorning = false;
-  let view = store.get('group', 'silnik'); if (!['silnik', 'chlodzenie', 'doladowanie', 'mieszanka', 'all'].includes(view)) view = 'silnik';
+  /* „Wszystkie dane” bez temperatur: te są w zakładce „Klima i temperatury”. */
+  const LIVE_GROUPS = GROUPS.filter(g => g[0] !== 'chlodzenie');
+  let view = store.get('group', 'all'); if (!['silnik', 'doladowanie', 'mieszanka', 'all'].includes(view)) view = 'all';
   let report = blankReport();
   const logBuf = []; let logTimer = null;
   const sess = { on: false, log: [], id: null, ok: false };
@@ -4402,8 +4512,12 @@ function createBridge(api) {
   /* ---------- marka ---------- */
   const modKey = m => m.bmw != null ? 'b' + m.bmw : 'm' + m.tx;
   function brand() { const o = store.get('brand', 'auto'); return o !== 'auto' ? o : (brandOf(report.vin) || 'vag'); }
-  function modules() { return brand() === 'bmw' ? BMW_MODULES : MODULES; }
-  const BRAND_NAMES = { vag: 'VAG', bmw: 'BMW' };
+  function modules() {
+    const b = brand(); if (b === 'bmw') return BMW_MODULES; if (b !== 'mitsubishi') return MODULES;
+    let extra = []; try { extra = report.vin ? JSON.parse(store.get('mitMods.' + report.vin, '[]')) : []; } catch (x) {}
+    return [...MIT_MODULES, ...extra.filter(m => !MIT_MODULES.some(k => k.tx === m.tx))];
+  }
+  const BRAND_NAMES = { vag: 'VAG', bmw: 'BMW', mitsubishi: 'Mitsubishi' };
   function blankReport() { return { vin: null, calib: null, readiness: null, obd: null, freeze: null, modules: [], absent: [], adapter: null, at: null }; }
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -4438,11 +4552,24 @@ function createBridge(api) {
     $$('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b ? 'true' : 'false'));
     ['live', 'boost', 'heat', 'batt', 'errors', 'tools', 'state', 'log'].forEach(t => { $('#tab-' + t).hidden = t !== b.dataset.tab; });
     currentTab = b.dataset.tab;
+    /* Błędy: po wejściu w zakładkę od razu nowy skan (jeśli ostatni był ponad 20 s temu). */
+    if (b.dataset.tab === 'errors' && elm && !scanning && !(batt && batt.hold()) && Date.now() - lastScanAt > 20000) runScan(false);
     if (b.dataset.tab === 'log') { renderLog(); journal && journal.render(); }
     if (b.dataset.tab === 'live') { sizeSparks(); updateTiles(); }
     panels && panels.onTab(currentTab);
     batt && batt.onTab(currentTab);
   }));
+
+  /* Elementy tylko dla VAG (doładowanie EA888, Simos18, Climatronic, gateway) chowamy przy innych markach. */
+  function applyBrand() {
+    const b = brand(), vag = b === 'vag';
+    const bt = $('[data-tab=boost]'); if (bt) bt.hidden = !vag;
+    if (!vag && currentTab === 'boost') $('[data-tab=batt]').click();
+    const mk = $('.mark'); if (mk) mk.textContent = { vag: 'VAG', bmw: 'BMW', mitsubishi: 'MIT' }[b] || 'OBD';
+    if (document.body.dataset.brand === b) return;
+    document.body.dataset.brand = b;
+    panels && panels.render(); batt && batt.render(); tools && !tools.busy() && tools.render();
+  }
 
   /* ---------- grupy i kafelki ---------- */
   function avail(k) { const c = CAT[k]; if (!c || !elm) return false; if (c.special) return c.when ? c.when() : true; if (c.derived) return c.needs(sup); return sup.has(c.pid); }
@@ -4454,7 +4581,7 @@ function createBridge(api) {
     const host = $('#tiles'); host.innerHTML = ''; tiles = [];
     panels && panels.render();
     if (!elm) { host.innerHTML = '<p class="empty">Połącz adapter, żeby zobaczyć parametry.</p>'; return; }
-    const groups = view === 'all' ? GROUPS : GROUPS.filter(g => g[0] === view);
+    const groups = view === 'all' ? LIVE_GROUPS : LIVE_GROUPS.filter(g => g[0] === view);
     for (const [g, label] of groups) {
       const keys = ORDER[g].filter(avail);
       const sec = el('section', 'group');
@@ -4534,7 +4661,7 @@ function createBridge(api) {
   function activeKeys() {
     const pk = (panels && panels.keysFor(currentTab)) || (batt && batt.keysFor(currentTab));
     if (pk) return pk.filter(avail);
-    return (view === 'all' ? GROUPS.map(g => g[0]) : [view]).flatMap(g => ORDER[g]).filter(avail); }
+    return (view === 'all' ? LIVE_GROUPS.map(g => g[0]) : [view]).flatMap(g => ORDER[g]).filter(avail); }
   function allKeys() { return GROUPS.flatMap(g => ORDER[g[0]]).filter(avail); }
   function defsFor(keys) {
     const pids = new Set([0x0C, 0x04]);
@@ -4582,11 +4709,11 @@ function createBridge(api) {
         const res = await e.op(() => e.readLive(defsFor(keys)));
         if (keys.includes('adapterV') && (cycle % (keyOn ? 4 : 10) === 0 || vals.adapterV == null)) { const v = await e.op(() => e.voltage()); if (v != null) res.adapterV = v; }
         /* Czujnik 2 płynu: wybrany numer co 2. cykl, a w trakcie szukania kandydaci co 3. cykl (bajt − 40 °C). */
-        if (c2.sel != null && keys.includes('coolant2') && cycle % 2 === 0) { const m = await e.op(() => e.readDidsRaw(C2MOD, [c2.sel])), b = m[c2.sel]; if (b && b.length === 1) res.coolant2 = b[0] - 40; }
+        if (brand() === 'vag' && c2.sel != null && keys.includes('coolant2') && cycle % 2 === 0) { const m = await e.op(() => e.readDidsRaw(C2MOD, [c2.sel])), b = m[c2.sel]; if (b && b.length === 1) res.coolant2 = b[0] - 40; }
         /* Nowe połączenie: stare odczyty Simos18 nie mogą trafić do rejestru, a dostępność sprawdzamy od razu, nie dopiero w karcie MAP. */
         if (udsPr.elm !== e) { udsPr.ok.clear(); udsPr.elm = e; for (const c of Object.values(CAT)) if (c.uds != null) delete vals[c.key]; }
         /* Przy wyłączonym zapłonie sterownik nie odpowie, więc pusty wynik sprawdzamy ponownie co 10 s. */
-        if ((udsPr.tried !== e || (!udsPr.ok.size && Date.now() - (udsPr.at || 0) > 10000)) && cycle >= 2) { udsPr.tried = e; udsPr.at = Date.now(); await udsProbe(); }
+        if (brand() === 'vag' && (store.get('brand', 'auto') !== 'auto' || report.vin || cycle > 30) && (udsPr.tried !== e || (!udsPr.ok.size && Date.now() - (udsPr.at || 0) > 10000)) && cycle >= 2) { udsPr.tried = e; udsPr.at = Date.now(); await udsProbe(); }
         { const uk = keys.filter(k => CAT[k] && CAT[k].uds != null && udsPr.ok.has(CAT[k].uds) && (k !== 'baroU' || cycle % 10 === 0 || vals.baroU == null));
           if (uk.length) { const m = await e.op(() => e.readDidsRaw(C2MOD, uk.map(k => CAT[k].uds))); for (const k of uk) { const def = SIMOS18_DIDS.find(d => d.did === CAT[k].uds), v = m[CAT[k].uds] && decodeSimosDid(def, m[CAT[k].uds]); if (v != null) res[k] = v; } } }
         if (c2.probe && c2.sel == null && cycle % 3 === 0) for (const d of c2.cands) { if (e !== elm) break; const b = await e.op(() => e.readDidRaw(C2MOD, d)); if (b && b.length === 1) c2.vals[d] = b[0] - 40; }
@@ -4898,6 +5025,7 @@ function createBridge(api) {
       report.vin = await e.op(() => e.readVin());
       report.readiness = await e.op(() => e.readReadiness());
       report.calib = await e.op(() => e.readCalib());
+      applyBrand();
       const v = await e.op(() => e.voltage()); if (v != null) { vals.adapterV = v; }
     } catch (err) { logLine('! ' + err.message); }
     renderState(); setButtons();
@@ -4946,6 +5074,7 @@ function createBridge(api) {
   }
   function clearFoot(id, label) { return `<div class="cardfoot" data-foot="${id}"><button class="btn small" type="button" data-clear="${id}">${label}</button></div>`; }
   function renderObd() {
+    batt && batt.errorsUi();
     const o = report.obd, host = $('#obdDtc');
     if (!o) { host.innerHTML = `<p class="muted">${elm ? 'Odczyt w toku…' : 'Jeszcze nie odczytano.'}</p>`; return; }
     const sec = (label, list, note) => {
@@ -4966,6 +5095,7 @@ function createBridge(api) {
       ${total ? clearFoot('obd', 'Kasuj kody silnika (OBD)') : ''}`;
   }
   function renderModules() {
+    batt && batt.errorsUi();
     $('#modTitle').firstChild.textContent = `Moduły ${BRAND_NAMES[brand()]} `;
     const host = $('#modules');
     if (!report.modules.length) { host.innerHTML = `<p class="muted">${scanning ? 'Skanowanie…' : 'Jeszcze nie skanowano.'}</p>`; updateBadge(); return; }
@@ -5007,20 +5137,22 @@ function createBridge(api) {
         if (r) { report.modules.push(r); renderModules(); } else report.absent.push(m);
       }
       if (full && e === elm) {
-        const found = await e.op(() => e.findUnknown(tx => prog(`Szukam modułów: 0x${tx.toString(16).toUpperCase()}…`), brand() === 'bmw'));
+        const found = await e.op(() => e.findUnknown(tx => prog(`Szukam modułów: 0x${tx.toString(16).toUpperCase()}…`), brand() === 'bmw' ? 'bmw' : brand() === 'mitsubishi' ? 'mit' : 'vag'));
         for (const m of found) { prog(`Odczyt ${m.name}…`); const r = await e.op(() => e.scanModule(m, false)); if (r) { report.modules.push(r); renderModules(); } }
+        /* Mitsubishi: znalezione moduły zapamiętujemy dla tego VIN, żeby zwykły skan (np. po wejściu w Błędy) też je czytał. */
+        if (brand() === 'mitsubishi' && report.vin) try { store.set('mitMods.' + report.vin, JSON.stringify(found.map(m => ({ addr: m.addr, name: m.name, tx: m.tx, rx: m.rx, mit: true })))); } catch (x) {}
       }
       report.at = new Date();
       const n = report.modules.reduce((a, m) => a + m.dtcs.length, 0);
       prog(`Gotowe ${report.at.toLocaleTimeString('pl-PL')}: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}.`);
       journal && journal.add('raport', `Raport po skanie: ${report.modules.length} ${plural(report.modules.length, 'moduł', 'moduły', 'modułów')}, ${n} ${plural(n, 'błąd', 'błędy', 'błędów')}`, buildReport());
     } catch (err) { prog('Skanowanie przerwane: ' + err.message); logLine('! ' + err.message); }
-    finally { scanning = false; renderModules(); setButtons(); tools && tools.onScan && tools.onScan(); }
+    finally { scanning = false; lastScanAt = Date.now(); renderModules(); setButtons(); tools && tools.onScan && tools.onScan(); }
   }
   $('#btnScan').onclick = () => runScan($('#fullScan').checked);
   $('#brandSel').value = store.get('brand', 'auto');
   $('#brandSel').onchange = e => {
-    store.set('brand', e.target.value); renderModules(); tools && tools.render();
+    store.set('brand', e.target.value); applyBrand(); renderModules(); tools && tools.render();
     if (elm && !scanning) runScan(false);
   };
 
@@ -5291,7 +5423,8 @@ function createBridge(api) {
   batt = createBatt({
     elm: () => elm, vals: () => vals, fresh: k => cycle - (seen[k] ?? -99) <= 1, CAT, avail, fmtVal, stateOf, esc, fmtNum,
     saveLog, store, pause, logLine, report: () => report, toolsBusy: () => !!(tools && tools.busy()),
-    p2Ready: () => p2.elm === elm && p2.st !== undefined,
+    p2Ready: () => brand() !== 'vag' || (p2.elm === elm && p2.st !== undefined),
+    brand: () => brand(), scanning: () => scanning, rescan: () => { if (elm && !scanning) runScan(false); }, BRAND_NAMES,
     mark: txt => p2Mark(txt),
     showTab: t => { const b = $(`.tabs button[data-tab="${t}"]`); if (b && currentTab !== t) b.click(); },
     afterMorning: () => { if (scanAfterMorning && elm) { scanAfterMorning = false; runScan(false); } },
@@ -5300,6 +5433,7 @@ function createBridge(api) {
   });
   batt.render();
   tools.render();
+  applyBrand();
   bridge = createBridge({
     esc, store, logLine, copyText, banner, chip, devName: () => journal.devName(),
     startBridgeHost, stopBridgeHost, connectRemote: code => connect('remote', code),

@@ -69,7 +69,7 @@ function createTools(api) {
         <p class="tstatus" id="tScanSt"></p>
         <div id="tScanRes" class="tblwrap"></div></div>
 
-      ${api.brand() === 'bmw' ? '' : `<div class="card"><div class="card-h"><h3>Pomiary silnika Simos18</h3><span class="n">EA888 gen. 3 · 0x22</span></div>
+      ${api.brand() !== 'vag' ? '' : `<div class="card"><div class="card-h"><h3>Pomiary silnika Simos18</h3><span class="n">EA888 gen. 3 · 0x22</span></div>
         <p class="small muted">Gotowe pomiary sterowników Simos18 (auta MQB z silnikiem EA888 gen. 3, 1.8 i 2.0 TSI/TFSI): doładowanie rzeczywiste i zadane, wastegate, obroty turbosprężarki, korekty spalania stukowego na każdy cylinder, pozycje wałków, ciśnienia paliwa, temperatura oleju. Lista i przeliczniki pochodzą z projektu VW_Flash. <span id="tSimNote">${simNote()}</span></p>
         <div class="actions"><button class="btn small primary" id="tSimGo" type="button" ${on ? '' : 'disabled'}>Odczytaj</button>
           <button class="btn small" id="tSimLive" type="button" ${on ? '' : 'disabled'}>Odczyt ciągły</button>

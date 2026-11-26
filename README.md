@@ -4,6 +4,18 @@ Webowa aplikacja diagnostyczna dla aut grupy VAG (VW, Audi, Seat/Cupra, Škoda) 
 
 **Uruchom:** https://kpaae.github.io/vag-diagnostyka/
 
+## Układ zakładek
+
+1. **Start**: napięcia (sterownik i gniazdo OBD), błędy na start (kontrolka MIL, kody OBD silnika, błędy modułów z ostatniego skanu), wypadanie zapłonów (liczniki z trybu 06, co minutę przy pracującym silniku), poranny start i testy akumulatora. W autach VAG także odczyt danych akumulatora z gatewaya i przewodnik rejestracji.
+2. **Klima i temperatury**: wszystkie temperatury, test nagrzewania, a w VAG drugi czujnik płynu i Climatronic.
+3. **Wszystkie dane**: pozostałe parametry na żywo (silnik, doładowanie, mieszanka, Simos18), nagrywanie i tempo odczytu.
+4. **Błędy**: po wejściu w zakładkę od razu rusza nowy skan (jeśli ostatni był ponad 20 s temu).
+5. **Logi**, a dalej **P0299 · EPC** (tylko VAG), **Narzędzia** i **Stan**.
+
+**Marki:** VAG, BMW i Mitsubishi (rozpoznawane po VIN albo wybierane ręcznie). Mitsubishi: silnik i skrzynia pod standardowymi adresami OBD (7E0, 7E1), kody w formacie SAE, liczniki wypadania zapłonów z trybu 06. Pozostałe moduły znajduje pełny skan (odpowiedź na adresie +8, układ niepotwierdzony dla Mitsubishi), a znalezione są zapamiętywane dla danego VIN. Pomiarów specyficznych dla Mitsubishi (MUT-III) aplikacja nie zna.
+
+**Logi per auto:** każdy log trafia do folderu `<VIN>/<urządzenie>/<sesja>/` w repozytorium logów. Wpis bez odczytanego VIN czeka do 2 minut na odczyt, a potem idzie do `bez-VIN/`.
+
 ## Co potrafi
 
 **Parametry na żywo** (standardowe OBD-II, tryb 01), pogrupowane i z orientacyjnymi progami alarmowymi:

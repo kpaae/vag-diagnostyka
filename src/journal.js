@@ -75,8 +75,9 @@ function createJournal(api) {
     const sess = session || `${dstamp(d)}_bez-polaczenia`;
     let e = opt.id ? (await all()).find(x => x.id === opt.id) : null;
     const body = (ext === 'csv' ? '' : header(kind, title)) + text;
-    if (e) Object.assign(e, { ts: d.getTime(), title: title || e.title, text: body, synced: false, err: null });
-    else e = { id: opt.id || `${d.getTime()}-${kind}`, ts: d.getTime(), session: sess, kind, title: title || KINDS[kind] || kind, ext, text: body, synced: false, err: null, sha: {}, file: `${sess}/${tstamp(d)}-${kind}` };
+    const vin = cleanVin(api.vin());
+    if (e) Object.assign(e, { ts: d.getTime(), title: title || e.title, text: body, synced: false, err: null }, !e.vin && vin ? { vin } : {});
+    else e = { id: opt.id || `${d.getTime()}-${kind}`, ts: d.getTime(), session: sess, vin, kind, title: title || KINDS[kind] || kind, ext, text: body, synced: false, err: null, sha: {}, file: `${sess}/${tstamp(d)}-${kind}` };
     await put(e);
     await trim();
     render();
@@ -97,9 +98,11 @@ function createJournal(api) {
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     return btoa(bin);
   }
-  /* Ścieżka w repozytorium: <urządzenie>/<sesja>/<godzina>-<rodzaj>. Folder urządzenia ustalany przy pierwszej wysyłce wpisu. */
+  /* Ścieżka w repozytorium: <VIN>/<urządzenie>/<sesja>/<godzina>-<rodzaj>, osobny folder dla każdego auta.
+     Bez VIN (np. nieudane połączenie): folder „bez-VIN”. Ścieżka ustalana przy pierwszej wysyłce wpisu. */
+  function cleanVin(v) { const x = String(v || '').toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, ''); return x.length === 17 ? x : null; }
   function parts(e) {
-    if (!e.path) e.path = `${devSlug(devName())}/${e.file || e.session + '/' + e.id}`;
+    if (!e.path) e.path = `${e.vin || 'bez-VIN'}/${devSlug(devName())}/${e.file || e.session + '/' + e.id}`;
     if (e.text.length <= CHUNK) return [[`${e.path}.${e.ext}`, e.text]];
     const out = []; for (let i = 0, n = 1; i < e.text.length; i += CHUNK, n++) out.push([`${e.path}.cz${n}.${e.ext}`, e.text.slice(i, i + CHUNK)]);
     return out;
@@ -127,9 +130,17 @@ function createJournal(api) {
     if (!navigator.onLine) { lastErr = 'Brak internetu. Wyślę, gdy wróci połączenie.'; render(); return; }
     if (syncing) { again = true; return; }
     syncing = true; lastErr = ''; render();
+    let later = false;
     try {
-      const L = (await all()).filter(e => !e.synced).reverse();
+      const A = await all(), L = A.filter(e => !e.synced).reverse();
       for (const e of L) {
+        /* VIN wpisu: z samego wpisu, z innego wpisu tej sesji albo (bieżąca sesja) z auta. Wpis bieżącej sesji bez VIN czeka
+           do 2 min, bo VIN odczytuje się chwilę po połączeniu. */
+        if (!e.path && !e.vin) {
+          const sib = A.find(x => x.session === e.session && x.vin);
+          e.vin = sib ? sib.vin : e.session === session ? cleanVin(api.vin()) : null;
+          if (!e.vin && e.session === session && Date.now() - e.ts < 120000) { later = true; continue; }
+        }
         try {
           for (const [path, text] of parts(e)) {
             const body = { message: `${KINDS[e.kind] || e.kind}: ${e.title} (${e.session})`, content: b64(text) };
@@ -151,7 +162,7 @@ function createJournal(api) {
         }
         render();
       }
-    } finally { syncing = false; render(); if (again) { again = false; sync(force); } }
+    } finally { syncing = false; render(); if (again) { again = false; sync(force); } else if (later) setTimeout(() => sync(), 20000); }
   }
   let kickT = null;
   function kick() { clearTimeout(kickT); kickT = setTimeout(() => sync(false), 1500); }
@@ -182,7 +193,8 @@ function createJournal(api) {
     $('#jErr').textContent = lastErr; $('#jErr').hidden = !lastErr;
     $('#jSend').hidden = !(c.repo && c.token) || !pend;
     const by = {}; L.forEach(e => { (by[e.session] = by[e.session] || []).push(e); });
-    $('#jList').innerHTML = L.length ? Object.keys(by).sort().reverse().slice(0, 40).map(s => `<div class="jsess"><h4 class="sub">${esc(s.replace('_', ' · ').replace(/(\d\d)(\d\d)$/, '$1:$2'))}</h4>
+    const vinOf = s => { const x = by[s].find(e => e.vin); return x ? x.vin : null; };
+    $('#jList').innerHTML = L.length ? Object.keys(by).sort().reverse().slice(0, 40).map(s => `<div class="jsess"><h4 class="sub">${esc(s.replace('_', ' · ').replace(/(\d\d)(\d\d)$/, '$1:$2'))}${vinOf(s) ? ` <small class="mono">· VIN ${esc(vinOf(s))}</small>` : ''}</h4>
       ${by[s].map(e => `<div class="jrow"><div class="jmain"><b>${esc(e.title)}</b><span class="muted">${new Date(e.ts).toLocaleTimeString('pl-PL')} · ${kb(e.text.length)}</span></div>
         <span class="st ${e.synced ? 'ok' : e.err ? 'no' : ''}">${e.synced ? 'wysłane' : e.err ? 'błąd' : c.repo && c.token ? 'czeka' : 'w telefonie'}</span>
         <div class="jact"><button class="linkbtn" type="button" data-jc="${esc(e.id)}">Kopiuj</button>${api.framed ? '' : `<button class="linkbtn" type="button" data-jd="${esc(e.id)}">Pobierz</button>`}<button class="linkbtn" type="button" data-jx="${esc(e.id)}">Usuń</button></div></div>`).join('')}</div>`).join('')
@@ -205,12 +217,12 @@ function createJournal(api) {
         </ol>
         <div class="frow"><label class="fl">Repozytorium <input id="jRepo" class="inp mono" value="${esc(c.repo || 'kpaae/vag-logi')}" spellcheck="false" autocomplete="off" autocapitalize="off"></label></div>
         <div class="frow"><label class="fl">Urządzenie <input id="jDev" class="inp" value="${esc(api.store.get('devName', ''))}" placeholder="${esc(devName())}" spellcheck="false" autocomplete="off"></label></div>
-        <p class="small muted" id="jDevNote">Logi z tego urządzenia trafiają do folderu <code>${esc(devSlug(devName()))}/</code>. Zostaw puste, żeby użyć nazwy wykrytej automatycznie.</p>
+        <p class="small muted" id="jDevNote">Logi trafiają do folderu <code>VIN/${esc(devSlug(devName()))}/</code>, osobno dla każdego auta (bez odczytanego VIN: <code>bez-VIN/</code>). Zostaw puste, żeby użyć nazwy wykrytej automatycznie.</p>
         <div class="frow"><label class="fl">Token <input id="jTok" class="inp mono" type="password" value="${esc(c.token)}" placeholder="github_pat_…" spellcheck="false" autocomplete="off" autocapitalize="off"></label></div>
         <div class="frow"><label class="chk"><input type="checkbox" id="jAuto"${c.auto ? ' checked' : ''}> wysyłaj automatycznie</label>
           <button class="btn small primary" id="jSave" type="button">Zapisz i sprawdź</button><button class="btn small ghost" id="jForget" type="button">Usuń klucz</button></div>
         <p class="tstatus" id="jGhSt"></p></details>`;
-    $('#jDev').oninput = e => { api.store.set('devName', e.target.value.trim()); $('#jDevNote').querySelector('code').textContent = devSlug(devName()) + '/'; };
+    $('#jDev').oninput = e => { api.store.set('devName', e.target.value.trim()); $('#jDevNote').querySelector('code').textContent = 'VIN/' + devSlug(devName()) + '/'; };
     $('#jSave').onclick = () => { api.store.set('ghRepo', $('#jRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '')); api.store.set('ghToken', $('#jTok').value.trim()); api.store.set('ghAuto', $('#jAuto').checked ? '1' : '0'); testGh(); };
     $('#jForget').onclick = () => { api.store.set('ghToken', ''); $('#jTok').value = ''; $('#jGhSt').textContent = 'Klucz usunięty z tej przeglądarki.'; render(); };
     $('#jAuto').onchange = e => { api.store.set('ghAuto', e.target.checked ? '1' : '0'); };

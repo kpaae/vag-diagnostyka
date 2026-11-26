@@ -22,24 +22,23 @@
 <div class="tabbar">
   <div class="wrap">
     <nav class="tabs" role="tablist">
-      <button type="button" role="tab" data-tab="live" aria-selected="true">Na żywo</button>
-      <button type="button" role="tab" data-tab="boost" aria-selected="false">P0299 · EPC</button>
-      <button type="button" role="tab" data-tab="heat" aria-selected="false">Ogrzewanie</button>
-      <button type="button" role="tab" data-tab="batt" aria-selected="false">Akumulator</button>
+      <button type="button" role="tab" data-tab="batt" aria-selected="true">Start</button>
+      <button type="button" role="tab" data-tab="heat" aria-selected="false">Klima i temperatury</button>
+      <button type="button" role="tab" data-tab="live" aria-selected="false">Wszystkie dane</button>
       <button type="button" role="tab" data-tab="errors" aria-selected="false">Błędy<span id="errBadge" class="badge" hidden></span></button>
+      <button type="button" role="tab" data-tab="log" aria-selected="false">Logi</button>
+      <button type="button" role="tab" data-tab="boost" aria-selected="false">P0299 · EPC</button>
       <button type="button" role="tab" data-tab="tools" aria-selected="false">Narzędzia</button>
       <button type="button" role="tab" data-tab="state" aria-selected="false">Stan</button>
-      <button type="button" role="tab" data-tab="log" aria-selected="false">Logi</button>
     </nav>
   </div>
 </div>
 
 <main class="wrap">
-  <section id="tab-live">
+  <section id="tab-live" hidden>
     <div class="toolbar">
       <div class="seg" id="groupSeg">
         <button type="button" data-g="silnik">Silnik</button>
-        <button type="button" data-g="chlodzenie">Chłodzenie</button>
         <button type="button" data-g="doladowanie">Doładowanie</button>
         <button type="button" data-g="mieszanka">Mieszanka</button>
         <button type="button" data-g="all">Wszystko</button>
@@ -68,13 +67,13 @@
 
   <section id="tab-heat" class="panel" hidden><div id="heatPanel" class="pstack"></div></section>
 
-  <section id="tab-batt" class="panel" hidden><div id="battPanel" class="pstack"></div></section>
+  <section id="tab-batt" class="panel"><div id="battPanel" class="pstack"></div></section>
 
   <section id="tab-errors" hidden>
     <div class="toolbar">
       <div class="actions">
         <button id="btnScan" class="btn primary" type="button" disabled>Skanuj wszystkie moduły</button>
-        <select id="brandSel" class="inp" aria-label="Marka"><option value="auto">Marka: z VIN</option><option value="vag">VAG (VW, Audi, Seat, Škoda)</option><option value="bmw">BMW / MINI</option></select>
+        <select id="brandSel" class="inp" aria-label="Marka"><option value="auto">Marka: z VIN</option><option value="vag">VAG (VW, Audi, Seat, Škoda)</option><option value="mitsubishi">Mitsubishi</option><option value="bmw">BMW / MINI</option></select>
         <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="fullScan"> Szukaj też modułów spoza listy (ok. 1 min)</label>
       </div>
       <div class="actions">
