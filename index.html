@@ -345,7 +345,7 @@ details.help a { color: var(--accent); }
       <span class="mark">VAG</span>
       <div>
         <h1>Diagnostyka</h1>
-        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-25 22:32 UTC</p>
+        <p class="proto">ELM327 · ISO 15765-4 CAN 500 kb/s · UDS · build 2026-11-26 09:31 UTC</p>
       </div>
     </div>
     <div class="conn">
@@ -508,7 +508,7 @@ details.help a { color: var(--accent); }
 </main>
 
 <script>
-const APP_VERSION = '2026-11-25 22:32 UTC';
+const APP_VERSION = '2026-11-26 09:31 UTC';
 /* ===== VAG Diagnostyka – rdzeń: ELM327 / OBD-II / UDS / symulator ===== */
 'use strict';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -701,12 +701,12 @@ const PIDS = [
   { pid: 0x42, len: 2, g: 'silnik', f: b => [u16(b[0], b[1]) / 1000], outs: [{ key: 'ecuV', name: 'Napięcie sterownika', unit: 'V', d: 2, min: 10, max: 16, check: voltCheck }] },
   { pid: 0x1F, len: 2, g: 'silnik', slow: true, f: b => [u16(b[0], b[1])], outs: [{ key: 'runTime', name: 'Czas od uruchomienia', unit: '', d: 0, fmt: fmtDur, nospark: true }] },
   // Chłodzenie i temperatury
-  { pid: 0x05, len: 1, g: 'chlodzenie', f: b => [b[0] - 40], outs: [{ key: 'coolant', name: 'Płyn chłodzący', unit: '°C', d: 0, min: -10, max: 130, check: v => lvl(v, 110, 118) }] },
-  { pid: 0x5C, len: 1, g: 'chlodzenie', f: b => [b[0] - 40], outs: [{ key: 'oil', name: 'Olej silnikowy', unit: '°C', d: 0, min: -10, max: 150, check: v => lvl(v, 125, 140) }] },
-  { pid: 0x0F, len: 1, g: 'chlodzenie', f: b => [b[0] - 40], outs: [{ key: 'iat', name: 'Powietrze dolotowe', unit: '°C', d: 0, min: -10, max: 90, check: v => lvl(v, 55, 70) }] },
+  { pid: 0x05, len: 1, g: 'chlodzenie', every: 3, f: b => [b[0] - 40], outs: [{ key: 'coolant', name: 'Płyn chłodzący', unit: '°C', d: 0, min: -10, max: 130, check: v => lvl(v, 110, 118) }] },
+  { pid: 0x5C, len: 1, g: 'chlodzenie', every: 3, f: b => [b[0] - 40], outs: [{ key: 'oil', name: 'Olej silnikowy', unit: '°C', d: 0, min: -10, max: 150, check: v => lvl(v, 125, 140) }] },
+  { pid: 0x0F, len: 1, g: 'chlodzenie', every: 3, f: b => [b[0] - 40], outs: [{ key: 'iat', name: 'Powietrze dolotowe', unit: '°C', d: 0, min: -10, max: 90, check: v => lvl(v, 55, 70) }] },
   { pid: 0x46, len: 1, g: 'chlodzenie', slow: true, f: b => [b[0] - 40], outs: [{ key: 'ambient', name: 'Temperatura otoczenia', unit: '°C', d: 0, min: -20, max: 45 }] },
-  { pid: 0x3C, len: 2, g: 'chlodzenie', f: b => [u16(b[0], b[1]) / 10 - 40], outs: [{ key: 'cat1', name: 'Katalizator, przed', unit: '°C', d: 0, min: 0, max: 1000, check: v => lvl(v, 850, 950) }] },
-  { pid: 0x3E, len: 2, g: 'chlodzenie', f: b => [u16(b[0], b[1]) / 10 - 40], outs: [{ key: 'cat2', name: 'Katalizator, za', unit: '°C', d: 0, min: 0, max: 1000 }] },
+  { pid: 0x3C, len: 2, g: 'chlodzenie', every: 3, f: b => [u16(b[0], b[1]) / 10 - 40], outs: [{ key: 'cat1', name: 'Katalizator, przed', unit: '°C', d: 0, min: 0, max: 1000, check: v => lvl(v, 850, 950) }] },
+  { pid: 0x3E, len: 2, g: 'chlodzenie', every: 3, f: b => [u16(b[0], b[1]) / 10 - 40], outs: [{ key: 'cat2', name: 'Katalizator, za', unit: '°C', d: 0, min: 0, max: 1000 }] },
   // Doładowanie
   { pid: 0x0B, len: 1, g: 'doladowanie', f: b => [b[0]], outs: [{ key: 'map', name: 'Ciśnienie w kolektorze', unit: 'kPa', d: 0, min: 0, max: 255 }] },
   { pid: 0x87, len: 5, g: 'doladowanie', f: b => [(b[0] & 1) ? u16(b[1], b[2]) / 32 : null, (b[0] & 2) ? u16(b[3], b[4]) / 32 : null], outs: [{ key: 'mapX', name: 'Kolektor, precyzyjnie', unit: 'kPa', d: 0, min: 0, max: 300 }, { key: 'mapXB', name: 'Kolektor B', unit: 'kPa', d: 0, min: 0, max: 300 }] },
@@ -720,9 +720,9 @@ const PIDS = [
   { pid: 0x24, len: 4, g: 'mieszanka', f: b => [u16(b[0], b[1]) * 2 / 65536, u16(b[2], b[3]) * 8 / 65536], outs: [{ key: 'lambdaV', name: 'Lambda rzeczywista (napięciowo)', unit: 'λ', d: 3, min: 0.7, max: 1.3 }, { key: 'lambdaVv', name: 'Napięcie sondy 1', unit: 'V', d: 3, min: 0, max: 5 }] },
   { pid: 0x44, len: 2, g: 'mieszanka', f: b => [u16(b[0], b[1]) * 2 / 65536], outs: [{ key: 'lambdaCmd', name: 'Lambda zadana', unit: 'λ', d: 3, min: 0.7, max: 1.3 }] },
   { pid: 0x06, len: 1, g: 'mieszanka', f: b => [b[0] / 1.28 - 100], outs: [{ key: 'stft1', name: 'Korekta krótkoterminowa', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 10, 20) }] },
-  { pid: 0x07, len: 1, g: 'mieszanka', f: b => [b[0] / 1.28 - 100], outs: [{ key: 'ltft1', name: 'Korekta długoterminowa', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 8, 15) }] },
+  { pid: 0x07, len: 1, g: 'mieszanka', every: 3, f: b => [b[0] / 1.28 - 100], outs: [{ key: 'ltft1', name: 'Korekta długoterminowa', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 8, 15) }] },
   { pid: 0x08, len: 1, g: 'mieszanka', f: b => [b[0] / 1.28 - 100], outs: [{ key: 'stft2', name: 'Korekta krótkoterm., bank 2', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 10, 20) }] },
-  { pid: 0x09, len: 1, g: 'mieszanka', f: b => [b[0] / 1.28 - 100], outs: [{ key: 'ltft2', name: 'Korekta długoterm., bank 2', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 8, 15) }] },
+  { pid: 0x09, len: 1, g: 'mieszanka', every: 3, f: b => [b[0] / 1.28 - 100], outs: [{ key: 'ltft2', name: 'Korekta długoterm., bank 2', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 8, 15) }] },
   { pid: 0x03, len: 2, g: 'mieszanka', f: b => [b[0]], outs: [{ key: 'fuelSys', name: 'Tryb układu paliwowego', unit: '', text: true, fmt: v => FUELSYS[v] || ('kod ' + v) }] },
   { pid: 0x23, len: 2, g: 'mieszanka', f: b => [u16(b[0], b[1]) / 10], outs: [{ key: 'railP', name: 'Ciśnienie paliwa w szynie', unit: 'bar', d: 0, min: 0, max: 250 }] },
   { pid: 0x59, len: 2, g: 'mieszanka', f: b => [u16(b[0], b[1]) / 10], outs: [{ key: 'railPabs', name: 'Ciśnienie paliwa, abs.', unit: 'bar', d: 0, min: 0, max: 250 }] },
@@ -1187,8 +1187,20 @@ class ELM {
       const res = await this.sendMany(plans.map(P => P.req));
       plans.forEach((P, i) => handle(P, res ? this.resultOf(P.req, res[i]) : { err: 'brak odpowiedzi z mostu' }));
     }
+    /* Sterownik milczy (NO DATA) albo odmawia (7F 22: np. po wyłączeniu zapłonu): przerywamy cykl i niczego nie wyłączamy.
+       Wcześniej takie odpowiedzi wyłączały na stałe kilka PID-ów w zapytaniu i cyfrę liczby ramek, więc po ponownym
+       włączeniu zapłonu odczyt zostawał kilka razy wolniejszy do końca połączenia. */
+    const silent = r => r.err === 'NO DATA' || r.nrc === '22';
     let guard = 0;
-    while (queue.length && guard++ < 60) { const P = plan(); handle(P, await this.request(P.req, { attempts: 2 })); }
+    while (queue.length && guard++ < 60) {
+      const P = plan(); const r = await this.request(P.req, { attempts: 2 });
+      if (silent(r)) {
+        if (!P.useCount) { this.silentAt = Date.now(); break; }
+        const r2 = await this.request(P.req.slice(0, -1), { attempts: 1 });
+        if (silent(r2)) { this.silentAt = Date.now(); break; }
+      }
+      handle(P, r);
+    }
     return out;
   }
   /* Odpowiedź z wysyłki zbiorczej w tej samej postaci, co z request() (bez ponawiania). */
@@ -1404,6 +1416,7 @@ class ELM {
         const useCount = cnt() && frames <= 15;
         const r = await this.request('22' + g.map(hex4).join('') + (useCount ? frames.toString(16).toUpperCase() : ''), { attempts: 1 });
         if (r.err === '?') { this.countOk = false; break; }
+        if (r.err === 'NO DATA' || r.nrc === '22') return out;   // sterownik milczy albo odmawia: bez kary dla zapytań zbiorczych
         let ok = !r.err;
         if (ok) {
           const b = bytesOf(r.data); let k = 1; const part = {};
@@ -4526,7 +4539,8 @@ function createBridge(api) {
   function defsFor(keys) {
     const pids = new Set([0x0C, 0x04]);
     for (const k of keys) { const c = CAT[k]; if (c.derived) c.deps.forEach(p => pids.add(p)); else if (!c.special) pids.add(c.pid); }
-    return PIDS.filter(d => pids.has(d.pid) && sup.has(d.pid) && (!d.slow || cycle % 10 === 0 || d.outs.every(o => vals[o.key] == null)));
+    /* Wolno zmienne parametry (temperatury, korekty długoterminowe) co 3. cykl, bardzo wolne (paliwo, otoczenie) co 10.: każde zapytanie to ok. 75 ms przez Bluetooth. */
+    return PIDS.filter(d => pids.has(d.pid) && sup.has(d.pid) && ((!d.slow && !d.every) || cycle % (d.slow ? 10 : d.every) === 0 || d.outs.every(o => vals[o.key] == null)));
   }
   function take(res) {
     for (const k in res) {
@@ -4540,9 +4554,9 @@ function createBridge(api) {
   /* Tempo odczytu: okres pętli (0 = tak szybko, jak pozwala adapter), co ile ms odświeżać ekran,
      co który cykl czytać wszystkie parametry (do rejestru), a nie tylko widoczne. */
   const RATES = {
-    eco: { label: 'Oszczędnie · 2 Hz', period: 500, draw: 500, full: 6 },
-    normal: { label: 'Normalnie · 5 Hz', period: 200, draw: 200, full: 6 },
-    fast: { label: 'Szybko · 10 Hz', period: 100, draw: 150, full: 10 },
+    eco: { label: 'Oszczędnie · do 2 Hz', period: 500, draw: 500, full: 6 },
+    normal: { label: 'Normalnie · do 5 Hz', period: 200, draw: 200, full: 6 },
+    fast: { label: 'Szybko · do 10 Hz', period: 100, draw: 150, full: 10 },
     max: { label: 'Maksymalnie', period: 0, draw: 200, full: 20 }
   };
   let rateKey = RATES[store.get('rate', 'normal')] ? store.get('rate', 'normal') : 'normal';
@@ -5135,7 +5149,24 @@ function createBridge(api) {
     const fresh = k => cycle - (seen[k] ?? -99) <= 1;
     if (!fresh('rpm')) { if (++p2.miss >= 3 && !p2.ignOff) { p2.ignOff = true; p2.offAt = now; p2.hist.push({ t: now, note: 'zapłon wyłączony (sterownik nie odpowiada)' }); p2Save(); } }
     else { p2.miss = 0; if (p2.ignOff) { const off = p2.offAt ? now - p2.offAt : null; p2.ignOff = false; p2.wakeAt = now; p2.at = 0; p2.cyc.push({ wake: now, off }); p2.hist.push({ t: now, note: `zapłon włączony ponownie${off != null ? ` po ${p2Dur(off)} postoju` : ''}` }); logLine('— zapłon włączony: strażnik P2563 czyta status co 4 s, aż sterownik wykona test (najdłużej 3 min)'); } }
-    if (p2.ignOff) return;
+    /* Po zgaszeniu sterownik jeszcze przez chwilę odpowiada na odczyt błędów (25.11: test P2563 nie przeszedł właśnie wtedy),
+       więc przez 90 s po wyłączeniu zapłonu czytamy status co 4 s. */
+    const afterRun = p2.ignOff && p2.offAt && now - p2.offAt < 90000;
+    if (p2.ignOff && !afterRun) return;
+    if (!p2.ignOff && fresh('rpm')) { const r = vals.rpm ?? 0; if (p2.lastRpm >= 400 && r < 50) p2.hist.push({ t: now, note: 'silnik zgaszony, zapłon nadal włączony' }); p2.lastRpm = r; }
+    if (afterRun) {
+      if (now - p2.at < P2_FASTEVERY) return;
+      p2.at = now;
+      const d = await e.op(() => e.readModuleDtcs(C2MOD)).catch(() => null);
+      if (!d || d.err || e !== elm) return;
+      const x = d.dtcs.find(z => z.raw === P2_RAW), st = x ? x.status : 0, prev = p2.st;
+      if (st === prev) return;
+      p2.st = st;
+      p2.hist.push({ t: now, st, ect: vals.coolant, run: null, rpm: 0, v: 0, u: null, note2: 'po wyłączeniu zapłonu' });
+      const fail = prev !== undefined && (((st & 0x01) && !(prev & 0x01)) || ((st & 0x02) && !(prev & 0x02)));
+      if (fail) { p2.ev.push({ at: now, st, first: false }); logLine(`— P2563: test nie przeszedł po wyłączeniu zapłonu (status 0x${st.toString(16).toUpperCase()})`); }
+      p2Save(); return;
+    }
     if (now - p2.last >= (p2KeyOn() ? 250 : 1000)) {
       p2.last = now; const row = { t: now };
       for (const k in vals) if (CAT[k] && !CAT[k].text && isFinite(vals[k]) && cycle - (seen[k] ?? -99) <= 3) row[k] = vals[k];
@@ -5146,7 +5177,7 @@ function createBridge(api) {
     /* Odczyt statusu trwa u Simos18 ok. 1,5 s (sterownik odpowiada „czekaj”), więc szybko czytamy tylko do chwili, gdy test w tym cyklu się wykona. */
     if (batt && batt.hold() && p2.st !== undefined) return;
     const cyNow = p2.cyc[p2.cyc.length - 1];
-    if (now - p2.at < (p2Early() && !(cyNow && cyNow.done != null) ? P2_FASTEVERY : P2_EVERY)) return;
+    if (now - p2.at < ((p2Early() && !(cyNow && cyNow.done != null)) || p2.miss >= 1 ? P2_FASTEVERY : P2_EVERY)) return;
     p2.at = now;
     const d = await e.op(() => e.readModuleDtcs(C2MOD)).catch(() => null);
     if (!d || d.err || e !== elm) return;
@@ -5185,7 +5216,7 @@ function createBridge(api) {
     const cs = p2.cyc.filter(c => c.done != null);
     if (cs.length) { L.push('', '== Kiedy sterownik wykonał test w kolejnych cyklach zapłonu =='); for (const c of cs) L.push(`${ts(c.wake)} · ${p2CycText(c)}`); }
     L.push('', '== Zmiany statusu P2563 (co 4 s po zapłonie, aż test się wykona, potem co 30 s) ==');
-    for (const h of p2.hist) if (h.note) L.push(`${ts(h.t)} (+${rel(h.t)}) · ${h.note}`); else L.push(`${ts(h.t)} (+${rel(h.t)}) · status 0x${h.st.toString(16).toUpperCase().padStart(2, '0')}: ${p2Bits(h.st)} · płyn ${f1(h.ect)} °C, dolot ${f1(h.iat)} °C, otoczenie ${f1(h.amb)} °C, silnik pracuje ${h.run ?? '—'} s, ${f1(h.rpm)} obr/min, ${f1(h.v)} km/h, napięcie sterownika ${h.u == null ? '—' : f1(h.u) + ' V'}`);
+    for (const h of p2.hist) if (h.note) L.push(`${ts(h.t)} (+${rel(h.t)}) · ${h.note}`); else L.push(`${ts(h.t)} (+${rel(h.t)}) · ${h.note2 ? h.note2.toUpperCase() + ' · ' : ''}status 0x${h.st.toString(16).toUpperCase().padStart(2, '0')}: ${p2Bits(h.st)} · płyn ${f1(h.ect)} °C, dolot ${f1(h.iat)} °C, otoczenie ${f1(h.amb)} °C, silnik pracuje ${h.run ?? '—'} s, ${f1(h.rpm)} obr/min, ${f1(h.v)} km/h, napięcie sterownika ${h.u == null ? '—' : f1(h.u) + ' V'}`);
     const win = p2.ev.length ? p2.buf.filter(r => p2.ev.some(v => r.t >= v.at - 240000 && r.t <= v.at + P2_AFTER)) : [];
     if (win.length) {
       const keys = [...new Set(win.flatMap(r => Object.keys(r)))].filter(k => k !== 't' && CAT[k]);

@@ -190,12 +190,12 @@ const PIDS = [
   { pid: 0x42, len: 2, g: 'silnik', f: b => [u16(b[0], b[1]) / 1000], outs: [{ key: 'ecuV', name: 'Napięcie sterownika', unit: 'V', d: 2, min: 10, max: 16, check: voltCheck }] },
   { pid: 0x1F, len: 2, g: 'silnik', slow: true, f: b => [u16(b[0], b[1])], outs: [{ key: 'runTime', name: 'Czas od uruchomienia', unit: '', d: 0, fmt: fmtDur, nospark: true }] },
   // Chłodzenie i temperatury
-  { pid: 0x05, len: 1, g: 'chlodzenie', f: b => [b[0] - 40], outs: [{ key: 'coolant', name: 'Płyn chłodzący', unit: '°C', d: 0, min: -10, max: 130, check: v => lvl(v, 110, 118) }] },
-  { pid: 0x5C, len: 1, g: 'chlodzenie', f: b => [b[0] - 40], outs: [{ key: 'oil', name: 'Olej silnikowy', unit: '°C', d: 0, min: -10, max: 150, check: v => lvl(v, 125, 140) }] },
-  { pid: 0x0F, len: 1, g: 'chlodzenie', f: b => [b[0] - 40], outs: [{ key: 'iat', name: 'Powietrze dolotowe', unit: '°C', d: 0, min: -10, max: 90, check: v => lvl(v, 55, 70) }] },
+  { pid: 0x05, len: 1, g: 'chlodzenie', every: 3, f: b => [b[0] - 40], outs: [{ key: 'coolant', name: 'Płyn chłodzący', unit: '°C', d: 0, min: -10, max: 130, check: v => lvl(v, 110, 118) }] },
+  { pid: 0x5C, len: 1, g: 'chlodzenie', every: 3, f: b => [b[0] - 40], outs: [{ key: 'oil', name: 'Olej silnikowy', unit: '°C', d: 0, min: -10, max: 150, check: v => lvl(v, 125, 140) }] },
+  { pid: 0x0F, len: 1, g: 'chlodzenie', every: 3, f: b => [b[0] - 40], outs: [{ key: 'iat', name: 'Powietrze dolotowe', unit: '°C', d: 0, min: -10, max: 90, check: v => lvl(v, 55, 70) }] },
   { pid: 0x46, len: 1, g: 'chlodzenie', slow: true, f: b => [b[0] - 40], outs: [{ key: 'ambient', name: 'Temperatura otoczenia', unit: '°C', d: 0, min: -20, max: 45 }] },
-  { pid: 0x3C, len: 2, g: 'chlodzenie', f: b => [u16(b[0], b[1]) / 10 - 40], outs: [{ key: 'cat1', name: 'Katalizator, przed', unit: '°C', d: 0, min: 0, max: 1000, check: v => lvl(v, 850, 950) }] },
-  { pid: 0x3E, len: 2, g: 'chlodzenie', f: b => [u16(b[0], b[1]) / 10 - 40], outs: [{ key: 'cat2', name: 'Katalizator, za', unit: '°C', d: 0, min: 0, max: 1000 }] },
+  { pid: 0x3C, len: 2, g: 'chlodzenie', every: 3, f: b => [u16(b[0], b[1]) / 10 - 40], outs: [{ key: 'cat1', name: 'Katalizator, przed', unit: '°C', d: 0, min: 0, max: 1000, check: v => lvl(v, 850, 950) }] },
+  { pid: 0x3E, len: 2, g: 'chlodzenie', every: 3, f: b => [u16(b[0], b[1]) / 10 - 40], outs: [{ key: 'cat2', name: 'Katalizator, za', unit: '°C', d: 0, min: 0, max: 1000 }] },
   // Doładowanie
   { pid: 0x0B, len: 1, g: 'doladowanie', f: b => [b[0]], outs: [{ key: 'map', name: 'Ciśnienie w kolektorze', unit: 'kPa', d: 0, min: 0, max: 255 }] },
   { pid: 0x87, len: 5, g: 'doladowanie', f: b => [(b[0] & 1) ? u16(b[1], b[2]) / 32 : null, (b[0] & 2) ? u16(b[3], b[4]) / 32 : null], outs: [{ key: 'mapX', name: 'Kolektor, precyzyjnie', unit: 'kPa', d: 0, min: 0, max: 300 }, { key: 'mapXB', name: 'Kolektor B', unit: 'kPa', d: 0, min: 0, max: 300 }] },
@@ -209,9 +209,9 @@ const PIDS = [
   { pid: 0x24, len: 4, g: 'mieszanka', f: b => [u16(b[0], b[1]) * 2 / 65536, u16(b[2], b[3]) * 8 / 65536], outs: [{ key: 'lambdaV', name: 'Lambda rzeczywista (napięciowo)', unit: 'λ', d: 3, min: 0.7, max: 1.3 }, { key: 'lambdaVv', name: 'Napięcie sondy 1', unit: 'V', d: 3, min: 0, max: 5 }] },
   { pid: 0x44, len: 2, g: 'mieszanka', f: b => [u16(b[0], b[1]) * 2 / 65536], outs: [{ key: 'lambdaCmd', name: 'Lambda zadana', unit: 'λ', d: 3, min: 0.7, max: 1.3 }] },
   { pid: 0x06, len: 1, g: 'mieszanka', f: b => [b[0] / 1.28 - 100], outs: [{ key: 'stft1', name: 'Korekta krótkoterminowa', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 10, 20) }] },
-  { pid: 0x07, len: 1, g: 'mieszanka', f: b => [b[0] / 1.28 - 100], outs: [{ key: 'ltft1', name: 'Korekta długoterminowa', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 8, 15) }] },
+  { pid: 0x07, len: 1, g: 'mieszanka', every: 3, f: b => [b[0] / 1.28 - 100], outs: [{ key: 'ltft1', name: 'Korekta długoterminowa', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 8, 15) }] },
   { pid: 0x08, len: 1, g: 'mieszanka', f: b => [b[0] / 1.28 - 100], outs: [{ key: 'stft2', name: 'Korekta krótkoterm., bank 2', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 10, 20) }] },
-  { pid: 0x09, len: 1, g: 'mieszanka', f: b => [b[0] / 1.28 - 100], outs: [{ key: 'ltft2', name: 'Korekta długoterm., bank 2', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 8, 15) }] },
+  { pid: 0x09, len: 1, g: 'mieszanka', every: 3, f: b => [b[0] / 1.28 - 100], outs: [{ key: 'ltft2', name: 'Korekta długoterm., bank 2', unit: '%', d: 1, min: -25, max: 25, check: v => lvlAbs(v, 8, 15) }] },
   { pid: 0x03, len: 2, g: 'mieszanka', f: b => [b[0]], outs: [{ key: 'fuelSys', name: 'Tryb układu paliwowego', unit: '', text: true, fmt: v => FUELSYS[v] || ('kod ' + v) }] },
   { pid: 0x23, len: 2, g: 'mieszanka', f: b => [u16(b[0], b[1]) / 10], outs: [{ key: 'railP', name: 'Ciśnienie paliwa w szynie', unit: 'bar', d: 0, min: 0, max: 250 }] },
   { pid: 0x59, len: 2, g: 'mieszanka', f: b => [u16(b[0], b[1]) / 10], outs: [{ key: 'railPabs', name: 'Ciśnienie paliwa, abs.', unit: 'bar', d: 0, min: 0, max: 250 }] },
@@ -676,8 +676,20 @@ class ELM {
       const res = await this.sendMany(plans.map(P => P.req));
       plans.forEach((P, i) => handle(P, res ? this.resultOf(P.req, res[i]) : { err: 'brak odpowiedzi z mostu' }));
     }
+    /* Sterownik milczy (NO DATA) albo odmawia (7F 22: np. po wyłączeniu zapłonu): przerywamy cykl i niczego nie wyłączamy.
+       Wcześniej takie odpowiedzi wyłączały na stałe kilka PID-ów w zapytaniu i cyfrę liczby ramek, więc po ponownym
+       włączeniu zapłonu odczyt zostawał kilka razy wolniejszy do końca połączenia. */
+    const silent = r => r.err === 'NO DATA' || r.nrc === '22';
     let guard = 0;
-    while (queue.length && guard++ < 60) { const P = plan(); handle(P, await this.request(P.req, { attempts: 2 })); }
+    while (queue.length && guard++ < 60) {
+      const P = plan(); const r = await this.request(P.req, { attempts: 2 });
+      if (silent(r)) {
+        if (!P.useCount) { this.silentAt = Date.now(); break; }
+        const r2 = await this.request(P.req.slice(0, -1), { attempts: 1 });
+        if (silent(r2)) { this.silentAt = Date.now(); break; }
+      }
+      handle(P, r);
+    }
     return out;
   }
   /* Odpowiedź z wysyłki zbiorczej w tej samej postaci, co z request() (bez ponawiania). */
@@ -893,6 +905,7 @@ class ELM {
         const useCount = cnt() && frames <= 15;
         const r = await this.request('22' + g.map(hex4).join('') + (useCount ? frames.toString(16).toUpperCase() : ''), { attempts: 1 });
         if (r.err === '?') { this.countOk = false; break; }
+        if (r.err === 'NO DATA' || r.nrc === '22') return out;   // sterownik milczy albo odmawia: bez kary dla zapytań zbiorczych
         let ok = !r.err;
         if (ok) {
           const b = bytesOf(r.data); let k = 1; const part = {};
